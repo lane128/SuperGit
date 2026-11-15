@@ -1,0 +1,5 @@
+/build/
+.DS_Store
+
+# Claude Code runtime state, not project content.
+.claude/scheduled_tasks.lock

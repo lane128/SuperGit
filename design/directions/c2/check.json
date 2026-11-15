@@ -1,0 +1,21 @@
+{
+  "frames": [
+    {
+      "id": "C2-workspace",
+      "textCount": 177
+    },
+    {
+      "id": "C2-history",
+      "textCount": 104
+    },
+    {
+      "id": "C2-details",
+      "textCount": 118
+    }
+  ],
+  "overflows": [],
+  "collisions": [],
+  "missing": [],
+  "truncated": [],
+  "errors": []
+}

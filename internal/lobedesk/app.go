@@ -1,0 +1,1708 @@
+package lobedesk
+
+import (
+	"context"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
+	"github.com/lobehub/lobe-mygo/pkg/feedback"
+	"supergit/internal/appicon"
+	"supergit/internal/gitrepo"
+)
+
+// toastOwner says which window shows a queued notice. A repository result
+// belongs to the main window even while the reader is in Settings, and a
+// settings result belongs to the panel; the other window leaves it queued
+// instead of consuming it out of view.
+type toastOwner int
+
+const (
+	toastMain toastOwner = iota
+	toastSettings
+)
+
+type toastNotice struct {
+	kind        string
+	title       string
+	description string
+	action      string
+	onAction    func()
+	timeout     time.Duration
+}
+
+type undoDiscardState struct {
+	path  string
+	patch string
+}
+
+// busyLabel names an operation in the title bar while it runs. The value is
+// an i18n key; an operation that passes no label keeps the general line,
+// which is right for the sub-second work (staging, toggling a checkbox) that
+// never waits long enough for the bar to say anything.
+type busyLabel string
+
+const (
+	busyCommit     busyLabel = "busyCommit"
+	busyPush       busyLabel = "busyPush"
+	busyForcePush  busyLabel = "busyForcePush"
+	busyPull       busyLabel = "busyPull"
+	busyMerge      busyLabel = "busyMerge"
+	busyRebase     busyLabel = "busyRebase"
+	busyCherryPick busyLabel = "busyCherryPick"
+	busyRevert     busyLabel = "busyRevert"
+	busySwitch     busyLabel = "busySwitch"
+	busyReset      busyLabel = "busyReset"
+	busyCheckout   busyLabel = "busyCheckout"
+	// The operations below are quick on a small repo and slow on a big one: a
+	// stage-all over thousands of files, a stash that rewrites the whole
+	// worktree, a submodule that fetches. They get a name so the title bar says
+	// what is running instead of the general line.
+	busyStageAll   busyLabel = "busyStageAll"
+	busyUnstageAll busyLabel = "busyUnstageAll"
+	busyDiscard    busyLabel = "busyDiscard"
+	busySaveStash  busyLabel = "busySaveStash"
+	busyApplyStash busyLabel = "busyApplyStash"
+	busyPopStash   busyLabel = "busyPopStash"
+	busyDropStash  busyLabel = "busyDropStash"
+	busySubmodule  busyLabel = "busySubmodule"
+	// The rest of the actions an operation can wait on: the network ones (a
+	// tag push, a remote branch delete), the ones that rewrite a working tree
+	// (a worktree added or removed, an undone commit, a deleted file), and
+	// the ones that hand control to git's own continue/abort/skip, which run
+	// the same hooks a commit does.
+	busyDeleteFile         busyLabel = "busyDeleteFile"
+	busyPushTag            busyLabel = "busyPushTag"
+	busyDeleteRemoteBranch busyLabel = "busyDeleteRemoteBranch"
+	busyCreateWorktree     busyLabel = "busyCreateWorktree"
+	busyRemoveWorktree     busyLabel = "busyRemoveWorktree"
+	busyUndoCommit         busyLabel = "busyUndoCommit"
+	busyContinue           busyLabel = "busyContinue"
+	busyAbort              busyLabel = "busyAbort"
+	busySkip               busyLabel = "busySkip"
+)
+
+type app struct {
+	window *mygo.Window
+	// settingsWin is the settings panel's window, created on first open and
+	// replaced after the reader closes it. A goroutine may invalidate it
+	// while the main thread creates or replaces it, so it is atomic.
+	settingsWin atomic.Pointer[mygo.Window]
+	ctx         context.Context
+	cancel      context.CancelFunc
+
+	repo    *gitrepo.Repository
+	loading bool
+	busy    bool
+	// opCancel stops the operation in flight, if there is one. A fetch on a
+	// hanging network has nothing else to end it before the three-minute
+	// timeout, so the title bar's progress line carries a cancel button.
+	opCancel context.CancelFunc
+	// progressSince is when the running operation started. The title bar
+	// waits a moment before saying anything, so staging one file does not
+	// flash a spinner and a cancel button for a few dozen milliseconds.
+	progressSince time.Time
+	// busyKey names the running operation for the title bar. Empty means the
+	// caller did not name it, and the bar shows its general line instead.
+	busyKey string
+	// fetching is true while a fetch runs, automatic or manual, so the title
+	// bar can show progress without claiming other busy work is a fetch.
+	fetching bool
+	loadErr  string
+
+	status gitrepo.Status
+	// headSubject is the subject of the commit HEAD points to, read on every
+	// reload. The commit list can be scoped to another ref, so the amend box
+	// cannot take its prefill from the first row.
+	headSubject       string
+	branches          []gitrepo.Branch
+	remoteBranches    []gitrepo.Branch
+	remoteBranchesErr string
+	commits           []gitrepo.Commit
+	remotes           []gitrepo.Remote
+	stashes           []gitrepo.Stash
+	tags              []gitrepo.Tag
+	worktrees         []gitrepo.Worktree
+	submodules        []gitrepo.Submodule
+	worktreeForm      worktreeFormState
+	runOnMain         func(func()) // test seam; nil uses mygo.RunOnMain
+	operation         gitrepo.Operation
+	historyErr        string
+	branchesErr       string
+	stashesErr        string
+	tagsErr           string
+	worktreesErr      string
+	submodulesErr     string
+
+	selectedStash    string
+	stashDiff        gitrepo.Diff
+	stashDiffLoading bool
+	stashDiffErr     string
+	stashSeq         uint64
+
+	page      string
+	locale    locale
+	themeMode string
+	// palette is the key of the color scheme in appThemes; the theme mode
+	// picks its light or dark half.
+	palette string
+	// dockIcon remembers the drawing the Dock shows, so the view can ask for
+	// one every frame and the system is only touched when the appearance
+	// changes.
+	dockIcon *appicon.Switcher
+
+	selectedPath   string
+	selectedStaged bool
+	// filesCollapsed holds the workspace sections the reader folded. A long
+	// staged list can be put aside while the waiting edits are read. It is a
+	// per-repository view state: reloads keep it, opening another repository
+	// clears it.
+	filesCollapsed map[string]bool
+	// filesFoldSel remembers what folding a section did to the file
+	// selection, so opening it again can put the selection back.
+	filesFoldSel map[string]filesFoldSel
+	// filesFolded is the settings file's per-repository fold list, newest
+	// first. It is loaded once and kept current by rememberFilesFolds, so
+	// opening another repository finds its own sections, not this one's.
+	filesFolded    []foldedRepo
+	diff           gitrepo.Diff
+	diffLoading    bool
+	diffErr        string
+	lineSel        map[int]bool
+	lineAnchor     int
+	lineCursor     int
+	revealLine     bool
+	linePressIndex int
+	lineDragHeld   bool
+	lineDragging   bool
+	lineDragMoved  bool
+	undoDiscard    undoDiscardState
+	// The diff's scroll position and its box from the last layout, read
+	// while a line drag holds near an edge to keep scrolling.
+	diffScroll       ui.ScrollState
+	diffHoverSeenX   float32
+	diffViewportRect ui.Rect
+	// The details panes keep their scroll positions apart: the commit's
+	// Summary, its files and its patch. The diff's box is read while a line
+	// drag holds near its edge.
+	commitInfoScroll   ui.ScrollState
+	commitFilesScroll  ui.ScrollState
+	commitDiffScroll   ui.ScrollState
+	commitDiffViewport ui.Rect
+	// A pane can be hidden from the settings page; hiding the files and the
+	// patch leaves the Summary with the whole width.
+	detailsInfoHidden    bool
+	detailsChangesHidden bool
+	detailsDiffHidden    bool
+	// frameSeq counts the main window's builds. historyPage stores the rows it
+	// built for the frame, and historyRows hands those to the list, the
+	// selection and the details pane instead of filtering the history again.
+	frameSeq         uint64
+	historyRowsCache []gitrepo.Commit
+	historyRowsFrame uint64
+	historyRowsSet   bool
+	// historyGraph is the lane layout the history list drew this frame. The
+	// details pane reads it so a ref badge wears the color of the line the
+	// graph actually gave that ref, not just its hash slot.
+	historyGraph *commitGraph
+	// historyScroll keeps the commit list where the reader left it. The page
+	// is torn down on every switch, and a scroll area without a stored state
+	// starts over at the top when it comes back.
+	historyScroll ui.ScrollState
+	// The pane dividers: history's list and details share a row, as do the
+	// stash page's list and details and the branch page's. Each keeps its own
+	// share and drag state, and a zero share means the page's default still
+	// applies.
+	historySplit splitDrag
+	stashSplit   splitDrag
+	branchSplit  splitDrag
+	// historyDetailsHidden collapses the history page's details, leaving the
+	// commit list the full width. A toggle in the page header brings it back.
+	historyDetailsHidden bool
+	// detailTab is which tab the details' diff pane shows: the commit summary
+	// or the selected file's patch. Sublime Merge keeps the commit message on a
+	// Summary tab beside the open files, and the working tree's commit box
+	// lives there too.
+	detailTab string
+	// worktreeSelected makes the list's working-tree row the selection. The
+	// files and diff panes then read the working tree instead of a commit.
+	worktreeSelected bool
+	// The history list's display preferences: line thickness and node scale
+	// for the graph, and whether the second line shows the author and the
+	// commit time. Zero values mean the standard style; hidden columns are
+	// stored as "hidden" so a fresh app shows them.
+	historyLine float32
+	historyNode float32
+	hideAuthor  bool
+	hideTime    bool
+	// The other page lists keep their place the same way: each page unmounts
+	// on a switch, so the position has to live in the app.
+	branchesScroll ui.ScrollState
+	// branchDetailScroll keeps the branch page's details where the reader left
+	// them; it resets when the selected branch changes.
+	branchDetailScroll ui.ScrollState
+	stashesScroll      ui.ScrollState
+	workspacesScroll   ui.ScrollState
+	settingsScroll     ui.ScrollState
+	// sidebarScroll keeps the Locations list where the reader left it, and
+	// sidebarOpen the groups they folded. A group never touched keeps its
+	// default: branches open, the rest folded.
+	sidebarScroll ui.ScrollState
+	sidebarOpen   map[string]bool
+	// branchesScrollQuery is the search the list was last laid out with. A new
+	// query lists different rows, so it starts from the top.
+	branchesScrollQuery string
+
+	commitText string
+	amend      bool
+	// pendingMessage is the message seeded from Git during a merge,
+	// cherry-pick or revert. Only text that still matches it may be replaced
+	// when the page reloads, so whatever the user typed survives.
+	pendingMessage string
+	// The commit diff's own line selection. Commits are read-only, so it
+	// only chooses the rows a copy applies to.
+	commitSel        map[int]bool
+	commitAnchor     int
+	commitCursor     int
+	commitReveal     bool
+	commitPressIndex int
+	commitDragHeld   bool
+	commitDragging   bool
+	commitDragMoved  bool
+
+	selectedSHA string
+	commitFiles []gitrepo.ChangedFile
+	// commitNoBlame lists the selected commit's paths that git blame cannot
+	// read: deleted files and submodule pointers. It is built once per load,
+	// so a menu does not walk the file list for every diff row.
+	commitNoBlame map[string]bool
+	// commitNoBlameSHA is the commit the map was built for. A selection that
+	// changed before the new files landed must not read the old commit's map.
+	commitNoBlameSHA   string
+	commitFilesLoaded  bool
+	commitFilesLoading bool
+	commitFilesErr     string
+	commitPath         string
+	commitMessage      string
+	// commitSig is Git's verdict on the selected commit's signature, fetched
+	// apart from the files and the message because verifying a signature can
+	// take a moment and must not hold up the rest of the details.
+	commitSig         gitrepo.Signature
+	commitDiff        gitrepo.Diff
+	commitDiffLoading bool
+	commitDiffErr     string
+	// commitSections split the commit's stacked diff into one section per
+	// file; commitCollapsed records the sections the reader closed. The diff
+	// holds every file's lines, so the selection and copy work across the
+	// whole commit.
+	commitSections  []commitDiffSection
+	commitCollapsed map[string]bool
+	// commitCollapsedSel keeps the rows a closed section took out of the
+	// selection, so opening it again puts the reader's selection back. The
+	// rows are only ever dropped for the time they are hidden; a reload of
+	// the patch starts a new diff and forgets them.
+	commitCollapsedSel map[string]commitHiddenSel
+
+	historyQuery string
+	// historyTips pins the traversal the loaded commits belong to, so paging
+	// past the first page keeps offsets stable when refs move.
+	historyTips        []string
+	historyMore        bool
+	historyLoadingMore bool
+	// pendingJumpSHA is the commit a parent link asked for that is not in the
+	// loaded window yet. Paging continues until it appears.
+	pendingJumpSHA  string
+	historyRef      historyRef
+	historyRefOpen  bool
+	historyRefQuery string
+	// The ref selector keeps its search field focused, so Up/Down move a
+	// highlight of its own; cursorQuery and cursorPlaced place it when the
+	// popup opens and when the query changes.
+	historyRefCursor       int
+	historyRefCursorQuery  string
+	historyRefCursorPlaced bool
+	// historyRefReveal asks the next frame to scroll the highlight into view.
+	// Scrolling every frame would fight the reader's own wheel.
+	historyRefReveal bool
+	// historyPinned is the tip the walk was restarted from when a ref filter
+	// names something outside the loaded window; "" walks every ref.
+	historyPinned string
+	// historyReload counts ref-filter reloads, so a slower answer for an
+	// earlier filter cannot replace the list of a later one.
+	historyReload int
+	// historyReloading says a walk from a new tip is still out. The rows in
+	// a.commits belong to the previous filter until it answers, so the list
+	// shows a placeholder instead of them.
+	historyReloading   bool
+	branchQuery        string
+	branchSel          string
+	revealBranch       bool
+	worktreeSel        string
+	fileFilter         string
+	fileCommits        []gitrepo.Commit
+	fileHistoryErr     string
+	fileHistoryLoading bool
+	fileHistorySeq     uint64
+	blameOpen          bool
+	blamePath          string
+	// blameRev is the commit whose version of blamePath is blamed; empty means
+	// the worktree. A file opened from a commit's patch must not read the
+	// worktree, which may hold a different file by now.
+	blameRev        string
+	blame           []gitrepo.BlameLine
+	blameErr        string
+	blameLoading    bool
+	blameSeq        uint64
+	blameIgnoreWS   bool
+	revealSelection bool
+	paletteOpen     bool
+	// showGraph draws the commit lane graph on the history page.
+	showGraph bool
+	// autoFetch fetches every remote after a repository is opened, the way
+	// Sublime Merge's automatic fetch keeps ahead/behind fresh. autoFetchPrune
+	// also drops remote-tracking branches Git no longer has.
+	autoFetch      bool
+	autoFetchPrune bool
+	autoFetchEvery int // minutes between background fetches; 0 = only on open
+	// lastAutoFetch is when the last fetch started, automatic or manual, so
+	// the periodic check does not fetch again before the interval has passed
+	// and a manual fetch restarts the clock.
+	lastAutoFetch  time.Time
+	branchOpen     bool
+	stashSaveOpen  bool
+	confirm        confirmState
+	prompt         promptState
+	reset          resetState
+	checkoutBranch checkoutBranchState
+
+	// notices holds a queue per window: a notice waits for the window that
+	// shows it, and a result for the other window does not overwrite it.
+	notices [2][]*toastNotice
+
+	loadSeq   uint64
+	diffSeq   uint64
+	commitSeq uint64
+}
+
+func Run(initialPath string) error {
+	defaults := defaultSettings()
+	a := &app{
+		page:             "history",
+		locale:           locale(defaults.Language),
+		themeMode:        defaults.Theme,
+		palette:          defaults.Palette,
+		dockIcon:         appicon.New(func(png []byte) error { return mygo.App.Dock.SetIcon(png) }),
+		lineAnchor:       -1,
+		lineCursor:       -1,
+		linePressIndex:   -1,
+		commitAnchor:     -1,
+		commitCursor:     -1,
+		commitPressIndex: -1,
+		showGraph:        defaults.ShowGraph != nil && *defaults.ShowGraph,
+	}
+	a.applySettings(loadSettings())
+	a.ctx, a.cancel = context.WithCancel(context.Background())
+	defer a.cancel()
+
+	mygo.App.WhenReady(func() {
+		go a.watchAutoFetch()
+		// MyGo only accepts a locale the app declares among its languages;
+		// without this, SetLocale("zh-Hans") falls back to English.
+		mygo.App.SetLanguages("zh-Hans", "en")
+		a.syncLocale()
+		width, height := windowSize()
+		a.window = mygo.NewWindow(mygo.WindowOptions{
+			Title:                "SuperGit",
+			Width:                width,
+			Height:               height,
+			MinWidth:             minWindowWidth,
+			MinHeight:            minWindowHeight,
+			TitleBarStyle:        mygo.TitleBarHidden,
+			TrafficLightPosition: &mygo.Point{X: 12, Y: 12},
+			BackgroundColor:      "light-dark(#f7f8fa, #09090b)",
+			Content:              ui.View(a.root),
+		})
+		if initialPath != "" {
+			a.openRepository(initialPath, true)
+		}
+	})
+	return mygo.App.Run()
+}
+
+func (a *app) invalidate() {
+	if a.window != nil {
+		a.window.Invalidate()
+	}
+	if w := a.settingsWin.Load(); w != nil && !w.IsDestroyed() {
+		w.Invalidate()
+	}
+}
+
+func (a *app) queue(kind, title, description string) {
+	a.queueFor(toastMain, kind, title, description)
+}
+
+// queueFor queues a notice the given window shows.
+func (a *app) queueFor(owner toastOwner, kind, title, description string) {
+	a.pushNotice(owner, &toastNotice{kind: kind, title: title, description: description})
+}
+
+// pushNotice puts a notice at the end of its window's queue.
+func (a *app) pushNotice(owner toastOwner, n *toastNotice) {
+	a.notices[owner] = append(a.notices[owner], n)
+}
+
+// takeNotice removes and returns the first notice queued for a window.
+func (a *app) takeNotice(owner toastOwner) *toastNotice {
+	queue := a.notices[owner]
+	if len(queue) == 0 {
+		return nil
+	}
+	n := queue[0]
+	a.notices[owner] = queue[1:]
+	return n
+}
+
+// settingsNoticeOwner is the window a settings result belongs to: the panel
+// while it has the keyboard, the main window otherwise (a drag on the main
+// window's dividers saves settings too).
+func (a *app) settingsNoticeOwner() toastOwner {
+	if a.settingsFocused() {
+		return toastSettings
+	}
+	return toastMain
+}
+
+// adoptOrphanedNotice gives the main window the notices whose settings window
+// closed before showing them, so a failed save is not lost with the panel.
+func (a *app) adoptOrphanedNotice() {
+	if len(a.notices[toastSettings]) == 0 {
+		return
+	}
+	if w := a.settingsWin.Load(); w == nil || w.IsDestroyed() {
+		a.notices[toastMain] = append(a.notices[toastMain], a.notices[toastSettings]...)
+		a.notices[toastSettings] = nil
+	}
+}
+
+func (a *app) flushNotice(c *ui.Context, owner toastOwner) {
+	n := a.takeNotice(owner)
+	if n == nil {
+		return
+	}
+	typ := feedback.ToastInfo
+	switch n.kind {
+	case "success":
+		typ = feedback.ToastSuccess
+	case "error":
+		typ = feedback.ToastError
+	case "warning":
+		typ = feedback.ToastWarning
+	}
+	timeout := n.timeout
+	if timeout == 0 {
+		timeout = 5 * time.Second
+	}
+	feedback.ShowToast(c, feedback.ToastProps{
+		Title:       n.title,
+		Description: n.description,
+		Type:        typ,
+		Timeout:     timeout,
+		Action:      n.action,
+		OnAction:    n.onAction,
+	})
+	// A toast added while the view builds cannot ask for the frame that
+	// draws it (requestFrame ignores in-frame calls), and nothing else may
+	// invalidate after this build. Ask for one frame more so the toast
+	// host picks it up.
+	c.After(0)
+}
+
+// loadFailureTitle names a failed read by what the reader was doing: a first
+// open has nothing behind it, a reload leaves the old contents, and a switch
+// leaves the previous repository on screen.
+func (a *app) loadFailureTitle(firstOpen, switching bool) string {
+	switch {
+	case firstOpen:
+		return a.t("openFailed")
+	case switching:
+		return a.t("switchRepoFailed")
+	default:
+		return a.t("reloadFailed")
+	}
+}
+
+func (a *app) openRepository(path string, reset bool) {
+	if a.busy || strings.TrimSpace(path) == "" {
+		return
+	}
+	a.loadSeq++
+	seq := a.loadSeq
+	// This read replaces whatever the last one was doing. A history walk still
+	// out belongs to the superseded read: its callback is dropped as stale, so
+	// clearing its flags here is the only chance to do it. Left set, they keep
+	// the list on "Rereading history…" with dead arrows until the reader
+	// changes refs again.
+	a.historyLoadingMore = false
+	a.historyReloading = false
+	// A jump the dropped walk was going to make has no walk left to make it.
+	a.pendingJumpSHA = ""
+	a.loading = true
+	// loadErr stays up while the read runs: the banner already on screen is
+	// the feedback for the retry, and its button turns into "Retrying…". It is
+	// cleared when the read succeeds, or replaced by the new failure.
+	a.invalidate()
+	filter := a.fileFilter
+	if reset {
+		filter = ""
+		// A different repository lists a different history; the position kept
+		// for the previous one means nothing here. The other page lists start
+		// over too.
+		a.historyScroll.Y = 0
+		a.branchesScroll.Y = 0
+		a.stashesScroll.Y = 0
+		a.workspacesScroll.Y = 0
+	}
+	// A reload keeps however far the user had paged into history; reopening
+	// a repository starts from the first page again.
+	historyLimit := 200
+	if !reset && len(a.commits) > historyLimit {
+		historyLimit = min(len(a.commits), 2000)
+	}
+	// A reload keeps a ref filter's walk pinned to that ref instead of
+	// swapping the list back to every ref behind the filter.
+	pinned := ""
+	if !reset {
+		pinned = a.historyPinned
+	}
+	// Distinguishes the first open's failure (nothing to read yet) from a
+	// reload's (the old contents are still on screen, and stale).
+	hadRepo := a.repo != nil
+
+	go func() {
+		repo, openErr := gitrepo.Open(a.ctx, path)
+		var status gitrepo.Status
+		var headSubject string
+		var history gitrepo.HistoryPage
+		var branches []gitrepo.Branch
+		var remoteBranches []gitrepo.Branch
+		var remotes []gitrepo.Remote
+		var stashes []gitrepo.Stash
+		var tags []gitrepo.Tag
+		var worktrees []gitrepo.Worktree
+		var submodules []gitrepo.Submodule
+		var operation gitrepo.Operation
+		var operationMessage string
+		var fileCommits []gitrepo.Commit
+		var statusErr, historyErr, branchesErr, remoteBranchesErr, stashesErr, tagsErr, fileHistoryErr, worktreesErr, submodulesErr error
+		if openErr == nil {
+			status, statusErr = repo.Status(a.ctx)
+			if statusErr == nil {
+				// Read apart from the page: the amend box acts on HEAD even
+				// when the list is showing another branch.
+				headSubject, _ = repo.HeadSubject(a.ctx)
+				if pinned != "" {
+					history, historyErr = repo.HistoryPage(a.ctx, []string{pinned}, 0, min(historyLimit, 2000))
+				} else {
+					history, historyErr = repo.ReadHistory(a.ctx, historyLimit)
+				}
+				branches, branchesErr = repo.Branches(a.ctx)
+				remoteBranches, remoteBranchesErr = repo.RemoteBranches(a.ctx)
+				remotes, _ = repo.Remotes(a.ctx)
+				stashes, stashesErr = repo.Stashes(a.ctx)
+				tags, tagsErr = repo.Tags(a.ctx)
+				worktrees, worktreesErr = repo.Worktrees(a.ctx)
+				submodules, submodulesErr = repo.Submodules(a.ctx)
+				operation, _ = repo.Operation(a.ctx)
+				if commitOperation(operation.Kind) {
+					operationMessage, _ = repo.OperationMessage(a.ctx)
+				}
+				if filter != "" {
+					fileCommits, fileHistoryErr = repo.FileHistory(a.ctx, filter, 200)
+				}
+			}
+		}
+
+		mygo.RunOnMain(func() {
+			if seq != a.loadSeq {
+				return
+			}
+			a.loading = false
+			failTitle := a.loadFailureTitle(!hadRepo, reset)
+			if openErr != nil {
+				a.loadErr = openErr.Error()
+				a.queue("error", failTitle, openErr.Error())
+				a.invalidate()
+				return
+			}
+			if statusErr != nil {
+				a.loadErr = statusErr.Error()
+				a.queue("error", failTitle, statusErr.Error())
+				a.invalidate()
+				return
+			}
+
+			a.repo = repo
+			a.status = status
+			a.headSubject = headSubject
+			a.commits = history.Commits
+			a.historyTips = history.Tips
+			a.historyMore = history.HasMore
+			a.branches = branches
+			a.remoteBranches = remoteBranches
+			a.remotes = remotes
+			a.stashes = stashes
+			a.tags = tags
+			a.worktrees = worktrees
+			a.submodules = submodules
+			a.operation = operation
+			a.loadErr = ""
+			a.historyErr = ""
+			a.branchesErr = ""
+			a.remoteBranchesErr = ""
+			a.stashesErr = ""
+			a.tagsErr = ""
+			a.worktreesErr = ""
+			a.submodulesErr = ""
+			if historyErr != nil {
+				a.historyErr = historyErr.Error()
+			}
+			// The filtered ref may have moved, or been deleted, while the
+			// walk was pinned to its old tip.
+			if !reset && a.historyRef.Kind != "" {
+				name := a.historyRef.Name
+				switch tip := a.historyRefTip(a.historyRef); {
+				case tip == "":
+					// The walk loaded the old tip's commits, which are no
+					// longer a ref anyone can browse; go back to every ref.
+					a.historyRef = historyRef{}
+					a.historyPinned = ""
+					a.reloadHistoryFromTip("")
+					a.queue("info", a.t("refGoneTitle"), a.tf("refGoneDetail", name))
+				case a.historyPinned != "" && tip != a.historyPinned:
+					a.historyPinned = tip
+					a.reloadHistoryFromTip(tip)
+				}
+			}
+			if branchesErr != nil {
+				a.branchesErr = branchesErr.Error()
+			}
+			if remoteBranchesErr != nil {
+				a.remoteBranchesErr = remoteBranchesErr.Error()
+			}
+			if stashesErr != nil {
+				a.stashesErr = stashesErr.Error()
+				// A partial result can still carry rows, but the old selection
+				// and its patch were read before this failure; they do not
+				// describe a row the reader can trust now.
+				a.clearStashDetail()
+			}
+			if tagsErr != nil {
+				a.tagsErr = tagsErr.Error()
+			}
+			if worktreesErr != nil {
+				a.worktreesErr = worktreesErr.Error()
+			}
+			if submodulesErr != nil {
+				a.submodulesErr = submodulesErr.Error()
+			}
+			if a.window != nil {
+				a.window.SetTitle("SuperGit · " + filepath.Base(repo.Root))
+			}
+			if reset {
+				a.worktreeSelected = false
+				a.detailTab = detailTabSummary
+				a.selectedPath = ""
+				a.selectedStaged = false
+				// The folds are per repository: this one opens with what the
+				// reader left folded last time, a new one starts unfolded.
+				a.filesCollapsed = a.foldedFor(repo.Root)
+				a.filesFoldSel = nil
+				a.diff = gitrepo.Diff{}
+				a.clearLineSelection()
+				a.undoDiscard = undoDiscardState{}
+				a.setSelectedCommit("")
+				a.commitFiles = nil
+				a.commitPath = ""
+				a.resetCommitDiff()
+				a.commitText = ""
+				a.pendingMessage = ""
+				a.amend = false
+				a.historyQuery = ""
+				a.historyRef = historyRef{}
+				a.historyRefOpen = false
+				a.historyRefQuery = ""
+				a.historyPinned = ""
+				a.historyLoadingMore = false
+				a.historyReloading = false
+				a.pendingJumpSHA = ""
+				a.branchQuery = ""
+				a.branchSel = ""
+				a.revealBranch = false
+				a.fileFilter = ""
+				a.resetFileHistory()
+				a.fileCommits = nil
+				a.fileHistoryErr = ""
+				// A toast can carry an action against the repository that was
+				// open when it appeared; it has no meaning in the new one.
+				a.notices = [2][]*toastNotice{}
+				a.selectedStash = ""
+				a.stashDiff = gitrepo.Diff{}
+				a.stashDiffErr = ""
+				a.blameOpen = false
+				a.blamePath = ""
+				a.blameRev = ""
+				a.blame = nil
+				a.blameErr = ""
+			}
+			a.applyOperationMessage(operationMessage)
+			if filter != "" {
+				a.fileCommits = fileCommits
+				a.fileHistoryErr = ""
+				if fileHistoryErr != nil {
+					a.fileHistoryErr = fileHistoryErr.Error()
+				}
+				if !a.hasSelectedIn(a.fileCommits) {
+					a.commitFiles = nil
+					a.commitPath = ""
+					a.resetCommitDiff()
+					if len(a.fileCommits) > 0 {
+						a.setSelectedCommit(a.fileCommits[0].SHA)
+					} else {
+						a.setSelectedCommit("")
+					}
+				}
+			}
+
+			if reset {
+				a.fetchOnOpen()
+			}
+			a.reconcileSelection()
+			a.invalidate()
+			if a.selectedPath != "" {
+				a.loadDiff()
+			}
+			if a.selectedSHA != "" {
+				a.loadCommitDetail(true)
+			}
+			if a.selectedStash != "" {
+				a.loadStashDiff()
+			}
+		})
+	}()
+}
+
+func (a *app) reload() {
+	if a.repo == nil {
+		return
+	}
+	a.openRepository(a.repo.Root, false)
+}
+
+// applyOperationMessage keeps the commit field in step with the message Git
+// prepared for a merge, cherry-pick or revert. A field the user has edited is
+// never overwritten; one still holding the seeded text is updated when the
+// pending message changes, and cleared when the operation ends.
+func (a *app) applyOperationMessage(message string) {
+	if !commitOperation(a.operation.Kind) {
+		if a.pendingMessage != "" && a.commitText == a.pendingMessage {
+			a.commitText = ""
+		}
+		a.pendingMessage = ""
+		return
+	}
+	if message == "" || (a.commitText != "" && a.commitText != a.pendingMessage) {
+		return
+	}
+	a.commitText = message
+	a.pendingMessage = message
+}
+
+func (a *app) reconcileSelection() {
+	entries := a.status.Entries
+	if len(entries) == 0 {
+		a.selectedPath = ""
+		a.selectedStaged = false
+		a.diff = gitrepo.Diff{}
+	} else {
+		found := false
+		for _, entry := range entries {
+			if entry.Path != a.selectedPath {
+				continue
+			}
+			found = true
+			staged := entry.Staged() && !entry.Conflict
+			unstaged := entry.Unstaged()
+			if a.selectedStaged && !staged {
+				a.selectedStaged = false
+			}
+			if !a.selectedStaged && !unstaged {
+				a.selectedStaged = true
+			}
+			break
+		}
+		if !found {
+			a.selectedPath, a.selectedStaged = firstWorkspaceEntry(entries)
+			a.diff = gitrepo.Diff{}
+		}
+		// A folded section takes its rows out of the list and out of the
+		// keyboard order. A selection left inside one would keep the details
+		// showing a file the reader cannot find, so it moves to the first row
+		// still on screen. With every section folded there is no row to move to
+		// and the selection stays.
+		if refs := a.fileRefs(); len(refs) > 0 {
+			visible := false
+			for _, ref := range refs {
+				if ref.path == a.selectedPath && ref.staged == a.selectedStaged {
+					visible = true
+					break
+				}
+			}
+			if !visible {
+				a.selectedPath, a.selectedStaged = refs[0].path, refs[0].staged
+				a.diff = gitrepo.Diff{}
+			}
+		}
+	}
+
+	if a.selectedStash != "" {
+		found := false
+		for _, stash := range a.stashes {
+			if stash.SHA == a.selectedStash {
+				found = true
+				break
+			}
+		}
+		if !found {
+			a.selectedStash = ""
+			a.stashDiff = gitrepo.Diff{}
+		}
+	}
+	if a.selectedStash == "" && len(a.stashes) > 0 && a.stashesErr == "" {
+		// A failed read may have left part of the list; picking its first row
+		// would load a patch the error says cannot be vouched for.
+		a.selectedStash = a.stashes[0].SHA
+		a.stashDiff = gitrepo.Diff{}
+	}
+
+	if a.fileFilter == "" && a.selectedSHA != "" {
+		found := false
+		for _, commit := range a.commits {
+			if commit.SHA == a.selectedSHA {
+				found = true
+				break
+			}
+		}
+		if !found {
+			a.setSelectedCommit("")
+			a.commitFiles = nil
+			a.commitPath = ""
+			a.resetCommitDiff()
+		}
+	}
+	// The working tree's row keeps the selection across a reload: auto-picking
+	// the first commit would leave two rows marked as selected and hand the
+	// arrows a commit the reader never chose.
+	if a.fileFilter == "" && a.selectedSHA == "" && len(a.commits) > 0 && !a.worktreeSelected {
+		a.setSelectedCommit(a.commits[0].SHA)
+		a.commitFiles = nil
+		a.commitPath = ""
+		a.resetCommitDiff()
+	}
+}
+
+func (a *app) historySource() []gitrepo.Commit {
+	if a.fileFilter != "" {
+		return a.fileCommits
+	}
+	if a.historyRef.Kind != "" {
+		// A ref outside the loaded window restarts the walk at its tip, so
+		// the loaded commits are already that ref's history.
+		if a.historyPinned != "" {
+			return a.commits
+		}
+		return reachableCommits(a.commits, a.historyRefTip(a.historyRef))
+	}
+	return a.commits
+}
+
+func (a *app) hasSelectedIn(commits []gitrepo.Commit) bool {
+	if a.selectedSHA == "" {
+		return false
+	}
+	for _, commit := range commits {
+		if commit.SHA == a.selectedSHA {
+			return true
+		}
+	}
+	return false
+}
+
+func firstWorkspaceEntry(entries []gitrepo.Entry) (string, bool) {
+	for _, entry := range entries {
+		// Untracked files are Unstaged too, but the workspace draws them in
+		// their own section below the index; the first row follows that order.
+		if entry.Unstaged() && !isUntracked(entry) {
+			return entry.Path, false
+		}
+	}
+	for _, entry := range entries {
+		if entry.Staged() && !entry.Conflict {
+			return entry.Path, true
+		}
+	}
+	// The workspace lists untracked files after the staged group; the first
+	// row follows the same order.
+	for _, entry := range entries {
+		if isUntracked(entry) {
+			return entry.Path, false
+		}
+	}
+	return "", false
+}
+
+func (a *app) selectFile(path string, staged bool) {
+	if path == "" {
+		return
+	}
+	a.detailTab = detailTabFile
+	if a.selectedPath == path && a.selectedStaged == staged && (a.diff.Text != "" || a.diffLoading) {
+		return
+	}
+	// A different file starts its own scroll: keeping the offset would open
+	// the new patch halfway down, past the header the reader needs.
+	if a.selectedPath != path || a.selectedStaged != staged {
+		a.diffScroll.X, a.diffScroll.Y = 0, 0
+	}
+	a.selectedPath, a.selectedStaged = path, staged
+	a.diff = gitrepo.Diff{}
+	a.diffErr = ""
+	a.clearLineSelection()
+	a.loadDiff()
+	a.invalidate()
+}
+
+func (a *app) loadDiff() {
+	if a.repo == nil || a.selectedPath == "" {
+		return
+	}
+	a.diffSeq++
+	seq := a.diffSeq
+	repo, path, staged := a.repo, a.selectedPath, a.selectedStaged
+	a.diffLoading = true
+	a.diffErr = ""
+	go func() {
+		diff, err := repo.Diff(a.ctx, path, staged)
+		mygo.RunOnMain(func() {
+			if seq != a.diffSeq {
+				return
+			}
+			a.diffLoading = false
+			if err != nil {
+				a.diffErr = err.Error()
+			} else {
+				a.diff = diff
+				a.clearLineSelection()
+			}
+			a.invalidate()
+		})
+	}()
+}
+
+// setSelectedCommit moves the selection without loading anything. The paths
+// that assign the SHA straight -- a reload, a reset, a file's history replacing
+// the list -- come through here so the diff's line selection is dropped when
+// the commit really changes: those row indexes belong to the previous diff, and
+// Cmd+C would otherwise copy the same rows out of the new one.
+func (a *app) setSelectedCommit(sha string) {
+	if sha != a.selectedSHA {
+		a.clearCommitSelection()
+		// The signature belongs to the commit that was selected; it must not
+		// describe the next one while its own answer is on the way.
+		a.commitSig = gitrepo.Signature{}
+		// A different commit opens its own info, file list and diff at the top.
+		// The rows kept their offsets, so a selection that moved on a reload
+		// showed the new commit scrolled to where the old one was read.
+		a.commitInfoScroll.Y = 0
+		a.commitFilesScroll.Y = 0
+		a.commitDiffScroll.Y = 0
+	}
+	a.selectedSHA = sha
+}
+
+// worktreeHasSelectedFile reports whether the selected path is still one of
+// the working tree's files, so the working-tree row can keep it open.
+func (a *app) worktreeHasSelectedFile() bool {
+	if a.selectedPath == "" {
+		return false
+	}
+	for _, entry := range a.status.Entries {
+		if entry.Path == a.selectedPath {
+			return true
+		}
+	}
+	return false
+}
+
+// selectWorktree makes the working tree the page's selection. The files
+// column lists what is uncommitted and the diff column shows it, with the
+// commit box on the Summary tab.
+func (a *app) selectWorktree() {
+	if a.worktreeSelected {
+		return
+	}
+	a.worktreeSelected = true
+	a.setSelectedCommit("")
+	a.commitFiles = nil
+	a.commitFilesLoaded = false
+	a.commitPath = ""
+	a.commitMessage = ""
+	a.commitFilesScroll.Y = 0
+	// The file the reader already had stays open, so choosing the working
+	// tree changes what the panes describe, not which file the workspace
+	// shows. Only when that file is gone does the first working file take
+	// its place. The Summary tab stays in front: the commit box is why the
+	// row was chosen.
+	if !a.worktreeHasSelectedFile() {
+		if path, staged := firstWorkspaceEntry(a.status.Entries); path != "" {
+			a.selectFile(path, staged)
+		}
+	}
+	a.detailTab = detailTabSummary
+	a.invalidate()
+}
+
+func (a *app) selectCommit(sha string) {
+	if sha == "" {
+		return
+	}
+	a.worktreeSelected = false
+	if a.selectedSHA == sha && a.commitFilesLoaded {
+		return
+	}
+	// A different commit opens on its message; the file tab the reader left
+	// open belongs to the commit they were reading before.
+	if a.selectedSHA != sha {
+		a.detailTab = detailTabSummary
+	}
+	a.selectedSHA = sha
+	a.commitFiles = nil
+	a.commitFilesLoaded = false
+	a.commitPath = ""
+	a.commitMessage = ""
+	a.commitSig = gitrepo.Signature{}
+	a.resetCommitDiff()
+	a.commitDiffErr = ""
+	a.commitInfoScroll.Y = 0
+	a.commitFilesScroll.Y = 0
+	a.commitDiffScroll.Y = 0
+	a.clearCommitSelection()
+	a.loadCommitDetail(false)
+	a.invalidate()
+}
+
+func (a *app) loadCommitDetail(force bool) {
+	if a.repo == nil || a.selectedSHA == "" {
+		return
+	}
+	if !force && a.commitFilesLoaded {
+		return
+	}
+	a.commitSeq++
+	seq := a.commitSeq
+	repo, sha := a.repo, a.selectedSHA
+	keepPath := a.commitPath
+	if !force && keepPath != "" {
+		keepPath = ""
+	}
+	filterPath := a.fileFilter
+	a.commitFilesLoading = true
+	a.commitFilesErr = ""
+	a.commitDiffErr = ""
+	a.commitDiffLoading = true
+	go func() {
+		// Verifying a signature can start a GPG or SSH process; it gets its own
+		// goroutine so a slow keyring never delays the files and the diff.
+		go func() {
+			signature, err := repo.CommitSignature(a.ctx, sha)
+			if err != nil {
+				return
+			}
+			mygo.RunOnMain(func() {
+				if seq != a.commitSeq || a.selectedSHA != sha {
+					return
+				}
+				a.commitSig = signature
+				a.invalidate()
+			})
+		}()
+		files, filesErr := repo.CommitFiles(a.ctx, sha)
+		// The body is separate from the paged history so a page of commits
+		// does not carry every message; a failure here only hides the body.
+		message, _ := repo.CommitMessage(a.ctx, sha)
+		path := ""
+		if filesErr == nil {
+			// In a file's history the commit's details should open on that
+			// file, not on whichever file the commit happened to change
+			// first.
+			path = preferredCommitPath(files, keepPath, filterPath)
+		}
+		var diffs []gitrepo.FileDiff
+		var diffErr error
+		if filesErr == nil {
+			// One command answers for every file, so the details can show the
+			// whole commit's diff instead of waiting for a click per file.
+			diffs, diffErr = repo.ShowAll(a.ctx, sha)
+		}
+		mygo.RunOnMain(func() {
+			if seq != a.commitSeq || a.selectedSHA != sha {
+				return
+			}
+			a.commitFilesLoading = false
+			a.commitDiffLoading = false
+			a.commitMessage = message
+			if filesErr != nil {
+				a.commitFilesErr = filesErr.Error()
+				a.commitDiffErr = filesErr.Error()
+				a.commitNoBlame = nil
+				a.commitNoBlameSHA = ""
+			} else {
+				a.commitFiles = files
+				a.commitNoBlame = commitNoBlamePaths(files)
+				a.commitNoBlameSHA = sha
+				a.commitFilesLoaded = true
+				a.commitPath = path
+				if diffErr != nil {
+					a.commitDiffErr = diffErr.Error()
+				} else {
+					a.commitDiff, a.commitSections = buildCommitDiff(diffs)
+					addSubmoduleNoBlame(a.commitNoBlame, a.commitSections)
+					// A commit opened from a file's history should show that
+					// file, not the first one git listed.
+					if filterPath != "" && path != "" {
+						a.scrollCommitDiffToFile(path)
+					}
+				}
+			}
+			a.invalidate()
+		})
+	}()
+}
+
+// selectCommitFile points the details at one file of the commit: the file list
+// marks it, and the diff scrolls to its section. Every file's patch is already
+// loaded, so a click costs no git command.
+func (a *app) selectCommitFile(path string) {
+	if a.repo == nil || a.selectedSHA == "" || path == "" {
+		return
+	}
+	a.detailTab = detailTabFile
+	if a.commitPath == path && !a.commitCollapsed[path] {
+		// The file is already the details' file, but the reader scrolled the
+		// patch away; a second click on its row still means "show me it".
+		a.scrollCommitDiffToFile(path)
+		a.invalidate()
+		return
+	}
+	a.commitPath = path
+	a.clearCommitSelection()
+	a.scrollCommitDiffToFile(path)
+	a.invalidate()
+}
+
+// beginOperation starts the deadline for a git command and marks the app
+// busy. The returned cancel is what the title bar's cancel button reaches, so
+// every operation that sets busy itself goes through here rather than building
+// its own context.
+func (a *app) beginOperation(label busyLabel) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(a.ctx, 3*time.Minute)
+	a.busy = true
+	a.busyKey = string(label)
+	a.opCancel = cancel
+	a.progressSince = time.Now()
+	// Nothing repaints on its own while the progress line waits out its
+	// delay, so ask for one frame when the wait ends. A finished operation
+	// makes it a no-op.
+	time.AfterFunc(progressDelay, func() { mygo.RunOnMain(a.invalidate) })
+	a.invalidate()
+	return ctx, cancel
+}
+
+// finishOperation clears what beginOperation set, once the command is done
+// whatever the outcome.
+func (a *app) finishOperation() {
+	a.busy = false
+	a.busyKey = ""
+	a.opCancel = nil
+}
+
+func (a *app) perform(label, success string, fn func(context.Context, *gitrepo.Repository) error) {
+	a.performAs("", label, success, fn)
+}
+
+// performAs is perform with a name for the title bar. The name is what the
+// reader waiting on a push or a rebase should see instead of the general
+// "Working…", which says only that something is happening.
+func (a *app) performAs(busy busyLabel, label, success string, fn func(context.Context, *gitrepo.Repository) error) {
+	a.performDoneAs(busy, label, success, nil, fn)
+}
+
+// performDone is perform with a hook that runs on the UI thread once the work
+// finishes, whatever the outcome. Callers use it for state that mirrors the
+// operation, such as the title bar's fetch spinner.
+func (a *app) performDone(label, success string, done func(error), fn func(context.Context, *gitrepo.Repository) error) {
+	a.performDoneAs("", label, success, done, fn)
+}
+
+// performDoneAs is performDone with the operation's name for the title bar. It
+// reports whether the work started: a caller that keeps state for a retry
+// needs to know when nothing was launched.
+func (a *app) performDoneAs(busy busyLabel, label, success string, done func(error), fn func(context.Context, *gitrepo.Repository) error) bool {
+	if a.repo == nil || a.busy || a.loading {
+		return false
+	}
+	repo := a.repo
+	ctx, cancel := a.beginOperation(busy)
+	go func() {
+		defer cancel()
+		err := fn(ctx, repo)
+		a.hopToMain(func() {
+			a.finishOperation()
+			switch {
+			case operationCancelled(ctx, err):
+				// Stopping through the cancel button is not a failure, and
+				// the git error underneath ("signal: killed") would read as
+				// one.
+				a.queue("info", a.t("operationCancelled"), "")
+			case err != nil:
+				a.queue("error", label, err.Error())
+			case success != "":
+				a.queue("success", success, "")
+			}
+			if done != nil {
+				// The error lets a caller restore what the operation would
+				// have replaced: a failed worktree creation keeps the typed
+				// path and branch in its form.
+				done(err)
+			}
+			a.reload()
+			a.invalidate()
+		})
+	}()
+	return true
+}
+
+// hopToMain hands the operation's completion to the UI thread. The runOnMain
+// seam lets a test take the continuation and run it itself: without an event
+// loop the completion would run on the worker's goroutine, and asserting the
+// restored form from the test would race with that write.
+func (a *app) hopToMain(fn func()) {
+	if a.runOnMain != nil {
+		a.runOnMain(fn)
+		return
+	}
+	mygo.RunOnMain(fn)
+}
+
+// operationCancelled reports whether the operation stopped because someone
+// pressed cancel. The context's own error is the signal, not the error git
+// returned: a killed process usually reports "signal: killed", which would
+// otherwise be shown as a failure.
+func operationCancelled(ctx context.Context, err error) bool {
+	return err != nil && ctx.Err() == context.Canceled
+}
+
+// cancelOperation stops whatever git command is running. The work runs in its
+// own context with a three-minute timeout, and a fetch against a network that
+// has stopped answering has no other way out before that timeout.
+func (a *app) cancelOperation() {
+	if a.opCancel != nil {
+		a.opCancel()
+	}
+}
+
+func (a *app) toggleStage(entry gitrepo.Entry, staged bool) {
+	if entry.Conflict {
+		return
+	}
+	label := a.t("stageFile")
+	if staged {
+		label = a.t("unstageFile")
+	}
+	a.selectFile(entry.Path, staged)
+	a.perform(label, "", func(ctx context.Context, repo *gitrepo.Repository) error {
+		if staged {
+			if entry.OriginalPath != "" {
+				return repo.StageRename(ctx, entry.Path, entry.OriginalPath, true)
+			}
+			return repo.Unstage(ctx, entry.Path)
+		}
+		if entry.OriginalPath != "" {
+			return repo.StageRename(ctx, entry.Path, entry.OriginalPath, false)
+		}
+		return repo.Stage(ctx, entry.Path)
+	})
+}
+
+func (a *app) stageAll() {
+	if a.repo == nil || a.busy || a.loading {
+		return
+	}
+	entries := append([]gitrepo.Entry(nil), a.status.Entries...)
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		// A rename's new path is what `git add` takes; the old path's removal
+		// follows from the same commit.
+		if entry.Conflict || !entry.Unstaged() {
+			continue
+		}
+		paths = append(paths, entry.Path)
+	}
+	// A list of nothing but conflicts has nothing this command may add; it
+	// also keeps the shortcut from running `git add` with no paths.
+	if len(paths) == 0 {
+		return
+	}
+	a.performAs(busyStageAll, a.t("stageAll"), "", func(ctx context.Context, repo *gitrepo.Repository) error {
+		// One command per chunk instead of one per file: staging a few thousand
+		// files one at a time spends a process per file and takes half a minute.
+		return repo.StagePaths(ctx, paths)
+	})
+}
+
+func (a *app) unstageAll() {
+	if a.repo == nil || a.busy || a.loading {
+		return
+	}
+	entries := append([]gitrepo.Entry(nil), a.status.Entries...)
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Conflict || !entry.Staged() {
+			continue
+		}
+		// A staged rename needs both sides unstaged, as one restore call does.
+		if entry.OriginalPath != "" {
+			paths = append(paths, entry.OriginalPath)
+		}
+		paths = append(paths, entry.Path)
+	}
+	a.performAs(busyUnstageAll, a.t("unstageAll"), "", func(ctx context.Context, repo *gitrepo.Repository) error {
+		return repo.UnstagePaths(ctx, paths)
+	})
+}
+
+func (a *app) commit() {
+	if !a.canCommit() {
+		return
+	}
+	message := a.commitText
+	amend := a.amend
+	repo := a.repo
+	ctx, cancel := a.beginOperation(busyCommit)
+	go func() {
+		defer cancel()
+		var err error
+		if amend {
+			err = repo.AmendCommit(ctx, message)
+		} else {
+			err = repo.Commit(ctx, message)
+		}
+		mygo.RunOnMain(func() {
+			a.finishOperation()
+			if operationCancelled(ctx, err) {
+				// The message stays in the field so the commit can be
+				// started again without retyping it.
+				a.queue("info", a.t("operationCancelled"), "")
+			} else if err != nil {
+				a.queue("error", a.t("commitFailed"), err.Error())
+			} else {
+				a.commitText = ""
+				a.amend = false
+				if amend {
+					a.queue("success", a.t("amendSuccess"), "")
+				} else {
+					a.queue("success", a.t("commitSuccess"), "")
+				}
+			}
+			a.reload()
+			a.invalidate()
+		})
+	}()
+}
+
+func (a *app) switchBranch(name string) {
+	if a.repo == nil || name == "" || name == a.status.Branch {
+		return
+	}
+	a.performAs(busySwitch, a.t("switch"), a.t("switchSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
+		return repo.SwitchBranch(ctx, name)
+	})
+}
+
+// fetchOnOpen runs the automatic fetch the settings page enables. It stays
+// silent on success, because an automatic background step should not toast on
+// every repository switch; a failure still surfaces as a toast.
+func (a *app) fetchOnOpen() {
+	if !a.autoFetch || a.repo == nil || len(a.remotes) == 0 {
+		return
+	}
+	a.startFetch(a.t("fetchFailed"), "", a.autoFetchPrune)
+}
+
+// startFetch fetches every remote and lights the title bar's progress label.
+// Automatic and manual fetches share it, so both show the same feedback and
+// both restart the interval: a manual fetch moments after opening should not
+// be repeated by the timer. The attempt is recorded before it runs, so a
+// failure waits a full interval instead of retrying every tick.
+func (a *app) startFetch(label, success string, prune bool) {
+	if a.repo == nil || a.busy || a.loading || len(a.remotes) == 0 {
+		return
+	}
+	remotes := append([]gitrepo.Remote(nil), a.remotes...)
+	a.lastAutoFetch = time.Now()
+	a.fetching = true
+	a.performDone(label, success, func(error) {
+		a.fetching = false
+	}, func(ctx context.Context, repo *gitrepo.Repository) error {
+		for _, remote := range remotes {
+			var err error
+			if prune {
+				err = repo.FetchPrune(ctx, remote.Name)
+			} else {
+				err = repo.Fetch(ctx, remote.Name)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// watchAutoFetch posts a periodic check to the UI thread. The timer itself
+// touches no app state: the closure that decides whether to fetch runs on the
+// main thread, so the repository, busy flag and settings are read the same
+// way as every other UI read.
+func (a *app) watchAutoFetch() {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-ticker.C:
+			mygo.RunOnMain(func() { a.tickAutoFetch() })
+		}
+	}
+}
+
+// tickAutoFetch repeats the automatic fetch on the selected interval. It
+// shares fetchOnOpen's guards, so a busy app or a repository without remotes
+// simply waits for the next tick.
+func (a *app) tickAutoFetch() {
+	if !autoFetchDue(a.autoFetch, a.autoFetchEvery, a.lastAutoFetch, time.Now()) {
+		return
+	}
+	a.fetchOnOpen()
+}
+
+// autoFetchDue is the periodic fetch's clock: enabled, an interval above zero,
+// and at least that long since the last attempt. Keeping it separate makes the
+// timing testable without running a timer.
+func autoFetchDue(enabled bool, everyMinutes int, last, now time.Time) bool {
+	if !enabled || everyMinutes <= 0 {
+		return false
+	}
+	return now.Sub(last) >= time.Duration(everyMinutes)*time.Minute
+}
+
+func (a *app) fetchAll() {
+	if len(a.remotes) == 0 {
+		a.queue("warning", a.t("noRemote"), "")
+		a.invalidate()
+		return
+	}
+	a.startFetch(a.t("fetchFailed"), a.t("fetchSuccess"), false)
+}
+
+func (a *app) fetchPruneAll() {
+	if len(a.remotes) == 0 {
+		a.queue("warning", a.t("noRemote"), "")
+		a.invalidate()
+		return
+	}
+	a.startFetch(a.t("fetchPruneFailed"), a.t("fetchPruned"), true)
+}
+
+func (a *app) pullFF() {
+	if a.status.Upstream == "" {
+		a.queue("warning", a.t("noUpstream"), "")
+		a.invalidate()
+		return
+	}
+	a.performAs(busyPull, a.t("pullFailed"), a.t("pullSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
+		return repo.PullFF(ctx)
+	})
+}
+
+// openResetToUpstream resolves the current branch's upstream first, then
+// opens the same reset dialog a commit row uses, so the destructive modes and
+// their confirmation stay in one place.
+func (a *app) openResetToUpstream() {
+	if a.repo == nil {
+		return
+	}
+	if a.status.Upstream == "" {
+		a.queue("warning", a.t("noUpstream"), "")
+		a.invalidate()
+		return
+	}
+	repo, upstream := a.repo, a.status.Upstream
+	go func() {
+		sha, err := repo.ResolveRef(a.ctx, upstream)
+		mygo.RunOnMain(func() {
+			if a.repo != repo {
+				return
+			}
+			if err != nil {
+				a.queue("error", a.t("resetUpstreamFailed"), err.Error())
+				a.invalidate()
+				return
+			}
+			subject := upstream
+			for _, commit := range a.commits {
+				if commit.SHA == sha {
+					subject = commit.Subject
+					break
+				}
+			}
+			a.openResetDialog(gitrepo.Commit{SHA: sha, Subject: subject})
+		})
+	}()
+}
+
+// pushTarget names the remote and destination a push should use: the
+// upstream when there is one, otherwise the first remote and the branch name.
+func (a *app) pushTarget() (remote, destination string) {
+	remote, destination = a.remotes[0].Name, a.status.Branch
+	if upstream := a.status.Upstream; upstream != "" {
+		if i := strings.IndexByte(upstream, '/'); i > 0 {
+			remote, destination = upstream[:i], upstream[i+1:]
+		}
+	}
+	return remote, destination
+}
+
+// branchPushTarget resolves where a branch's Push action sends it: its
+// upstream when it tracks one, otherwise the first remote under its own name.
+func (a *app) branchPushTarget(branch gitrepo.Branch) (remote, destination string) {
+	if len(a.remotes) == 0 {
+		return "", ""
+	}
+	remote, destination = a.remotes[0].Name, branch.Name
+	if upstream := branch.Upstream; upstream != "" {
+		if i := strings.IndexByte(upstream, '/'); i > 0 {
+			remote, destination = upstream[:i], upstream[i+1:]
+		}
+	}
+	return remote, destination
+}
+
+// confirmPushBranch publishes a branch chosen in the branch list, which may
+// not be the checked-out one. The first push of a branch also records its
+// upstream so later pushes need no guessing.
+func (a *app) confirmPushBranch(branch gitrepo.Branch) {
+	remote, destination := a.branchPushTarget(branch)
+	if remote == "" {
+		a.queue("warning", a.t("noRemote"), "")
+		a.invalidate()
+		return
+	}
+	setUpstream := branch.Upstream == ""
+	a.askConfirm(a.t("pushDialogTitle"), a.tf("pushMessage", branch.Name, remote, destination), a.t("pushButton"),
+		false, func() {
+			a.performAs(busyPush, a.t("pushFailed"), a.t("pushSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
+				return repo.PushBranch(ctx, remote, branch.Name, destination, setUpstream)
+			})
+		})
+}
+
+func (a *app) confirmPush() {
+	branch := a.status.Branch
+	if branch == "" || len(a.remotes) == 0 {
+		a.queue("warning", a.t("noRemote"), "")
+		a.invalidate()
+		return
+	}
+	remote, destination := a.pushTarget()
+	setUpstream := a.status.Upstream == ""
+	a.askConfirm(a.t("pushDialogTitle"), a.tf("pushMessage", branch, remote, destination), a.t("pushButton"),
+		false, func() {
+			a.performAs(busyPush, a.t("pushFailed"), a.t("pushSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
+				return repo.Push(ctx, remote, branch, destination, setUpstream)
+			})
+		})
+}
+
+// confirmForcePush rewrites the remote branch with --force-with-lease. The
+// lease makes git refuse when the remote moved since the last fetch, so the
+// dialog can promise that commits pushed elsewhere are not discarded silently.
+func (a *app) confirmForcePush() {
+	branch := a.status.Branch
+	if branch == "" || len(a.remotes) == 0 {
+		a.queue("warning", a.t("noRemote"), "")
+		a.invalidate()
+		return
+	}
+	remote, destination := a.pushTarget()
+	a.askConfirm(a.t("forcePushTitle"), a.tf("forcePushMessage", branch, remote, destination),
+		a.t("forcePush"), true, func() {
+			a.performAs(busyForcePush, a.t("forcePushFailed"), a.t("forcePushSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
+				return repo.PushForce(ctx, remote, branch, destination)
+			})
+		})
+}
+
+func (a *app) chooseRepository() {
+	if a.window == nil {
+		return
+	}
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+		Parent:    a.window,
+		Title:     a.t("openRepo"),
+		Directory: true,
+	})
+	if err != nil {
+		a.queue("error", a.t("openFailed"), err.Error())
+		a.invalidate()
+		return
+	}
+	if len(paths) == 0 {
+		return
+	}
+	a.openRepository(paths[0], true)
+}
+
+func (a *app) setLocale(l locale) {
+	if a.locale == l {
+		return
+	}
+	a.locale = l
+	a.syncLocale()
+	a.retitleSettingsWindow()
+	a.persistSettings()
+	a.invalidate()
+}
+
+// syncLocale keeps MyGo and Lobe's built-in strings (toast dismiss labels,
+// empty-state text) in the same language as the app's own copy.
+func (a *app) syncLocale() {
+	tag := "zh-Hans"
+	if a.locale == localeEnglish {
+		tag = "en"
+	}
+	mygo.App.SetLocale(tag)
+}

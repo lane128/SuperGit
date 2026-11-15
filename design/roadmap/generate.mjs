@@ -1,0 +1,36 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {fileURLToPath} from 'node:url';
+import {tracks,settings,handoffs} from './catalog.mjs';
+import {W,H,light,rect,line,path,text,paragraph,svgDocument,esc,estimated} from './primitives.mjs';
+import {screen} from './screens.mjs';
+const root=fileURLToPath(new URL('./',import.meta.url));
+const frames=tracks.flatMap(t=>t.frames);
+const ids=new Set(frames.map(f=>f.id));
+assert.equal(frames.length,40);assert.equal(ids.size,40);assert.equal(settings.length,7);
+const edges=tracks.flatMap(t=>t.edges);
+for(const [a,b,label] of [...edges,...handoffs]){assert.ok(ids.has(a)&&ids.has(b),`Missing ${a} / ${b}`);assert.ok(label);}
+for(const dir of ['frames','sections'])await fs.mkdir(`${root}${dir}`,{recursive:true});
+const ink='#253044',muted='#566477',ground='#edf1f6',rule='#cad3df',flow='#697e96';
+const defs='<defs><marker id="flow-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#697e96"/></marker></defs>';
+function badge(x,y,label,w=152){return rect(x,y,w,28,'#e0e8f2','none',5)+text(x+12,y+19,label,12,ink,600,w-22);}
+function board(f,x,y){return `<g id="${f.id}" data-frame="${f.id}">`+text(x,y+27,`${f.id}  ${f.title}`,23,ink,600,806)+badge(x+871,y+4,f.stage==='R1'?'R1  能力已有':f.stage==='R2'?'R2  新增提案':'R3  后续提案',169)+`<svg x="${x}" y="${y+53}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" overflow="hidden">${screen(f)}</svg>`+text(x,y+781,f.capability,12,muted,600,W)+text(x,y+807,f.notes[0],15,ink,400,W)+text(x,y+833,f.notes[1],15,ink,400,W)+text(x,y+862,`关联状态待细化：${f.states.join(' / ')}`,12,muted,400,W)+'</g>';}
+function intro(width,title,subtitle){return rect(0,0,width,286,ground)+text(64,75,title,40,ink,650,width-128)+text(66,117,subtitle,19,muted,400,width-132)+line(65,147,width-65,147,rule)+badge(66,168,'R1  已有 Git 能力',183)+badge(266,168,'R2  仓库页签 / 语言 / 设置',291)+badge(574,168,'R3  交互式 Rebase / 外部工具',323)+text(66,226,'全部窗口均为待评审的新 UI。R1 表示对应 Git 能力已存在，不表示这些页面已在原生客户端落地。',16,ink,500,width-132)+text(66,255,'页面编号用于跳转；箭头标出实际触发。各窗口下方列出设计要点与仍需展开的关联状态。',15,muted,400,width-132);}
+function routes(track,centers,yBase,bottom){let s='';const local=track.edges.filter(([a,b])=>track.frames.some(f=>f.id===a)&&track.frames.some(f=>f.id===b));for(const [i,[from,to,label]] of local.entries()){const sx=centers.get(from)+i*7-14,ex=centers.get(to)+i*7-14,yy=yBase+i*30;const d=`M${sx} ${bottom}V${yy}H${ex}V${bottom-7}`;const reverse=ex<sx;s+=`<g data-edge-from="${from}" data-edge-to="${to}">`+path(d,flow,1.7,`marker-end="url(#flow-arrow)"${reverse?' stroke-dasharray="5 4"':''}`);const cap=`${from} → ${to}  ${label}`,tw=Math.min(Math.abs(ex-sx)-30,estimated(cap,13)+22),cx=(sx+ex)/2;s+=rect(cx-tw/2,yy-12,tw,23,ground,'none',4)+text(cx-tw/2+10,yy+4,cap,13,ink,500,tw-18)+'</g>';}
+ return s;}
+function handoffList(x,y,width){let s=text(x,y,'跨流程跳转',27,ink,600,width);const all=[...handoffs,...edges.filter(([a,b])=>a[0]!==b[0])];for(const [i,[a,b,label]] of all.entries()){const yy=y+42+i*35;s+=text(x,yy,`${a} → ${b}`,16,ink,600,160)+text(x+170,yy,label,16,muted,400,width-177);}return s;}
+const atlasWidth=5840,trackHeight=1224,atlasHeight=286+tracks.length*trackHeight+550;
+let atlas=defs+rect(0,0,atlasWidth,atlasHeight,ground)+intro(atlasWidth,'SuperGit 页面与状态路线图','仓库入口 → 日常修改 → 历史与引用 → 子模块 → 同步 → 整合 → 语言与设置');
+for(const [index,t] of tracks.entries()){const y=296+index*trackHeight;atlas+=line(66,y+3,atlasWidth-66,y+3,rule)+text(66,y+51,`${t.id}  ${t.name}`,31,ink,650,1300)+text(66,y+85,t.claim,18,muted,400,atlasWidth-132);const positions=t.frames.map((f,i)=>({f,x:66+i*1140,y:y+270}));const centers=new Map(positions.map(({f,x})=>[f.id,x+W/2]));atlas+=routes(t,centers,y+110,y+261);for(const {f,x,y:by}of positions)atlas+=board(f,x,by);}
+atlas+=handoffList(66,286+tracks.length*trackHeight+35,atlasWidth-132)+text(66,atlasHeight-58,'阶段表达实现依赖，不承诺发布日期。设计样例数据不对应真实仓库。建议先看全景，再打开 D / G / H 分区或逐页 PDF。',17,muted,400,atlasWidth-132);
+await fs.writeFile(`${root}roadmap.svg`,svgDocument(atlas,atlasWidth,atlasHeight,'SuperGit 页面状态路线图'));
+for(const t of tracks){const width=2320,height=3560;let s=defs+rect(0,0,width,height,ground)+intro(width,`${t.id}  ${t.name}`,t.claim);const centers=new Map(t.frames.map((f,i)=>[f.id,150+i*500])); // The compact transition key refers to the large boards below.
+ const keyCenters=new Map(t.frames.map((f,i)=>[f.id,248+i*456]));s+=routes(t,keyCenters,317,500);for(const [i,f]of t.frames.entries()){s+=rect(72+i*456,506,354,53,'#ffffff',rule,6)+text(88+i*456,528,f.id,13,ink,650,48)+text(128+i*456,528,f.title,13,ink,500,278)+text(88+i*456,548,`见下方 ${f.id} 画板`,11,muted,400,315);}
+ for(const [i,f]of t.frames.entries())s+=board(f,66+(i%2)*1140,616+Math.floor(i/2)*966);
+ s+=text(1206,2630,'跨区入口 / 出口',23,ink,600,1040);const crossing=[...handoffs,...edges.filter(([a,b])=>a[0]!==b[0])].filter(([a,b])=>a[0]===t.id||b[0]===t.id);crossing.forEach(([a,b,label],i)=>{s+=text(1206,2676+i*52,`${a} → ${b}   ${label}`,16,muted,500,1040);});if(!crossing.length)s+=text(1206,2680,'本组通过上方状态箭头导航。',16,muted,400,1040);
+ await fs.writeFile(`${root}sections/${t.id}.svg`,svgDocument(s,width,height,`SuperGit ${t.name}`));}
+for(const f of frames){await fs.writeFile(`${root}frames/${f.id}.svg`,svgDocument(screen(f),W,H,`${f.id} ${f.title}`));await fs.writeFile(`${root}frames/${f.id}-annotated.svg`,svgDocument(rect(0,0,1168,1020,ground)+board(f,64,55),1168,1020,`${f.id} ${f.title}与说明`));}
+let inventory=rect(0,0,1600,2280,ground)+text(64,88,'软件设置与界面设置',36,ink,650,1460)+paragraph(66,134,'应用偏好即时预览并保存；Git 配置显示来源和写入范围，填写后明确保存。\n这是一份设置设计清单，除注明的现有能力外均为新增提案。',1460,17,muted,28,3);settings.forEach((setting,i)=>{const y=246+i*266;inventory+=line(65,y-30,1535,y-30,rule)+text(66,y,setting.group,26,ink,600,690)+text(66,y+37,`范围：${setting.scope}   ·   ${setting.stage}`,15,muted,500,1466)+paragraph(66,y+79,setting.options,1455,19,ink,31,3)+paragraph(66,y+180,setting.status,1455,15,muted,25,2);});inventory+=text(66,2214,'语言：跟随系统 / 简体中文 / English。界面本地化；路径、分支、SHA、提交原文与原始 Git 输出保持原样。',17,ink,500,1466);await fs.writeFile(`${root}settings-inventory.svg`,svgDocument(inventory,1600,2280,'SuperGit 设置清单'));
+const manifest={title:'SuperGit 页面与状态路线图',version:1,date:'2026-11-11',scope:'本地静态设计稿，未应用到原生客户端；不承诺发布日期。',dimensions:{overview:[atlasWidth,atlasHeight],section:[2320,3560],screen:[W,H]},stages:{R1:'底层 Git 能力已有，新 UI 待落地',R2:'仓库页签、多语言和完整设置提案',R3:'交互式 Rebase、外部工具后续提案'},tracks,settings,handoffs,outputs:{overview:'roadmap.svg',pdf:'roadmap.pdf',settings:'settings-inventory.svg',sections:tracks.map(t=>`sections/${t.id}.svg`),frames:frames.map(f=>`frames/${f.id}.svg`)}};
+await fs.writeFile(`${root}manifest.json`,JSON.stringify(manifest,null,2)+'\n');
+console.log(`PASS generated ${frames.length} desktop boards, ${tracks.length} sections, ${edges.length+handoffs.length} labeled transitions, ${settings.length} settings categories`);

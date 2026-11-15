@@ -1,0 +1,33 @@
+{
+  "frames": [
+    {
+      "id": "A-workspace",
+      "textCount": 131
+    },
+    {
+      "id": "A-history",
+      "textCount": 108
+    },
+    {
+      "id": "B-workspace",
+      "textCount": 117
+    },
+    {
+      "id": "B-history",
+      "textCount": 96
+    },
+    {
+      "id": "C-workspace",
+      "textCount": 158
+    },
+    {
+      "id": "C-history",
+      "textCount": 110
+    }
+  ],
+  "overflows": [],
+  "collisions": [],
+  "missing": [],
+  "truncated": [],
+  "errors": []
+}

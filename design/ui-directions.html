@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SuperGit 界面探索</title>
+<link rel="stylesheet" href="directions/styles.css">
+</head>
+<body>
+<div class="design-page">
+  <header class="design-bar">
+    <div class="design-brand"><span class="design-symbol" aria-hidden="true">s<span>g</span></span><div><strong>SuperGit</strong><span>界面方向探索</span></div></div>
+    <nav class="direction-picker" aria-label="设计方向">
+      <button type="button" data-direction="alloy" aria-pressed="true"><span>A</span> 铂金</button>
+      <button type="button" data-direction="night" aria-pressed="false"><span>B</span> 夜航</button>
+      <button type="button" data-direction="loom" aria-pressed="false"><span>C</span> 织线</button>
+    </nav>
+    <div class="prototype-note"><span class="sample-dot"></span>交互设计稿<span class="wide-only"> / 示例数据</span></div>
+  </header>
+  <main id="prototype" class="desktop alloy" aria-label="SuperGit 交互设计稿"></main>
+  <footer class="design-notes" aria-live="polite">
+    <div><span class="note-caption">设计取向</span><h1 id="direction-title">铂金，把工具做得安静。</h1><p id="direction-summary"></p></div>
+    <div class="note-detail"><span class="note-caption">布局与手感</span><p id="direction-layout"></p></div>
+    <div class="note-detail"><span class="note-caption">可以试试</span><p>点击提交或文件，切换左右 Diff；打开工作区，暂存一段改动；进入子模块，核对三个版本指针。</p></div>
+  </footer>
+</div>
+<div id="toast" class="prototype-toast" role="status" hidden></div>
+<dialog id="operation-dialog" aria-labelledby="dialog-title"><form method="dialog"><div class="dialog-mark" id="dialog-mark"></div><h2 id="dialog-title"></h2><p id="dialog-copy"></p><div class="dialog-info" id="dialog-info"></div><div class="dialog-actions"><button value="cancel">取消</button><button id="dialog-confirm" value="confirm" class="dialog-primary">预览结果</button></div></form></dialog>
+<script src="directions/app.js"></script>
+</body>
+</html>
