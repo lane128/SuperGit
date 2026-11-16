@@ -1,10 +1,10 @@
 package lobedesk
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -24,44 +24,85 @@ import (
 // minimum at the smallest window instead of falling back to an even split.
 const (
 	historySplitDefault   float32 = 0.45
-	historySplitMinList   float32 = 300
-	historySplitMinDetail float32 = 480
+	historySplitMinList   float32 = 260
+	historySplitMinDetail float32 = 487
 )
 
-// loadMoreHistory appends the next page of the pinned history traversal.
-// The page size matches the first load, and a reload restarts from the same
-// depth so the list the user was reading does not collapse to 200 rows.
+// loadMoreHistory advances the immutable traversal one bounded page at a time.
+// Each completion schedules the next page; rendering never starts a read.
 func (a *app) loadMoreHistory() {
-	if a.repo == nil || a.loading || a.historyLoadingMore || a.historyReloading || a.historyErr != "" || !a.historyMore {
+	if a.repo == nil || a.loading || a.historyLoadingMore || a.historyReloading || a.historyErr != "" || a.historyPageErr != "" || a.historyPaused || a.fileFilter != "" || !a.historyMore {
 		return
 	}
-	repo, tips, offset, seq := a.repo, a.historyTips, len(a.commits), a.loadSeq
+	ctx := a.historyTraversalContext()
+	repo, tips, offset, seq := a.repo, append([]string(nil), a.historyTips...), len(a.commits), a.loadSeq
 	reload := a.historyReload
 	a.historyLoadingMore = true
 	a.invalidate()
 	go func() {
-		page, err := repo.HistoryPage(a.ctx, tips, offset, 200)
-		mygo.RunOnMain(func() {
-			if a.historyPageStale(seq, repo, reload) {
+		page, err := repo.HistoryPage(ctx, tips, offset, 200)
+		a.hopToMain(func() {
+			if a.historyPageStale(seq, repo, reload) || a.fileFilter != "" {
 				return
 			}
 			a.historyLoadingMore = false
 			if err != nil {
-				a.queue("error", a.t("historyLoadFailed"), err.Error())
+				// Partial results remain browsable. HasMore stays true so an
+				// interrupted read cannot be mistaken for the traversal's end.
+				a.historyPageErr = err.Error()
 				a.invalidate()
 				return
 			}
 			a.commits = append(a.commits, page.Commits...)
 			a.historyTips = page.Tips
 			a.historyMore = page.HasMore
+			if !a.historyMore {
+				previous := a.selectedSHA
+				a.reconcileSelection()
+				a.refreshSelectedCommit = gitrepo.Commit{}
+				if a.selectedSHA != previous && a.selectedSHA != "" {
+					a.loadCommitDetail(true)
+				}
+			}
 			if sha := a.pendingJumpSHA; sha != "" {
 				a.pendingJumpSHA = ""
 				a.jumpToCommit(sha)
-				return
 			}
 			a.invalidate()
+			a.loadMoreHistory()
 		})
 	}()
+}
+
+func (a *app) historyTraversalContext() context.Context {
+	if a.historyReadCtx == nil {
+		parent := a.ctx
+		if parent == nil {
+			parent = context.Background()
+		}
+		a.historyReadCtx, a.historyReadCancel = context.WithCancel(parent)
+	}
+	return a.historyReadCtx
+}
+
+// resetHistoryTraversal cancels workers as well as rejecting their callbacks.
+// Loaded rows and pinned tips remain available until their replacement arrives.
+func (a *app) resetHistoryTraversal() {
+	if a.historyReadCancel != nil {
+		a.historyReadCancel()
+	}
+	a.historyReadCtx, a.historyReadCancel = nil, nil
+	a.historyReload++
+	a.historyLoadingMore = false
+	a.historyPaused = false
+	a.historyPageErr = ""
+}
+
+func (a *app) pauseHistoryTraversal() {
+	a.resetHistoryTraversal()
+	a.historyPaused = true
+	a.pendingJumpSHA = ""
+	a.invalidate()
 }
 
 // historyPageStale reports whether a page that came back from the repository
@@ -128,6 +169,8 @@ func (a *app) jumpToCommit(sha string) {
 		a.fileFilter = ""
 		a.fileCommits = nil
 		a.fileHistoryErr = ""
+		a.resetHistoryTraversal()
+		a.loadMoreHistory()
 	}
 	if find(a.historySource()) {
 		a.pendingJumpSHA = ""
@@ -150,19 +193,25 @@ func (a *app) jumpToCommit(sha string) {
 	a.loadMoreHistory()
 }
 
-// loadMoreHistoryRow is the list's footer: one quiet button, shown only while
-// older commits remain. The list also asks for the next page when keyboard
-// selection reaches its end, so scrolling with arrows keeps going.
-func (a *app) loadMoreHistoryRow(c *ui.Context) {
-	label := a.t("loadMoreHistory")
-	if a.historyLoadingMore {
-		label = a.t("loadingMoreHistory")
-	}
-	ui.Row(c).FillWidth().Padding(10).Justify(ui.Center).Children(func() {
-		button := action.Button(c, label, action.ButtonProps{Variant: action.Text, Size: theme.Small})
-		button.Disabled(a.historyLoadingMore || a.busy || a.loading)
-		if button.Clicked() {
-			a.loadMoreHistory()
+// historyReadStatus distinguishes a pending, paused or failed partial traversal.
+func (a *app) historyReadStatus(c *ui.Context) {
+	ui.Column(c).FillWidth().Padding(10).Gap(4).Children(func() {
+		label := a.t("loadingMoreHistory")
+		if a.historyPaused {
+			label = a.t("historyReadPaused")
+		} else if a.historyPageErr != "" {
+			label = a.t("historyLoadFailed") + ": " + a.historyPageErr
+		}
+		display.Text(c, label, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 3})
+		if a.historyLoadingMore {
+			if action.Button(c, a.t("cancel"), action.ButtonProps{Variant: action.Text, Size: theme.Small}).Clicked() {
+				a.pauseHistoryTraversal()
+			}
+		} else if a.historyPaused || a.historyPageErr != "" {
+			if action.Button(c, a.t("retry"), action.ButtonProps{Variant: action.Text, Size: theme.Small}).Disabled(a.loading).Clicked() {
+				a.resetHistoryTraversal()
+				a.loadMoreHistory()
+			}
 		}
 	})
 }
@@ -186,7 +235,13 @@ func (a *app) historyPage(c *ui.Context) {
 	// first match, so the details never show a row the list no longer has,
 	// as the branches page does. The working tree's row is not part of the
 	// search results and keeps the selection while it is chosen.
-	if !a.worktreeSelected {
+	more := a.historyMore
+	if a.fileFilter != "" {
+		more = a.fileHistoryMore
+	}
+	// Missing from a replacement page does not mean hidden by the search.
+	// Reconcile only once the selected row is loaded or the walk is complete.
+	if !a.worktreeSelected && (a.selectedSHA == "" || a.hasSelectedIn(source) || !more) {
 		if sha := historySelection(commits, a.selectedSHA); sha != "" && sha != a.selectedSHA {
 			a.selectCommit(sha)
 		}
@@ -255,7 +310,7 @@ func (a *app) historyDetailsToggle(c *ui.Context) {
 	}
 	button := action.ActionIcon(c, icon, action.ActionIconProps{Size: theme.Small, Title: title})
 	if button.Clicked() {
-		a.historyDetailsHidden = !a.historyDetailsHidden
+		a.setHistoryDetailsHidden(!a.historyDetailsHidden)
 		a.persistSettings()
 		a.invalidate()
 	}
@@ -282,12 +337,14 @@ const (
 func (a *app) historyListState(rows int) historyListState {
 	source := a.historySource()
 	switch {
-	case a.historyErr != "" || a.fileHistoryErr != "":
+	case a.fileFilter == "" && a.historyErr != "" || a.fileHistoryErr != "" && len(source) == 0:
 		return historyListError
 	case a.historyReloading:
 		return historyListReloading
-	case a.fileHistoryLoading:
+	case a.fileHistoryLoading && len(source) == 0:
 		return historyListFileLoading
+	case a.fileHistoryPaused && len(source) == 0:
+		return historyListRows // The footer describes the interrupted read.
 	case len(source) == 0 && a.fileFilter != "":
 		return historyListNoFileHistory
 	case len(source) == 0:
@@ -315,9 +372,6 @@ func (a *app) commitList(c *ui.Context) {
 			if a.historyErr != "" {
 				a.failedWithRetry(c, a.historyErr, 12)
 			}
-			if a.fileHistoryErr != "" {
-				a.failedWithRetry(c, a.fileHistoryErr, 12)
-			}
 			a.historyGraph = nil
 			state := a.historyListState(len(commits))
 			// With the graph hidden nothing points at a lane, so the list
@@ -328,12 +382,16 @@ func (a *app) commitList(c *ui.Context) {
 			var graph *commitGraph
 			if state == historyListRows && a.showGraph {
 				graph = newCommitGraph(commits, a.lanePalette(tk))
+				if link, ok := a.worktreeGraphConnection(commits, graph); ok {
+					graph.Worktree = &link
+					graph.Width += worktreeGraphGutter
+				}
 				if width := a.commitListWidth(); width > 0 {
 					// The graph keeps a quarter of the list: at 980 the column
 					// is under 310 wide, and eight lanes at their natural 32
 					// points would take almost all of it. Lanes pack closer
 					// before they push the subject out.
-					graph.FitWidth(max(80, width*0.26))
+					graph.FitWidth(width * 0.26)
 				}
 				// The details pane, built after this list in the same frame,
 				// reads the same graph so its badges match.
@@ -366,23 +424,34 @@ func (a *app) commitList(c *ui.Context) {
 					} else if state == historyListNoMatch {
 						a.diffPlaceholder(c, lucide.SearchSlash(), a.t("searchNoMatch"))
 					} else {
-						layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.historyScroll}, func() {
+						scroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.historyScroll}, func() {
 							// No gap between rows: the lane lines are drawn row by row,
 							// and a gap would cut them into dashes.
 							ui.Column(c).FillWidth().Padding(6).Gap(0).Children(func() {
+								heights := make([]float32, len(commits))
+								reveal := -1
 								for i := range commits {
-									a.commitRow(c, commits[i], i, 1, len(commits)+1, graph)
+									heights[i] = a.historyRowHeight()
+									if a.revealSelection && commits[i].SHA == a.selectedSHA {
+										reveal = i
+									}
 								}
+								virtualPatchRows(c, a.historyViewport, &a.historyScroll, heights, reveal, func(rowContext *ui.Context, i int) {
+									a.commitRow(rowContext.Key(commits[i].SHA), commits[i], i, 1, len(commits)+1, graph)
+								})
 							})
 						}).Grow(1).Basis(0).MinHeight(0)
+						a.historyViewport = scroll.Bounds()
 					}
 				})
 			}
-			// The footer sits outside the scroll area: at the end of a long
-			// list the scroll range can stop with the last row half clipped,
-			// which left the button below the reachable offset.
+			// Keep progress, cancellation and retry outside the scroll area
+			// so they remain reachable throughout a partial traversal.
 			if a.fileFilter == "" && a.historyMore && a.historyErr == "" {
-				a.loadMoreHistoryRow(c)
+				a.historyReadStatus(c)
+			}
+			if a.fileFilter != "" && (a.fileHistoryLoading || a.fileHistoryPaused || a.fileHistoryErr != "") {
+				a.fileHistoryReadStatus(c)
 			}
 		})
 	})
@@ -413,26 +482,40 @@ func (a *app) showFileHistory(path string) {
 // file's rows and its error go with the old filter: keeping them would draw
 // another file's commits under this file's header until the walk returns.
 func (a *app) switchFileHistory(path string) {
+	a.pauseHistoryTraversal()
 	a.fileFilter = path
 	a.fileCommits = nil
 	a.fileHistoryErr = ""
 	a.resetFileHistory()
+	a.fileHistoryTips = nil
+	a.fileHistoryMore = true
 	a.loadFileHistory()
 }
 
 func (a *app) loadFileHistory() {
-	if a.repo == nil || a.fileFilter == "" {
+	if a.repo == nil || a.fileFilter == "" || a.loading || a.fileHistoryLoading || a.fileHistoryPaused || a.fileHistoryErr != "" || a.fileHistoryTips != nil && !a.fileHistoryMore {
 		return
 	}
-	a.fileHistorySeq++
-	seq := a.fileHistorySeq
-	repo, path := a.repo, a.fileFilter
+	if a.fileHistoryCtx == nil {
+		parent := a.ctx
+		if parent == nil {
+			parent = context.Background()
+		}
+		a.fileHistoryCtx, a.fileHistoryCancel = context.WithCancel(parent)
+	}
+	seq, generation := a.fileHistorySeq, a.loadSeq
+	repo, path, ctx := a.repo, a.fileFilter, a.fileHistoryCtx
+	tips := a.fileHistoryTips
+	if tips != nil {
+		tips = append([]string{}, tips...)
+	}
+	offset := len(a.fileCommits)
 	a.fileHistoryLoading = true
-	a.fileHistoryErr = ""
+	a.invalidate()
 	go func() {
-		commits, err := repo.FileHistory(a.ctx, path, 200)
-		mygo.RunOnMain(func() {
-			if seq != a.fileHistorySeq || a.fileFilter != path {
+		page, err := repo.FileHistoryPage(ctx, path, tips, offset, 200)
+		a.hopToMain(func() {
+			if seq != a.fileHistorySeq || generation != a.loadSeq || a.repo != repo || a.fileFilter != path {
 				return
 			}
 			a.fileHistoryLoading = false
@@ -441,9 +524,12 @@ func (a *app) loadFileHistory() {
 				a.invalidate()
 				return
 			}
-			a.fileCommits = commits
-			if len(commits) > 0 {
-				a.selectCommit(commits[0].SHA)
+			a.fileCommits = append(a.fileCommits, page.Commits...)
+			a.fileHistoryTips, a.fileHistoryMore = page.Tips, page.HasMore
+			if len(a.fileCommits) > 0 {
+				if a.selectedSHA == "" || !page.HasMore && !a.hasSelectedIn(a.fileCommits) {
+					a.selectCommit(a.fileCommits[0].SHA)
+				}
 			} else {
 				a.setSelectedCommit("")
 				a.commitFiles = nil
@@ -451,18 +537,50 @@ func (a *app) loadFileHistory() {
 				a.resetCommitDiff()
 			}
 			a.invalidate()
+			a.loadFileHistory()
 		})
 	}()
 }
 
-// resetFileHistory abandons a file-history load in flight. The loading flag is
-// cleared by the load's own callback, but that callback only runs while its
-// sequence still matches; a load thrown away early -- by clearing the filter or
-// opening another repository -- has to be forgotten here, or the history list
-// keeps showing its loading placeholder with nothing left to finish it.
+// resetFileHistory cancels workers and rejects queued completions. Retain the
+// cursor and partial rows so a paused traversal can resume from its pinned HEAD.
 func (a *app) resetFileHistory() {
+	if a.fileHistoryCancel != nil {
+		a.fileHistoryCancel()
+	}
+	a.fileHistoryCtx, a.fileHistoryCancel = nil, nil
 	a.fileHistorySeq++
 	a.fileHistoryLoading = false
+	a.fileHistoryPaused = false
+}
+
+func (a *app) pauseFileHistory() {
+	a.resetFileHistory()
+	a.fileHistoryPaused = true
+	a.invalidate()
+}
+
+func (a *app) fileHistoryReadStatus(c *ui.Context) {
+	ui.Column(c).FillWidth().Padding(10).Gap(4).Children(func() {
+		label := a.t("loadingMoreHistory")
+		if a.fileHistoryPaused {
+			label = a.t("historyReadPaused")
+		} else if a.fileHistoryErr != "" {
+			label = a.t("historyLoadFailed") + ": " + a.fileHistoryErr
+		}
+		display.Text(c, label, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 3})
+		if a.fileHistoryLoading {
+			if action.Button(c, a.t("cancel"), action.ButtonProps{Variant: action.Text, Size: theme.Small}).Clicked() {
+				a.pauseFileHistory()
+			}
+		} else if a.fileHistoryPaused || a.fileHistoryErr != "" {
+			if action.Button(c, a.t("retry"), action.ButtonProps{Variant: action.Text, Size: theme.Small}).Disabled(a.loading).Clicked() {
+				a.resetFileHistory()
+				a.fileHistoryErr = ""
+				a.loadFileHistory()
+			}
+		}
+	})
 }
 
 func (a *app) clearFileFilter() {
@@ -483,6 +601,8 @@ func (a *app) clearFileFilter() {
 	if len(a.commits) > 0 {
 		a.selectCommit(a.commits[0].SHA)
 	}
+	a.resetHistoryTraversal()
+	a.loadMoreHistory()
 	a.invalidate()
 }
 
@@ -612,7 +732,13 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 					return
 				}
 				center := r.Y + r.H/2
-				x0 := int(r.X)
+				x0 := int(r.X + graph.worktreeGutter())
+				if graph.Worktree != nil {
+					sourceY := a.worktreeGraphBounds.Y + a.worktreeGraphBounds.H/2
+					points := graph.Worktree.rowPoints(graph, index, r, sourceY)
+					line, _ := a.graphStyle()
+					strokeWorktreeDash(p, points, line, graphInk(tk, graph.LaneColor(graph.Worktree.Color)))
+				}
 				gap := graph.LaneGap()
 				rowTop, rowBottom := r.Y, r.Y+r.H
 				graphRow := graph.Rows[index]
@@ -759,8 +885,8 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 
 // worktreeRow is the list's first row: the working tree itself. Sublime Merge
 // keeps it above the commits so the changes a new commit would take are one
-// row from the history they would extend. The graph column stays empty: the
-// working tree is not on a lane.
+// row from the history they would extend. Dirty worktrees use a temporary
+// dashed lane; real commits and their graph rows remain unchanged.
 func (a *app) historyWorktreeRow(c *ui.Context, index, total int) {
 	tk := theme.TokensOf(c)
 	selected := a.worktreeSelected
@@ -779,14 +905,23 @@ func (a *app) historyWorktreeRow(c *ui.Context, index, total int) {
 	}
 	a.revealIfSelected(row, selected)
 	row.Children(func() {
-		// The empty box keeps the titles aligned with the commits' subjects;
-		// nothing is drawn in it, so the row does not claim a lane.
 		if a.showGraph {
 			width := float32(24)
 			if a.historyGraph != nil && a.historyGraph.Width > width {
 				width = a.historyGraph.Width
 			}
-			ui.Box(c).Width(width).Height(rowHeight).Shrink(0)
+			lane := ui.Box(c).Width(width).Height(rowHeight).Shrink(0)
+			link, dirty := a.worktreeGraphConnection(nil, nil)
+			if a.historyGraph != nil && a.historyGraph.Worktree != nil {
+				link = *a.historyGraph.Worktree
+			}
+			if dirty {
+				if link.HasHead {
+					lane.Tooltip(a.t("worktreeBasedOnHead"))
+					row.Description(a.t("worktreeBasedOnHead"))
+				}
+				lane.Draw(func(p *ui.Painter, r ui.Rect) { a.drawWorktreeNode(p, r, tk, link) })
+			}
 		}
 		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(4).Children(func() {
 			display.Text(c, title, display.TextProps{FontSize: scaledFont(12), Strong: selected, Rows: 1})
@@ -868,28 +1003,52 @@ func (a *app) commitFileList(c *ui.Context) {
 		listEmptyState(c, lucide.FileDiff(), tk.TextTertiary, a.t("noCommitFiles"), "")
 		return
 	}
-	ui.Column(c).FillWidth().Gap(fileRowGap).Role(ui.RoleList).Children(func() {
-		for i, file := range a.commitFiles {
-			selected := a.commitPath == file.Path
-			// The row is named by its path; the tooltip gives it in full when
-			// the pane clips the name and folder.
-			row := fileRowShell(c, tk, file.Path, selected).
-				PositionInSet(i+1, len(a.commitFiles)).Tooltip(file.Path)
-			row.Children(func() {
-				code := changedFileCode(file.Status)
-				a.statusTag(c, code, display.TagProps{
-					Variant: display.TagFilled,
-					Color:   display.TagColor(changedFileColor(file.Status)),
-					Size:    theme.Small,
-					Round:   true,
-				})
-				fileRowPath(c, row, file.Path, file.OriginalPath, selected)
-			})
-			a.fileDetailMenu(c, row, file.Path)
-			if row.Clicked() {
-				a.selectCommitFile(file.Path)
-			}
+	heights := make([]float32, len(a.commitFiles))
+	reveal, remembered := -1, -1
+	for i, file := range a.commitFiles {
+		heights[i] = fileRowHeight() + fileRowGap
+		if a.detailFileRemembered != nil && a.detailFileRememberedContext == a.currentDetailContext() && a.detailFileRemembered.Path == file.Path {
+			remembered = i
 		}
+		if a.detailFileFocus != nil && a.detailFileFocusContext == a.currentDetailContext() && a.detailFileFocus.Path == file.Path {
+			reveal = i
+		}
+	}
+	ui.Column(c).FillWidth().Role(ui.RoleList).Children(func() {
+		virtualPatchRows(c, a.commitFilesViewport, &a.commitFilesScroll, heights, reveal, func(rowContext *ui.Context, i int) {
+			file := a.commitFiles[i]
+			ui.Column(rowContext).FillWidth().Height(heights[i]).Shrink(0).Children(func() {
+				selected := a.detailTabShown() == detailTabFile && a.detailTabs().Active.File.Path == file.Path
+				// The original position and full raw path survive virtualization.
+				row := fileRowShell(rowContext, tk, file.Path, selected).
+					PositionInSet(i+1, len(a.commitFiles)).Tooltip(file.Path)
+				a.wireHistoryFileKeys(row, detailFileKey{Path: file.Path})
+				wasFocused := ui.Local(row, "file-was-focused", func() bool { return false })
+				if row.Focused() {
+					key := detailFileKey{Path: file.Path}
+					a.detailFileRemembered = &key
+					a.detailFileRememberedContext = a.currentDetailContext()
+					if !*wasFocused {
+						row.ScrollIntoView()
+					}
+				}
+				*wasFocused = row.Focused()
+				row.Children(func() {
+					code := changedFileCode(file.Status)
+					a.statusTag(rowContext, code, display.TagProps{
+						Variant: display.TagFilled,
+						Color:   display.TagColor(changedFileColor(file.Status)),
+						Size:    theme.Small,
+						Round:   true,
+					})
+					fileRowPath(rowContext, row, file.Path, file.OriginalPath, selected)
+				})
+				a.fileDetailMenu(rowContext, row, file.Path)
+				if row.Clicked() {
+					a.selectCommitFile(file.Path)
+				}
+			})
+		}, remembered)
 	})
 }
 
@@ -953,20 +1112,63 @@ func (a *app) commitDiffView(c *ui.Context) {
 		// rows selects the code as text and Cmd+C copies it. Rows stay plain
 		// for that reason: text inside a button is not selectable.
 		ui.Column(c).Width(width).AlignSelf(ui.Start).Selectable().Children(func() {
-			for _, sec := range a.commitSections {
-				a.commitDiffFileHeader(c, sec, width)
+			sections := a.visibleCommitSections()
+			sectionHeights := make([]float32, len(sections))
+			revealSection, pressedSection := -1, -1
+			for at, sec := range sections {
+				sectionHeights[at] = diffFileHeaderH
 				if a.commitCollapsed[sec.Path] {
 					continue
 				}
 				for _, index := range sec.Rows {
-					line := a.commitDiff.Lines[index]
-					if line.Kind == "hunk" {
-						a.commitHunkLine(c, line, width)
-						continue
+					if a.commitDragHeld && a.commitPressIndex == index {
+						pressedSection = at
 					}
-					a.commitDiffLine(c, line, sec.Path, width, index)
+					height := diffRowH
+					if a.commitDiff.Lines[index].Kind == "hunk" {
+						height = diffHunkH
+					}
+					sectionHeights[at] += height
+					if a.commitReveal && a.commitCursor == index {
+						revealSection = at
+					}
 				}
 			}
+			scroll := &a.commitDiffScroll
+			if a.detailTabs().Active.Summary {
+				scroll = &a.commitInfoScroll
+			}
+			virtualPatchRows(c, a.commitDiffViewport, scroll, sectionHeights, revealSection, func(section *ui.Context, at int) {
+				sec := sections[at]
+				sectionContext := section.Key(sec.Start)
+				a.commitDiffFileHeader(sectionContext, sec, width)
+				if a.commitCollapsed[sec.Path] {
+					return
+				}
+				heights := make([]float32, len(sec.Rows))
+				reveal, pressed := -1, -1
+				for row, index := range sec.Rows {
+					if a.commitDragHeld && a.commitPressIndex == index {
+						pressed = row
+					}
+					heights[row] = diffRowH
+					if a.commitDiff.Lines[index].Kind == "hunk" {
+						heights[row] = diffHunkH
+					}
+					if a.commitReveal && a.commitCursor == index {
+						reveal = row
+					}
+				}
+				virtualPatchRows(sectionContext, a.commitDiffViewport, scroll, heights, reveal, func(row *ui.Context, at int) {
+					index := sec.Rows[at]
+					line := a.commitDiff.Lines[index]
+					if line.Kind == "hunk" {
+						a.commitHunkLine(row, line, width)
+						return
+					}
+					a.commitDiffLine(row, line, sec.Path, width, index)
+				}, pressed)
+			}, pressedSection)
 		})
 	}).FillWidth().Height(a.commitDiffHeight()).Shrink(0)
 }
@@ -1117,7 +1319,7 @@ func (a *app) commitDiffLine(c *ui.Context, line gitrepo.DiffLine, path string, 
 			overlay.MenuItem{Key: "blame", Label: a.blameMenuLabel(path), Icon: lucide.FileSearch(), Disabled: a.commitBlameDisabled(path)},
 		)
 	}
-	if len(commitLineIndexes(a.commitDiff)) > 1 {
+	if len(a.commitLineIndices()) > 1 {
 		items = append(items,
 			overlay.MenuItem{Divider: true},
 			overlay.MenuItem{Key: "select-all", Label: a.t("selectAllLines"), Icon: lucide.ListChecks()},
@@ -1136,7 +1338,7 @@ func (a *app) commitDiffLine(c *ui.Context, line gitrepo.DiffLine, path string, 
 	case "copy-path":
 		a.copyText(path)
 	case "select-all":
-		a.selectCommitLines(commitLineIndexes(a.commitDiff))
+		a.selectCommitLines(a.commitLineIndices())
 	case "invert":
 		a.invertCommitLines()
 	case "history":
@@ -1175,9 +1377,8 @@ func (a *app) clickCommitLine(index int, mods ui.Modifiers) {
 			lo, hi = hi, lo
 		}
 		next := make(map[int]bool, hi-lo+1)
-		for i := lo; i <= hi; i++ {
-			switch a.commitDiff.Lines[i].Kind {
-			case "add", "del", "context":
+		for _, i := range a.commitLineIndices() {
+			if i >= lo && i <= hi {
 				next[i] = true
 			}
 		}
@@ -1228,7 +1429,6 @@ func (a *app) clearCommitSelection() {
 // showing it again restores the selection.
 func (a *app) commitDiffShown() bool {
 	return !a.historyDetailsHidden && !a.detailsDiffHidden && !a.worktreeSelected &&
-		a.detailTabShown() == detailTabFile &&
 		!a.commitDiffLoading && a.commitDiffErr == "" && len(a.commitDiff.Lines) > 0
 }
 
@@ -1293,9 +1493,14 @@ func commitSelectable(kind string) bool {
 // keyboard walks and a drag extends over.
 func (a *app) commitLineIndices() []int {
 	var out []int
-	for i, line := range a.commitDiff.Lines {
-		if commitSelectable(line.Kind) {
-			out = append(out, i)
+	for _, sec := range a.visibleCommitSections() {
+		if a.commitCollapsed[sec.Path] {
+			continue
+		}
+		for _, index := range sec.Rows {
+			if index >= 0 && index < len(a.commitDiff.Lines) && commitSelectable(a.commitDiff.Lines[index].Kind) {
+				out = append(out, index)
+			}
 		}
 	}
 	return out
@@ -1412,7 +1617,11 @@ func (a *app) beginCommitDrag() {
 // without pointer moves nothing else would rebuild.
 func (a *app) autoScrollCommitDrag(c *ui.Context, body ui.Element, py float32) {
 	vp := a.commitDiffViewport
-	if vp.H <= 0 || a.commitDiffScroll.MaxY <= 0 {
+	scroll := &a.commitDiffScroll
+	if a.detailTabs().Active.Summary {
+		scroll = &a.commitInfoScroll
+	}
+	if vp.H <= 0 || scroll.MaxY <= 0 {
 		return
 	}
 	pointerY := body.Bounds().Y + py
@@ -1420,17 +1629,17 @@ func (a *app) autoScrollCommitDrag(c *ui.Context, body ui.Element, py float32) {
 	if step == 0 {
 		return
 	}
-	next := a.commitDiffScroll.Y + step
+	next := scroll.Y + step
 	if next < 0 {
 		next = 0
 	}
-	if next > a.commitDiffScroll.MaxY {
-		next = a.commitDiffScroll.MaxY
+	if next > scroll.MaxY {
+		next = scroll.MaxY
 	}
-	if next == a.commitDiffScroll.Y {
+	if next == scroll.Y {
 		return
 	}
-	a.commitDiffScroll.Y = next
+	scroll.Y = next
 	c.AnimationFrame()
 }
 
@@ -1450,8 +1659,8 @@ func (a *app) dragToCommitLine(index int) {
 		lo, hi = hi, lo
 	}
 	next := make(map[int]bool, hi-lo+1)
-	for i := lo; i <= hi; i++ {
-		if commitSelectable(a.commitDiff.Lines[i].Kind) {
+	for _, i := range a.commitLineIndices() {
+		if i >= lo && i <= hi {
 			next[i] = true
 		}
 	}

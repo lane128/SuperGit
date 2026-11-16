@@ -8,7 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
-	"github.com/lobehub/lobe-mygo/pkg/feedback"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/overlay"
@@ -25,33 +24,37 @@ const (
 
 func (a *app) root(c *ui.Context) {
 	a.frameSeq++
+	a.mainToastBottomInset = 0
 	a.applyTheme(c)
 	a.registerShortcuts(c)
 	tk := theme.TokensOf(c)
 	// The Dock follows the window: in system mode this is the appearance
 	// macOS resolved for the window, in light and dark mode the chosen one.
 	a.syncDockIcon(tk.Dark)
-	// Dialog state is shared, so only the window with the keyboard draws it;
-	// otherwise the same confirmation would appear in both windows at once.
+	// Dialogs retain their initiating window independently of keyboard focus.
+	// Focus still determines which window drains its notification queue.
 	settingsFocused := a.settingsFocused()
 	page := ui.Column(c).Fill().Background(tk.BgLayout)
 	page.Children(func() {
 		a.titleBar(c)
-		ui.Row(c).Grow(1).Basis(0).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+		content := ui.Row(c).Grow(1).Basis(0).MinHeight(0).AlignItems(ui.Stretch)
+		a.sidebarSplit.rowWidth = content.Bounds().W
+		content.Children(func() {
 			a.sidebar(c)
+			def := shareForWidth(a.sidebarSplit.rowWidth-splitterWidth, sidebarWidth)
+			a.splitHandle(c, &a.sidebarSplit, def, sidebarPaneMin, a.workbenchContentMin(), a.t("resizeSidebarPane"))
 			a.contentCard(c)
 		})
 		// Dialogs come before the toast host so a toast, such as an undo
 		// action, stays above an open dialog and can be clicked.
-		if !settingsFocused {
-			a.confirmDialog(c)
-			a.promptDialog(c)
-			a.resetDialog(c)
-			a.checkoutBranchDialog(c)
-			a.blameDialog(c)
-			a.worktreeFormDialog(c)
-		}
-		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.confirmDialog(c)
+		a.noticeDetailsDialog(c, toastMain)
+		a.promptDialog(c)
+		a.resetDialog(c)
+		a.checkoutBranchDialog(c)
+		a.worktreeFormDialog(c)
+		a.blameDialog(c)
+		a.toastHost(c, toastMain)
 		if !settingsFocused {
 			// A settings notice whose panel closed is not lost: the main
 			// window takes it over rather than leaving it queued forever.
@@ -136,6 +139,11 @@ func (a *app) titleBar(c *ui.Context) {
 			// so the bar says what it is doing while it runs instead of
 			// leaving a disabled button as the only sign. Fetching names
 			// itself; every other long operation shares one general line.
+			if a.loading && a.repo != nil && !a.loadSince.IsZero() {
+				if remaining := progressDelay - time.Since(a.loadSince); remaining > 0 {
+					c.After(remaining)
+				}
+			}
 			if text := a.progressText(); text != "" {
 				icon := ui.Icon(c, lucide.LoaderCircle()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary)
 				icon.Rotate(icon.Loop("spin", 900*time.Millisecond, ui.Linear) * 360)
@@ -144,10 +152,12 @@ func (a *app) titleBar(c *ui.Context) {
 				})
 				// A git command can hang on a network that stopped answering;
 				// without this the only way out is the three-minute timeout.
-				if cancel := action.ActionIcon(c, lucide.X(), action.ActionIconProps{
-					Size: theme.Small, Title: a.t("cancel"),
-				}); cancel.Clicked() {
-					a.cancelOperation()
+				if a.busy || a.fetching {
+					if cancel := action.ActionIcon(c, lucide.X(), action.ActionIconProps{
+						Size: theme.Small, Title: a.t("cancel"),
+					}); cancel.Clicked() {
+						a.cancelOperation()
+					}
 				}
 			}
 			// Fetch, pull and push used to sit in the workspace page header.
@@ -184,9 +194,10 @@ func progressVisible(since, now time.Time) bool {
 // the fetch because it is the only operation a reader starts and then walks
 // away from; a named operation says what it is doing, which is the difference
 // between "Working…" and "Pushing…" when a wait stretches out. Everything else
-// busy shares the general line. Not fetching and not busy shows nothing.
+// busy shares the general line. Repository reads use their own delay, after
+// operations, and idle shows nothing.
 func (a *app) progressText() string {
-	if !progressVisible(a.progressSince, time.Now()) {
+	if (a.busy || a.fetching) && !progressVisible(a.progressSince, time.Now()) {
 		return ""
 	}
 	if a.fetching {
@@ -197,6 +208,9 @@ func (a *app) progressText() string {
 			return a.t(a.busyKey)
 		}
 		return a.t("busyNow")
+	}
+	if a.loading && a.repo != nil && progressVisible(a.loadSince, time.Now()) {
+		return a.t("loadingRepo")
 	}
 	return ""
 }
@@ -260,10 +274,9 @@ func itoa(n int) string {
 // reader find the branch again on another page.
 func (a *app) sidebar(c *ui.Context) {
 	tk := theme.TokensOf(c)
-	ui.Column(c).Width(sidebarWidth).Shrink(0).AlignSelf(ui.Stretch).Padding(6, 6).
-		Background(tk.BgContainer).BorderWidth(0, 1, 0, 0).BorderColor(tk.BorderSecondary).
+	ui.Column(c).Width(a.workbenchSidebarWidth()).Shrink(0).AlignSelf(ui.Stretch).Padding(6, 6).
+		Background(tk.BgContainer).
 		Children(func() {
-			a.sidebarHeader(c)
 			ui.Column(c).FillWidth().Gap(1).Margin(0, 2).Children(func() {
 				a.sidebarItem(c, lucide.History(), "history", a.t("history"), shortcutKeys("page.history"))
 			})
@@ -281,41 +294,26 @@ func (a *app) sidebar(c *ui.Context) {
 		})
 }
 
-// sidebarRefLimit keeps a group from pushing the rest of the sidebar out of
-// sight; the rest of the list is a click away on its page.
-const sidebarRefLimit = 6
-
 func (a *app) sidebarRefGroups(c *ui.Context) {
 	a.sidebarGroup(c, "branches", a.t("branches"), len(a.branches), func() {
 		a.sidebarBranchItems(c)
 	})
 	a.sidebarGroup(c, "remotes", a.t("remotes"), len(a.remoteBranches), func() {
-		for i, remote := range a.remoteBranches {
-			if i >= sidebarRefLimit {
-				break
-			}
+		for _, remote := range a.remoteBranches {
 			ref := historyRef{Kind: historyRefRemote, Name: remote.Name}
 			a.sidebarRefRow(c, lucide.Cloud(), remote.Name,
 				a.historyRef == ref, false, func() { a.showRefHistory(ref.Kind, ref.Name) })
 		}
-		a.sidebarMoreRow(c, "branches", len(a.remoteBranches))
 	})
 	a.sidebarGroup(c, "tags", a.t("tags"), len(a.tags), func() {
-		for i, tag := range a.tags {
-			if i >= sidebarRefLimit {
-				break
-			}
+		for _, tag := range a.tags {
 			ref := historyRef{Kind: historyRefTag, Name: tag.Name}
 			a.sidebarRefRow(c, lucide.Tag(), tag.Name,
 				a.historyRef == ref, false, func() { a.showRefHistory(ref.Kind, ref.Name) })
 		}
-		a.sidebarMoreRow(c, "branches", len(a.tags))
 	})
 	a.sidebarGroup(c, "stashes", a.t("stashes"), len(a.stashes), func() {
-		for i, stash := range a.stashes {
-			if i >= sidebarRefLimit {
-				break
-			}
+		for _, stash := range a.stashes {
 			label := stash.Message
 			if label == "" {
 				label = stash.Ref
@@ -326,13 +324,9 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 				a.invalidate()
 			})
 		}
-		a.sidebarMoreRow(c, "stash", len(a.stashes))
 	})
 	a.sidebarGroup(c, "worktrees", a.t("worktrees"), len(a.worktrees), func() {
-		for i, worktree := range a.worktrees {
-			if i >= sidebarRefLimit {
-				break
-			}
+		for _, worktree := range a.worktrees {
 			key := "worktree:" + worktree.Path
 			// The row is named by its folder, but a worktree is identified by
 			// its path: two checkouts can share a folder name in different
@@ -349,13 +343,9 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 				row.Description(a.t("current") + " · " + worktree.Path)
 			}
 		}
-		a.sidebarMoreRow(c, "worktrees", len(a.worktrees))
 	})
 	a.sidebarGroup(c, "submodules", a.t("submodules"), len(a.submodules), func() {
-		for i, module := range a.submodules {
-			if i >= sidebarRefLimit {
-				break
-			}
+		for _, module := range a.submodules {
 			key := "submodule:" + module.Path
 			a.sidebarRefRow(c, lucide.Boxes(), module.Name, a.worktreeSel == key, false, func() {
 				a.openPage("worktrees")
@@ -363,7 +353,6 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 				a.invalidate()
 			})
 		}
-		a.sidebarMoreRow(c, "worktrees", len(a.submodules))
 	})
 }
 
@@ -447,41 +436,15 @@ func (a *app) sidebarRefRow(c *ui.Context, icon *ui.SVG, label string, selected,
 	return row
 }
 
-// sidebarMoreRow stands in for the rows a group does not show, and goes to the
-// page where the whole list lives.
-func (a *app) sidebarMoreRow(c *ui.Context, page string, count int) {
-	if count <= sidebarRefLimit {
-		return
-	}
-	tk := theme.TokensOf(c)
-	moreInk := tertiaryTextInk(tk, tk.FillTertiary.Over(tk.BgContainer))
-	row := ui.ButtonBase(c).Label(a.tf("moreRefs", count-sidebarRefLimit)).
-		Row().FillWidth().Height(22).Padding(0, 20).AlignItems(ui.Center).Radius(tk.BorderRadius)
-	if row.Hovered() {
-		row.Background(tk.FillTertiary)
-	}
-	row.Children(func() {
-		display.Text(c, a.tf("moreRefs", count-sidebarRefLimit), display.TextProps{FontSize: scaledFont(10)}).
-			TextColor(moreInk).SingleLine().AccessHidden(true)
-	})
-	if row.Clicked() && a.repo != nil {
-		a.openPage(page)
-	}
-}
-
 // sidebarBranchItems lists the local branches, with the checked-out one marked:
 // the list is how the sidebar answers "where am I" without another page.
 func (a *app) sidebarBranchItems(c *ui.Context) {
-	for i, branch := range a.branches {
-		if i >= sidebarRefLimit {
-			break
-		}
+	for _, branch := range a.branches {
 		ref := historyRef{Kind: historyRefLocal, Name: branch.Name}
 		a.sidebarRefRow(c, lucide.GitBranch(), branch.Name, a.historyRef == ref, branch.Current, func() {
 			a.showRefHistory(ref.Kind, ref.Name)
 		})
 	}
-	a.sidebarMoreRow(c, "branches", len(a.branches))
 }
 
 func (a *app) sidebarGroupOpen(key string) bool {
@@ -754,9 +717,9 @@ func (a *app) pageHeader(c *ui.Context, title, subtitle string, right func()) {
 			// Heading 5 otherwise resolves to the theme's base size, which is
 			// outside scaledFont and would stay put while the rest of the page
 			// follows the reader's text-size preset.
-			display.Text(c, title, display.TextProps{Heading: 5, Strong: true, FontSize: scaledFont(tk.FontSize)})
+			display.Text(c, title, display.TextProps{Heading: 5, Strong: true, FontSize: scaledFont(tk.FontSize)}).Shrink(0)
 			if subtitle != "" {
-				display.Text(c, subtitle, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12)}).SingleLine()
+				display.Text(c, subtitle, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12)}).SingleLine().Grow(1).Basis(0).MinWidth(0)
 			}
 		})
 		if right != nil {

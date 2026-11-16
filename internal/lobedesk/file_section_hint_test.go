@@ -24,7 +24,7 @@ func TestFoldedSectionHeaderExplainsItsCount(t *testing.T) {
 	tt := pageTester(a, func(c *ui.Context) {
 		ui.Column(c).FillWidth().Gap(2).Children(func() { a.workingFileSections(c) })
 	})
-	header, ok := tt.Access(a.t("unstaged"))
+	header, ok := tt.Access(a.t("fileGroupModified"))
 	if !ok {
 		t.Fatal("the folded section header is not in the accessibility tree")
 	}

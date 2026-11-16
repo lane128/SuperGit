@@ -9,6 +9,17 @@ import (
 
 type Stash struct{ SHA, Ref, Message, Date string }
 
+// StashApplyError keeps the legacy hint while allowing interfaces to localize
+// the reason and expose Git's original output. Failed restores can change files.
+type StashApplyError struct {
+	Conflict bool
+	cause    error
+	hint     string
+}
+
+func (e *StashApplyError) Error() string { return e.hint }
+func (e *StashApplyError) Unwrap() error { return e.cause }
+
 func (r *Repository) Stashes(ctx context.Context) ([]Stash, error) {
 	out, err := run(ctx, r.Root, "", "stash", "list", "-z", "--format=%H%x00%gd%x00%gs%x00%aI")
 	if err != nil {
@@ -163,14 +174,14 @@ func (r *Repository) stashApplyError(ctx context.Context, err error, verb string
 	msg := err.Error()
 	switch {
 	case strings.Contains(msg, "would be overwritten by merge"):
-		return fmt.Errorf("Stash 与工作区改动重叠，未能%s；请先提交或保存当前改动", verb)
+		return &StashApplyError{cause: err, hint: fmt.Sprintf("Stash 与工作区改动重叠，未能%s；请先提交或保存当前改动", verb)}
 	case strings.Contains(msg, "CONFLICT"):
-		return errors.New("Stash 内容已写入工作区，但有冲突需要解决")
+		return &StashApplyError{Conflict: true, cause: err, hint: "Stash 内容已写入工作区，但有冲突需要解决"}
 	}
 	if s, statusErr := r.Status(ctx); statusErr == nil {
 		for _, entry := range s.Entries {
 			if entry.Conflict {
-				return errors.New("Stash 内容已写入工作区，但有冲突需要解决")
+				return &StashApplyError{Conflict: true, cause: err, hint: "Stash 内容已写入工作区，但有冲突需要解决"}
 			}
 		}
 	}

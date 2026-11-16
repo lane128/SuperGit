@@ -86,7 +86,7 @@ func (a *app) appearanceCard(c *ui.Context) {
 			{Value: "dark", Label: a.t("themeDark")},
 		}, a.themeMode, func(key string) {
 			a.themeMode = key
-			a.persistSettings()
+			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		})
 		// The palette is a separate choice from the mode: a scheme supplies a
@@ -106,7 +106,7 @@ func (a *app) appearanceCard(c *ui.Context) {
 			{Value: "large", Label: a.t("fontSizeLarge")},
 		}, fontScaleKey(uiFontScaleValue()), func(key string) {
 			setUIFontScale(fontScaleOf(key))
-			a.persistSettings()
+			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		})
 		settingsHelp(c, a.t("appearanceHelp"))
@@ -154,7 +154,8 @@ func (a *app) detailsCard(c *ui.Context) {
 			a.detailsInfoHidden = !showInfo
 			a.detailsChangesHidden = !showChanges
 			a.detailsDiffHidden = !showDiff
-			a.persistSettings()
+			a.normalizeDetailVisibility()
+			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		}
 	})
@@ -204,7 +205,7 @@ func (a *app) paletteRow(c *ui.Context) {
 		})
 		if chosen != "" && chosen != a.palette {
 			a.palette = chosen
-			a.persistSettings()
+			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		}
 	})
@@ -274,12 +275,12 @@ func (a *app) gitCard(c *ui.Context) {
 			// minutes should not fire a fetch the moment the choice is made,
 			// and switching between presets should not fetch again and again.
 			a.lastAutoFetch = time.Now()
-			a.persistSettings()
+			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		})
 		settingsHelp(c, a.t("autoFetchEveryHelp"))
 		if a.autoFetch != wasFetch || a.autoFetchPrune != wasPrune {
-			a.persistSettings()
+			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		}
 	})
@@ -290,7 +291,7 @@ func (a *app) graphCard(c *ui.Context) {
 		was := a.showGraph
 		choice.Checkbox(c, &a.showGraph, a.t("showHistoryGraph"), choice.CheckboxProps{Size: 14})
 		if a.showGraph != was {
-			a.persistSettings()
+			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		}
 		settingsHelp(c, a.t("showHistoryGraphHelp"))
@@ -301,7 +302,7 @@ func (a *app) graphCard(c *ui.Context) {
 			{Value: "thick", Label: a.t("graphLineThick")},
 		}, graphLineKey(line), func(key string) {
 			a.historyLine = graphLineOf(key)
-			a.persistSettings()
+			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		})
 		a.choiceRow(c, a.t("graphNodeSize"), []choice.ToggleItem{
@@ -310,7 +311,7 @@ func (a *app) graphCard(c *ui.Context) {
 			{Value: "large", Label: a.t("graphNodeLarge")},
 		}, graphNodeKey(node), func(key string) {
 			a.historyNode = graphNodeOf(key)
-			a.persistSettings()
+			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		})
 	})
@@ -330,7 +331,7 @@ func (a *app) historyColumnsCard(c *ui.Context) {
 		if showAuthor != wasAuthor || showTime != wasTime {
 			a.hideAuthor = !showAuthor
 			a.hideTime = !showTime
-			a.persistSettings()
+			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		}
 	})
@@ -398,7 +399,10 @@ func (a *app) aboutCard(c *ui.Context) {
 // dialog names the scope so "reset" does not sound like it might touch the
 // repository.
 func (a *app) confirmResetSettings() {
-	a.askConfirm(a.t("resetSettingsTitle"), a.t("resetSettingsMessage"), a.t("resetSettings"), false, func() {
-		a.resetSettings()
+	// This entry belongs to the settings panel even if native focus changes
+	// before its action is delivered. Its result stays in this window too;
+	// divider preference writes on the main window have their own owner.
+	a.askConfirmInWindow(toastSettings, "", a.t("resetSettingsTitle"), a.t("resetSettingsMessage"), a.t("resetSettings"), false, func() {
+		a.resetSettingsFor(toastSettings)
 	})
 }

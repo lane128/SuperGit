@@ -57,9 +57,9 @@ func (a *app) branchesPage(c *ui.Context) {
 			if branch == "" {
 				branch = a.t("detached")
 			}
-			a.statusTag(c, branch, display.TagProps{
+			a.statusTag(c, elideMiddle(branch, 18), display.TagProps{
 				Variant: display.TagFilled, Color: display.TagSuccess, Size: theme.Small, Round: true,
-			})
+			}).MaxWidth(160).Tooltip(branch).Description(branch)
 		}
 	})
 	row := ui.Row(c).Grow(1).Basis(0).MinHeight(0).AlignItems(ui.Stretch)
@@ -87,7 +87,7 @@ func (a *app) branchesPage(c *ui.Context) {
 		}
 		list.Border(1, ring)
 		list.Children(func() {
-			ui.Row(c).Height(34).Shrink(0).Padding(0, 16).Gap(8).AlignItems(ui.Center).
+			ui.Row(c).MinHeight(34).Shrink(0).Padding(6, 16).Gap(8).AlignItems(ui.Center).
 				BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary).Children(func() {
 				display.Text(c, a.t("branchHelp"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
 			})

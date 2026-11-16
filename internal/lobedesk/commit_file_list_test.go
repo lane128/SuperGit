@@ -21,6 +21,7 @@ func TestCommitFilesReadAsAListOfOptions(t *testing.T) {
 		},
 		commitPath: "dir/a.go",
 	}
+	a.detailTabs().Open(detailFileKey{Path: "dir/a.go"})
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
 		ui.Column(c).Width(500).Height(200).Children(func() {

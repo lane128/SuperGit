@@ -21,6 +21,7 @@ import (
 )
 
 type promptState struct {
+	root        string
 	open        bool
 	title       string
 	placeholder string
@@ -32,8 +33,36 @@ type promptState struct {
 	selectAll bool
 }
 
+func (a *app) discardStalePrompt() {
+	if a.prompt.root != "" && (a.repo == nil || a.repo.Root != a.prompt.root) {
+		a.prompt = promptState{}
+	}
+}
+
 func (a *app) askPrompt(title, placeholder, initial, actionName string, action func(string)) {
+	a.discardStalePrompt()
+	if a.prompt.open {
+		a.queue("warning", a.t("promptPending"), "")
+		a.invalidate()
+		return
+	}
+	if a.rejectPendingDialog(toastMain) {
+		return
+	}
+	root := ""
+	if a.repo != nil {
+		root = a.repo.Root
+	}
+	if action != nil && root != "" {
+		run := action
+		action = func(value string) {
+			if a.repo != nil && a.repo.Root == root {
+				run(value)
+			}
+		}
+	}
 	a.prompt = promptState{
+		root:        root,
 		open:        true,
 		title:       title,
 		placeholder: placeholder,
@@ -46,6 +75,16 @@ func (a *app) askPrompt(title, placeholder, initial, actionName string, action f
 }
 
 func (a *app) promptDialog(c *ui.Context) {
+	a.promptDialogFor(c, toastMain)
+}
+
+// All current generic prompts originate in repository actions in the main
+// window. Settings must not adopt an input when it takes keyboard focus.
+func (a *app) promptDialogFor(c *ui.Context, owner toastOwner) {
+	if owner != toastMain {
+		return
+	}
+	a.discardStalePrompt()
 	if !a.prompt.open {
 		return
 	}
@@ -105,6 +144,8 @@ func (a *app) promptDialog(c *ui.Context) {
 }
 
 type confirmState struct {
+	owner      toastOwner
+	root       string // empty for settings, which are independent of repository
 	open       bool
 	title      string
 	message    string
@@ -114,7 +155,45 @@ type confirmState struct {
 }
 
 func (a *app) askConfirm(title, message, actionName string, danger bool, action func()) {
+	root := ""
+	if a.repo != nil {
+		root = a.repo.Root
+	}
+	a.askConfirmInWindow(toastMain, root, title, message, actionName, danger, action)
+}
+
+func (a *app) discardStaleConfirmation() {
+	if a.confirm.root != "" && (a.repo == nil || a.repo.Root != a.confirm.root) {
+		a.confirm = confirmState{}
+	}
+	if a.confirm.owner == toastSettings {
+		if w := a.settingsWin.Load(); w == nil || w.IsDestroyed() {
+			a.confirm = confirmState{}
+		}
+	}
+}
+
+func (a *app) askConfirmInWindow(owner toastOwner, root, title, message, actionName string, danger bool, action func()) {
+	a.discardStaleConfirmation()
+	if a.confirm.open {
+		a.queueFor(owner, "warning", a.t("confirmationPending"), "")
+		a.invalidate()
+		return
+	}
+	if a.rejectPendingDialog(owner) {
+		return
+	}
+	if action != nil && root != "" {
+		run := action
+		action = func() {
+			if a.repo != nil && a.repo.Root == root {
+				run()
+			}
+		}
+	}
 	a.confirm = confirmState{
+		owner:      owner,
+		root:       root,
 		open:       true,
 		title:      title,
 		message:    message,
@@ -126,10 +205,22 @@ func (a *app) askConfirm(title, message, actionName string, danger bool, action 
 }
 
 func (a *app) confirmDialog(c *ui.Context) {
+	a.confirmDialogFor(c, toastMain)
+}
+
+func (a *app) confirmDialogFor(c *ui.Context, owner toastOwner) {
+	a.discardStaleConfirmation()
+	if a.confirm.owner != owner {
+		return
+	}
 	if !a.confirm.open {
 		return
 	}
 	tk := theme.TokensOf(c)
+	// Repository workers refuse to start during a read or another write. Keep
+	// the original confirmation available instead of consuming that request.
+	// Independent settings confirmations need not wait for repository work.
+	blocked := a.confirm.root != "" && (a.repo == nil || a.loading || a.busy)
 	confirmed := false
 	ui.Modal(c, &a.confirm.open, func() {
 		ui.Column(c).Width(430).Padding(18).Gap(10).
@@ -143,11 +234,11 @@ func (a *app) confirmDialog(c *ui.Context) {
 							a.confirm.open = false
 						}
 						label := a.confirm.actionName
-						button := action.Button(c, label, action.ButtonProps{Variant: action.Default, Size: theme.Small})
+						button := action.Button(c, label, action.ButtonProps{Variant: action.Default, Size: theme.Small}).Disabled(blocked)
 						if a.confirm.danger {
 							button.TextColor(tk.Error)
 						}
-						if button.Clicked() {
+						if !blocked && button.Clicked() {
 							confirmed = true
 							a.confirm.open = false
 						}
@@ -270,11 +361,12 @@ func (a *app) fileMenu(c *ui.Context, row ui.Element, entry gitrepo.Entry, stage
 // Stash opens a dialog, so its label carries the ellipsis, and the copies sit
 // in their own group above the open/reveal pair and the history pair.
 func (a *app) fileMenuItems(entry gitrepo.Entry, staged bool) []overlay.MenuItem {
+	_, ready := a.fileActionTarget(entry, staged)
 	items := []overlay.MenuItem{}
 	if staged {
-		items = append(items, overlay.MenuItem{Key: "unstage", Label: a.t("unstageFile"), Icon: lucide.Minus()})
+		items = append(items, overlay.MenuItem{Key: "unstage", Label: a.t("unstageFile"), Icon: lucide.Minus(), Disabled: !ready})
 	} else {
-		items = append(items, overlay.MenuItem{Key: "stage", Label: a.t("stageFile"), Icon: lucide.Plus()})
+		items = append(items, overlay.MenuItem{Key: "stage", Label: a.t("stageFile"), Icon: lucide.Plus(), Disabled: !ready})
 		untracked := entry.Index == '?' && entry.Worktree == '?'
 		label := a.t("discardChanges")
 		icon := lucide.Undo2()
@@ -284,7 +376,7 @@ func (a *app) fileMenuItems(entry gitrepo.Entry, staged bool) []overlay.MenuItem
 		}
 		items = append(items,
 			overlay.MenuItem{Divider: true},
-			overlay.MenuItem{Key: "discard", Label: label, Icon: icon, Danger: true},
+			overlay.MenuItem{Key: "discard", Label: label, Icon: icon, Danger: true, Disabled: !ready || entry.IsSubmodule()},
 		)
 	}
 	return append(items,
@@ -308,8 +400,8 @@ func (a *app) fileMenuItems(entry gitrepo.Entry, staged bool) []overlay.MenuItem
 func (a *app) conflictFileMenuItems() []overlay.MenuItem {
 	return []overlay.MenuItem{
 		{Key: "resolve", Label: a.t("markResolved"), Icon: lucide.CircleCheck()},
-		{Key: "ours", Label: a.t("useOurs"), Icon: lucide.GitBranch()},
-		{Key: "theirs", Label: a.t("useTheirs"), Icon: lucide.GitMerge()},
+		{Key: "ours", Label: a.conflictSideText("useOurs"), Icon: lucide.GitBranch()},
+		{Key: "theirs", Label: a.conflictSideText("useTheirs"), Icon: lucide.GitMerge()},
 		{Divider: true},
 		{Key: "copy-path", Label: a.t("copyPath"), Icon: lucide.Copy()},
 		{Key: "absolute", Label: a.t("copyAbsolutePath"), Icon: lucide.Copy()},
@@ -334,8 +426,8 @@ func (a *app) diffHeaderMenu(c *ui.Context, header ui.Element) {
 	if entry, ok := a.selectedEntry(); ok && entry.Conflict {
 		items = append(items,
 			overlay.MenuItem{Key: "resolve", Label: a.t("markResolved"), Icon: lucide.CircleCheck()},
-			overlay.MenuItem{Key: "ours", Label: a.t("useOurs"), Icon: lucide.GitBranch()},
-			overlay.MenuItem{Key: "theirs", Label: a.t("useTheirs"), Icon: lucide.GitMerge()},
+			overlay.MenuItem{Key: "ours", Label: a.conflictSideText("useOurs"), Icon: lucide.GitBranch()},
+			overlay.MenuItem{Key: "theirs", Label: a.conflictSideText("useTheirs"), Icon: lucide.GitMerge()},
 			overlay.MenuItem{Divider: true},
 		)
 	}
@@ -382,22 +474,7 @@ func (a *app) diffHeaderMenu(c *ui.Context, header ui.Element) {
 }
 
 func (a *app) confirmDiscard(entry gitrepo.Entry) {
-	untracked := entry.Index == '?' && entry.Worktree == '?'
-	if untracked {
-		a.askConfirm(a.t("deleteTitle"), a.tf("deleteMessage", entry.Path), a.t("delete"),
-			true, func() {
-				a.performAs(busyDeleteFile, a.t("deleteFailed"), a.t("deleteSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
-					return repo.Discard(ctx, entry.Path, true)
-				})
-			})
-		return
-	}
-	a.askConfirm(a.t("discardTitle"), a.tf("discardMessage", entry.Path), a.t("discard"),
-		true, func() {
-			a.performAs(busyDiscard, a.t("discardFailed"), a.t("discardSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
-				return repo.Discard(ctx, entry.Path, false)
-			})
-		})
+	a.prepareFileDiscard(entry)
 }
 
 // historyFilterFor is the search a filter entry writes into the box. The
@@ -422,7 +499,7 @@ func historyFilterFor(key string, commit gitrepo.Commit, now time.Time) (query s
 func (a *app) commitMenu(c *ui.Context, row ui.Element, commit gitrepo.Commit) {
 	action := overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: a.commitMenuItems(commit)})
 	if name, ok := strings.CutPrefix(action, commitBranchCheckoutPrefix); ok {
-		a.switchBranch(name)
+		a.switchBranchAt(name, commit.SHA)
 		return
 	}
 	switch action {
@@ -448,11 +525,9 @@ func (a *app) commitMenu(c *ui.Context, row ui.Element, commit gitrepo.Commit) {
 				})
 			})
 	case "merge":
-		a.askConfirm(a.t("mergeIntoCurrent"), a.tf("mergeCommitMessage", shortSHA(commit.SHA)),
-			a.t("mergeIntoCurrent"), false, func() { a.integrate("merge", commit.SHA) })
+		a.confirmIntegrate("merge", shortSHA(commit.SHA), commit.SHA)
 	case "rebase":
-		a.askConfirm(a.t("rebaseOnto"), a.tf("rebaseCommitMessage", shortSHA(commit.SHA)),
-			a.t("rebaseOnto"), false, func() { a.integrate("rebase", commit.SHA) })
+		a.confirmIntegrate("rebase", shortSHA(commit.SHA), commit.SHA)
 	case "reset":
 		a.openResetDialog(commit)
 	case "tag":
@@ -462,19 +537,14 @@ func (a *app) commitMenu(c *ui.Context, row ui.Element, commit gitrepo.Commit) {
 	case "new-branch":
 		a.promptNewBranch(commit.SHA)
 	case "cherry-pick":
-		a.askConfirm(a.t("cherryPickTitle"), a.tf("cherryPickMessage", shortSHA(commit.SHA)),
-			a.t("cherryPickAction"), false, func() {
-				a.integrate("cherry-pick", commit.SHA)
-			})
+		a.confirmIntegrate("cherry-pick", shortSHA(commit.SHA), commit.SHA)
 	case "revert":
-		a.askConfirm(a.t("revertTitle"), a.tf("revertMessage", shortSHA(commit.SHA)),
-			a.t("revertAction"), false, func() {
-				a.integrate("revert", commit.SHA)
-			})
+		a.confirmIntegrate("revert", shortSHA(commit.SHA), commit.SHA)
 	case "undo":
-		a.askConfirm(a.t("undoCommitTitle"), a.t("undoCommitMessage"), a.t("undo"), false, func() {
+		expected := gitrepo.Status{Head: commit.SHA, Branch: a.status.Branch}
+		a.askConfirm(a.t("undoCommitTitle"), a.tf("undoCommitMessage", shortSHA(commit.SHA)), a.t("undo"), false, func() {
 			a.performAs(busyUndoCommit, a.t("undoFailed"), a.t("undoSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
-				return repo.UndoCommit(ctx)
+				return repo.UndoCommitChecked(ctx, expected)
 			})
 		})
 	}
@@ -592,7 +662,31 @@ func (a *app) commitMenuItems(commit gitrepo.Commit) []overlay.MenuItem {
 	)
 }
 
-func (a *app) integrate(kind, sha string) {
+// confirmIntegrate freezes both sides before opening the confirmation.
+func (a *app) confirmIntegrate(kind, label, sha string) {
+	var title, message, action string
+	switch kind {
+	case "merge":
+		title, message, action = "mergeIntoCurrent", "mergeCommitMessage", "mergeIntoCurrent"
+	case "rebase":
+		title, message, action = "rebaseOnto", "rebaseCommitMessage", "rebaseOnto"
+	case "cherry-pick":
+		title, message, action = "cherryPickTitle", "cherryPickMessage", "cherryPickAction"
+	case "revert":
+		title, message, action = "revertTitle", "revertMessage", "revertAction"
+	default:
+		return
+	}
+	expected := gitrepo.Status{Head: a.status.Head, Branch: a.status.Branch}
+	if label != shortSHA(sha) {
+		label = fmt.Sprintf("%s (%s)", label, shortSHA(sha))
+	}
+	a.askConfirm(a.t(title), a.tf(message, label), a.t(action), false, func() {
+		a.integrate(kind, sha, expected)
+	})
+}
+
+func (a *app) integrate(kind, sha string, expected gitrepo.Status) {
 	busy := busyCherryPick
 	label := a.t("cherryPickFailed")
 	success := a.t("cherryPickSuccess")
@@ -611,24 +705,32 @@ func (a *app) integrate(kind, sha string) {
 		success = a.t("rebaseSuccess")
 	}
 	a.performAs(busy, label, success, func(ctx context.Context, repo *gitrepo.Repository) error {
-		return repo.Integrate(ctx, kind, sha)
+		return repo.IntegrateChecked(ctx, kind, sha, expected)
 	})
 }
 
 // continueOperation finishes an interrupted operation through git's own
 // continue command, which is the only path for a rebase.
 func (a *app) continueOperation(kind string) {
+	target := a.operation
+	if target.Kind != kind || kind == "" {
+		return
+	}
 	a.performAs(busyContinue, a.t("continueFailed"), a.t("continueSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
-		return repo.Continue(ctx, kind)
+		return repo.ContinueChecked(ctx, target)
 	})
 }
 
 // confirmAbortOperation asks first because aborting discards the conflict
 // resolutions made so far.
 func (a *app) confirmAbortOperation(kind string) {
+	target := a.operation
+	if target.Kind != kind || kind == "" {
+		return
+	}
 	a.askConfirm(a.t("abortTitle"), a.tf("abortMessage", kind), a.t("abortOperation"), true, func() {
 		a.performAs(busyAbort, a.t("abortFailed"), a.t("abortSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
-			return repo.Abort(ctx, kind)
+			return repo.AbortChecked(ctx, target)
 		})
 	})
 }
@@ -636,9 +738,13 @@ func (a *app) confirmAbortOperation(kind string) {
 // confirmSkipOperation drops the commit the operation stopped on, so it asks
 // first like abort.
 func (a *app) confirmSkipOperation(kind string) {
+	target := a.operation
+	if target.Kind != kind || kind == "" {
+		return
+	}
 	a.askConfirm(a.t("skipTitle"), a.tf("skipMessage", kind), a.t("skipOperation"), true, func() {
 		a.performAs(busySkip, a.t("skipFailed"), a.t("skipSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
-			return repo.Skip(ctx, kind)
+			return repo.SkipChecked(ctx, target)
 		})
 	})
 }
@@ -689,11 +795,9 @@ func (a *app) branchMenu(c *ui.Context, row ui.Element, branch gitrepo.Branch) {
 	case "switch":
 		a.switchBranch(branch.Name)
 	case "merge":
-		a.askConfirm(a.t("mergeIntoCurrent"), a.tf("mergeCommitMessage", branch.Name),
-			a.t("mergeIntoCurrent"), false, func() { a.integrate("merge", branch.Name) })
+		a.confirmIntegrate("merge", branch.Name, branch.SHA)
 	case "rebase":
-		a.askConfirm(a.t("rebaseOnto"), a.tf("rebaseCommitMessage", branch.Name),
-			a.t("rebaseOnto"), false, func() { a.integrate("rebase", branch.Name) })
+		a.confirmIntegrate("rebase", branch.Name, branch.SHA)
 	case "pull":
 		a.pullFF()
 	case "reset-upstream":
@@ -711,11 +815,11 @@ func (a *app) branchMenu(c *ui.Context, row ui.Element, branch gitrepo.Branch) {
 	case "new-no-checkout":
 		a.promptNewBranchAt(branch.SHA, false)
 	case "rename":
-		a.promptRenameBranch(branch.Name)
+		a.promptRenameBranch(branch)
 	case "delete":
-		a.confirmDeleteBranch(branch.Name)
+		a.confirmDeleteBranch(branch)
 	case "force-delete":
-		a.confirmForceDeleteBranch(branch.Name)
+		a.confirmForceDeleteBranch(branch)
 	}
 }
 
@@ -740,8 +844,7 @@ func (a *app) remoteBranchMenu(c *ui.Context, row ui.Element, ref gitrepo.Branch
 	case "checkout":
 		a.promptCheckoutRemoteBranch(ref.Name, name)
 	case "merge":
-		a.askConfirm(a.t("mergeIntoCurrent"), a.tf("mergeCommitMessage", ref.Name),
-			a.t("mergeIntoCurrent"), false, func() { a.integrate("merge", ref.Name) })
+		a.confirmIntegrate("merge", ref.Name, ref.SHA)
 	case "copy":
 		a.copyText(ref.Name)
 	case "copy-sha":
@@ -749,7 +852,7 @@ func (a *app) remoteBranchMenu(c *ui.Context, row ui.Element, ref gitrepo.Branch
 	case "history":
 		a.showRefHistory(historyRefRemote, ref.Name)
 	case "delete":
-		a.confirmDeleteRemoteBranch(remote, name)
+		a.confirmDeleteRemoteBranch(remote, name, ref.SHA)
 	}
 }
 
@@ -768,10 +871,22 @@ func (a *app) promptCheckoutRemoteBranch(remoteRef, name string) {
 	})
 }
 
-func (a *app) confirmDeleteRemoteBranch(remote, name string) {
-	a.askConfirm(a.t("deleteRemoteBranchTitle"), a.tf("deleteRemoteBranchMessage", remote, name), a.t("delete"), true, func() {
+func (a *app) confirmDeleteRemoteBranch(remoteName, name, sha string) {
+	var remote gitrepo.Remote
+	for _, candidate := range a.remotes {
+		if candidate.Name == remoteName {
+			remote = candidate
+			break
+		}
+	}
+	if remote.Name == "" {
+		a.queue("warning", a.t("noRemote"), "")
+		a.invalidate()
+		return
+	}
+	a.askConfirm(a.t("deleteRemoteBranchTitle"), a.tf("deleteRemoteBranchMessage", remote.Name, name, shortSHA(sha)), a.t("delete"), true, func() {
 		a.performAs(busyDeleteRemoteBranch, a.t("deleteRemoteBranchFailed"), a.t("remoteBranchDeleted"), func(ctx context.Context, repo *gitrepo.Repository) error {
-			return repo.DeleteRemoteBranch(ctx, remote, name)
+			return repo.DeleteRemoteBranchChecked(ctx, remote, name, sha)
 		})
 	})
 }
@@ -808,7 +923,7 @@ func (a *app) tagMenu(c *ui.Context, row ui.Element, tag gitrepo.Tag) {
 	case "history":
 		a.showRefHistory(historyRefTag, tag.Name)
 	case "push":
-		a.confirmPushTag(tag.Name)
+		a.confirmPushTag(tag)
 	case "delete":
 		a.confirmDeleteTag(tag)
 	}
@@ -826,24 +941,30 @@ func (a *app) tagPushRemote() string {
 	return ""
 }
 
-func (a *app) confirmPushTag(name string) {
-	remote := a.tagPushRemote()
-	if remote == "" {
+func (a *app) confirmPushTag(tag gitrepo.Tag) {
+	var remote gitrepo.Remote
+	for _, candidate := range a.remotes {
+		if candidate.Name == a.tagPushRemote() {
+			remote = candidate
+			break
+		}
+	}
+	if remote.Name == "" {
 		a.queue("warning", a.t("noRemote"), "")
 		a.invalidate()
 		return
 	}
-	a.askConfirm(a.t("pushTagTitle"), a.tf("pushTagMessage", name, remote), a.t("pushButton"), false, func() {
+	a.askConfirm(a.t("pushTagTitle"), a.tf("pushTagMessage", tag.Name, shortSHA(tag.ObjectSHA), remote.Name), a.t("pushButton"), false, func() {
 		a.performAs(busyPushTag, a.t("pushTagFailed"), a.t("tagPushed"), func(ctx context.Context, repo *gitrepo.Repository) error {
-			return repo.PushTag(ctx, remote, name)
+			return repo.PushTagChecked(ctx, remote, tag)
 		})
 	})
 }
 
 func (a *app) confirmDeleteTag(tag gitrepo.Tag) {
-	a.askConfirm(a.t("deleteTagTitle"), a.tf("deleteTagMessage", tag.Name), a.t("delete"), true, func() {
+	a.askConfirm(a.t("deleteTagTitle"), a.tf("deleteTagMessage", tag.Name, shortSHA(tag.ObjectSHA)), a.t("delete"), true, func() {
 		a.perform(a.t("deleteTagFailed"), a.t("tagDeleted"), func(ctx context.Context, repo *gitrepo.Repository) error {
-			return repo.DeleteTag(ctx, tag.Name)
+			return repo.DeleteTagChecked(ctx, tag.Name, tag.ObjectSHA)
 		})
 	})
 }
@@ -882,29 +1003,29 @@ func (a *app) promptNewBranchAt(start string, checkout bool) {
 	})
 }
 
-func (a *app) promptRenameBranch(old string) {
-	a.askPrompt(a.t("renameBranchTitle"), a.t("branchName"), old, a.t("rename"), func(name string) {
-		if name == old {
+func (a *app) promptRenameBranch(branch gitrepo.Branch) {
+	a.askPrompt(a.t("renameBranchTitle"), a.t("branchName"), branch.Name, a.t("rename"), func(name string) {
+		if name == branch.Name {
 			return
 		}
 		a.perform(a.t("renameBranchFailed"), a.t("branchRenamed"), func(ctx context.Context, repo *gitrepo.Repository) error {
-			return repo.RenameBranch(ctx, old, name)
+			return repo.RenameBranchChecked(ctx, branch.Name, name, branch.SHA)
 		})
 	})
 }
 
-func (a *app) confirmDeleteBranch(name string) {
-	a.askConfirm(a.t("deleteBranchTitle"), a.tf("deleteBranchMessage", name), a.t("delete"), true, func() {
+func (a *app) confirmDeleteBranch(branch gitrepo.Branch) {
+	a.askConfirm(a.t("deleteBranchTitle"), a.tf("deleteBranchMessage", branch.Name, shortSHA(branch.SHA)), a.t("delete"), true, func() {
 		a.perform(a.t("deleteBranchFailed"), a.t("branchDeleted"), func(ctx context.Context, repo *gitrepo.Repository) error {
-			return repo.DeleteBranch(ctx, name)
+			return repo.DeleteBranchChecked(ctx, branch.Name, branch.SHA, false)
 		})
 	})
 }
 
-func (a *app) confirmForceDeleteBranch(name string) {
-	a.askConfirm(a.t("forceDeleteTitle"), a.tf("forceDeleteMessage", name), a.t("forceDelete"), true, func() {
+func (a *app) confirmForceDeleteBranch(branch gitrepo.Branch) {
+	a.askConfirm(a.t("forceDeleteTitle"), a.tf("forceDeleteMessage", branch.Name, shortSHA(branch.SHA)), a.t("forceDelete"), true, func() {
 		a.perform(a.t("forceDeleteFailed"), a.t("branchForceDeleted"), func(ctx context.Context, repo *gitrepo.Repository) error {
-			return repo.ForceDeleteBranch(ctx, name)
+			return repo.DeleteBranchChecked(ctx, branch.Name, branch.SHA, true)
 		})
 	})
 }
@@ -915,10 +1036,19 @@ func (a *app) resolveConflict(path string) {
 	})
 }
 
+// During rebase, Git's ours is the base with already replayed commits;
+// theirs is the commit currently being replayed, not an incoming branch.
+func (a *app) conflictSideText(key string) string {
+	if a.operation.Kind == "rebase" {
+		key += "Rebase"
+	}
+	return a.t(key)
+}
+
 func (a *app) takeConflictSide(path, side string) {
-	success := a.t("takeOursSuccess")
+	success := a.conflictSideText("takeOursSuccess")
 	if side == "theirs" {
-		success = a.t("takeTheirsSuccess")
+		success = a.conflictSideText("takeTheirsSuccess")
 	}
 	a.perform(a.t("takeSideFailed"), success, func(ctx context.Context, repo *gitrepo.Repository) error {
 		return repo.TakeConflictSide(ctx, path, side)

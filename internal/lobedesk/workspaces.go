@@ -196,20 +196,20 @@ func (a *app) removeWorktree(worktree gitrepo.Worktree) {
 	ctx, cancel := a.beginOperation(busyRemoveWorktree)
 	go func() {
 		defer cancel()
-		err := repo.RemoveWorktree(ctx, worktree.Path)
-		mygo.RunOnMain(func() {
+		err := repo.RemoveWorktreeChecked(ctx, worktree)
+		a.hopToMain(func() {
 			a.finishOperation()
 			switch {
 			case operationCancelled(ctx, err):
 				a.queue("info", a.t("operationCancelled"), "")
 			case err != nil:
-				a.queue("error", a.t("removeWorktreeFailed"), err.Error())
+				a.queue("error", a.t("removeWorktreeFailed"), a.operationErrorDescription(err))
 			case worktree.Branch != "":
-				branch := worktree.Branch
+				branch := gitrepo.Branch{Name: worktree.Branch, SHA: worktree.HEAD}
 				a.pushNotice(toastMain, &toastNotice{
 					kind:        "success",
 					title:       a.t("worktreeRemoved"),
-					description: a.tf("worktreeBranchKept", branch),
+					description: a.tf("worktreeBranchKept", branch.Name),
 					action:      a.t("delete"),
 					onAction:    func() { a.deleteBranchAfterWorktree(repo, branch) },
 					timeout:     10 * time.Second,
@@ -228,12 +228,12 @@ func (a *app) removeWorktree(worktree gitrepo.Worktree) {
 // repository in between; the branch name means something only in the
 // repository it came from, so the action refuses once that repository is no
 // longer the open one.
-func (a *app) deleteBranchAfterWorktree(repo *gitrepo.Repository, branch string) {
-	if repo == nil || a.repo != repo {
+func (a *app) deleteBranchAfterWorktree(repo *gitrepo.Repository, branch gitrepo.Branch) {
+	if repo == nil || a.repo == nil || a.repo.Root != repo.Root {
 		return
 	}
 	a.perform(a.t("deleteBranchFailed"), a.t("branchDeleted"), func(ctx context.Context, repo *gitrepo.Repository) error {
-		return repo.DeleteBranch(ctx, branch)
+		return repo.DeleteBranchChecked(ctx, branch.Name, branch.SHA, false)
 	})
 }
 
@@ -449,7 +449,7 @@ func (a *app) submoduleMenu(c *ui.Context, row ui.Element, module gitrepo.Submod
 		a.openRepository(filepath.Join(a.repo.Root, module.Path), true)
 	case "update":
 		a.performAs(busySubmodule, a.t("updateSubmoduleFailed"), a.t("submoduleUpdated"), func(ctx context.Context, repo *gitrepo.Repository) error {
-			return repo.UpdateSubmodule(ctx, module.Path)
+			return repo.UpdateSubmoduleChecked(ctx, module)
 		})
 	case "reveal":
 		a.openPath(filepath.Join(a.repo.Root, module.Path), "reveal")
@@ -459,16 +459,42 @@ func (a *app) submoduleMenu(c *ui.Context, row ui.Element, module gitrepo.Submod
 }
 
 type worktreeFormState struct {
-	open   bool
-	path   string
-	branch string
-	start  string
+	root     string
+	open     bool
+	deferred bool // failed creation waits for another modal to finish
+	path     string
+	branch   string
+	start    string
 }
 
 // openWorktreeForm asks for a destination, a new branch and the start point;
 // the start defaults to the current branch so the new worktree shares HEAD.
+func (a *app) discardStaleWorktreeForm() bool {
+	if a.worktreeForm.root != "" && (a.repo == nil || a.repo.Root != a.worktreeForm.root) {
+		a.worktreeForm = worktreeFormState{}
+		return true
+	}
+	return false
+}
+
 func (a *app) openWorktreeForm() {
+	a.discardStaleWorktreeForm()
 	if a.repo == nil {
+		return
+	}
+	if a.worktreeForm.open {
+		a.queue("warning", a.t("promptPending"), "")
+		a.invalidate()
+		return
+	}
+	if a.rejectPendingDialog(toastMain) {
+		return
+	}
+	if a.worktreeForm.deferred {
+		a.worktreeFormSeq++
+		a.worktreeForm.open = true
+		a.worktreeForm.deferred = false
+		a.invalidate()
 		return
 	}
 	start := a.status.Branch
@@ -481,7 +507,8 @@ func (a *app) openWorktreeForm() {
 		return
 	}
 	path := filepath.Join(filepath.Dir(a.repo.Root), filepath.Base(a.repo.Root)+"-worktree")
-	a.worktreeForm = worktreeFormState{open: true, path: path, start: start}
+	a.worktreeFormSeq++
+	a.worktreeForm = worktreeFormState{root: a.repo.Root, open: true, path: path, start: start}
 	a.invalidate()
 }
 
@@ -489,14 +516,18 @@ func (a *app) openWorktreeForm() {
 // worktree directory itself must not exist yet, so the picker chooses a parent
 // and keeps the name already typed in the form.
 func (a *app) chooseWorktreeParent() {
-	if a.window == nil || a.repo == nil {
+	if a.discardStaleWorktreeForm() || a.window == nil || a.repo == nil || !a.worktreeForm.open {
 		return
 	}
+	root, seq := a.repo.Root, a.worktreeFormSeq
 	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 		Parent:    a.window,
 		Title:     a.t("chooseParentDir"),
 		Directory: true,
 	})
+	if a.repo == nil || a.repo.Root != root || a.worktreeFormSeq != seq || !a.worktreeForm.open {
+		return
+	}
 	if err != nil {
 		a.queue("error", a.t("chooseParentDirFailed"), err.Error())
 		a.invalidate()
@@ -505,7 +536,14 @@ func (a *app) chooseWorktreeParent() {
 	if len(paths) == 0 {
 		return
 	}
-	a.worktreeForm.path = worktreePathFromParent(paths[0], a.worktreeForm.path, a.repo.Root)
+	a.applyWorktreeParent(root, seq, paths[0])
+}
+
+func (a *app) applyWorktreeParent(root string, seq uint64, parent string) {
+	if a.repo == nil || a.repo.Root != root || a.worktreeFormSeq != seq || !a.worktreeForm.open {
+		return
+	}
+	a.worktreeForm.path = worktreePathFromParent(parent, a.worktreeForm.path, a.repo.Root)
 	a.invalidate()
 }
 
@@ -520,6 +558,14 @@ func worktreePathFromParent(parent, current, repoRoot string) string {
 }
 
 func (a *app) worktreeFormDialog(c *ui.Context) {
+	a.worktreeFormDialogFor(c, toastMain)
+}
+
+func (a *app) worktreeFormDialogFor(c *ui.Context, owner toastOwner) {
+	if owner != toastMain {
+		return
+	}
+	a.discardStaleWorktreeForm()
 	if !a.worktreeForm.open {
 		return
 	}
@@ -586,17 +632,23 @@ func (a *app) worktreeFormDialog(c *ui.Context) {
 // taken branch, a missing parent) threw away the whole form; the reader had
 // to retype it to try again.
 func (a *app) submitWorktreeForm() {
+	if a.discardStaleWorktreeForm() || a.repo == nil {
+		return
+	}
+	root, seq := a.repo.Root, a.worktreeFormSeq
 	form := a.worktreeForm
+	form.root = root
 	form.open = false
 	path := strings.TrimSpace(form.path)
 	branch := strings.TrimSpace(form.branch)
 	start := strings.TrimSpace(form.start)
 	a.worktreeForm = worktreeFormState{}
 	restore := func(err error) {
-		if err == nil {
+		if err == nil || a.repo == nil || a.repo.Root != root || a.worktreeFormSeq != seq {
 			return
 		}
-		form.open = true
+		form.deferred = a.hasPendingDialog(toastMain)
+		form.open = !form.deferred
 		a.worktreeForm = form
 	}
 	started := a.performDoneAs(busyCreateWorktree, a.t("createWorktreeFailed"), a.t("worktreeCreated"), restore,

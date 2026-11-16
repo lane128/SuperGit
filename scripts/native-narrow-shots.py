@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
-"""Capture the history page at the minimum window size in five looks.
+"""Capture Lobe detail tabs at 980/1320/1600 x 640 in zh/en and light/dark.
 
-The narrow layout was reviewed once, in English with a light palette. A reader
-running Chinese in a dark palette at 980x640 sees the same columns with longer
-labels and darker capsules, so this launches the app four times (zh/en x
-light/dark) at the minimum size and keeps one screenshot each under build/.
-A fifth run repeats the Chinese light look at the large font preset, where the
-two file lists used to disagree about how tall a row is.
-
-Each run keeps two screenshots: the commit's files and patch, then the working
-tree's, since the two lists are the same pane and have to read the same.
-
-The fixture is built here instead of reusing a demo: the check needs a few
-branches, a remote, a tag and both Chinese and English subjects long enough to
-truncate, so one look can show every piece the narrow layout has to fit.
+Four additional critical combinations use fontScale=1.15. A disposable fixture
+has a long commit body, identical basenames, a long path, 13 file tabs and an
+empty commit. Each look captures summary, overflowing tabs, empty history and
+working changes. Logs and accessibility snapshots are kept beside screenshots.
 """
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -30,7 +22,8 @@ automation = build / "mygo-automation"
 # The History page this checks belongs to the Lobe preview app, not the older
 # release build that `make e2e-build` produces.
 app_binary = build / "supergit-lobe-e2e"
-shots = build / "narrow-shots"
+# Keep earlier visual evidence intact; each matrix run owns its captures.
+shots = pathlib.Path(tempfile.mkdtemp(prefix="narrow-shots-", dir=build))
 
 if not app_binary.is_file() or not automation.is_file():
     raise SystemExit("run `make lobe-e2e-build` first")
@@ -89,26 +82,52 @@ git("switch", "-c", "hotfix")
 edit("src/diff/empty.go", "package diff\n", "Fix the crash on an empty diff", 1700000600)
 git("switch", "main")
 git("merge", "--no-ff", "hotfix", "-m", "Merge hotfix into main", env={"GIT_AUTHOR_DATE": "1700000700 +0000", "GIT_COMMITTER_DATE": "1700000700 +0000"})
+paths = [f"same-name/{n:02d}/file.go" for n in range(12)] + ["very-long-directory-name/another-long-directory/long-file-name-for-detail-tab-review.txt"]
+for path in paths:
+    target = workspace / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("base content\n")
+git("add", "--all")
+git("commit", "-m", "Detail tabs base fixture")
+for path in paths:
+    (workspace / path).write_text("changed content\n")
+body = "Long message starts here\n\n" + "\n".join(f"detail {n:02d}: 完整说明 and preserved indentation" for n in range(24)) + "\n\nRefs: narrow-tabs-fixture"
+git("commit", "-am", "Detail tabs changes fixture", "-m", body)
+git("commit", "--allow-empty", "-m", "Detail tabs empty fixture")
 git("remote", "add", "origin", str(remote))
 git("push", "-u", "origin", "main", "feature/narrow-window-ref-capsules")
+(workspace / "docs/release-notes.md").write_text("release notes\nautumn campaign\nstaged version\n")
+git("add", "--", "docs/release-notes.md")
 (workspace / "docs/release-notes.md").write_text("release notes\nautumn campaign\nedited in the working tree\n")
 
-# The first commit subject is fixture text, so the wait works in both locales.
-ready_text = "Initial commit"
 
+def fingerprint():
+    return (git("rev-parse", "HEAD"), git("ls-files", "--stage"), git("diff"), git("diff", "--cached"))
+
+
+expected_state = fingerprint()
+
+ready_text = "Detail tabs changes fixture"
 combinations = [
-    ("zh-light", "zh", "light", None),
-    ("zh-dark", "zh", "dark", None),
-    ("en-light", "en", "light", None),
-    ("en-dark", "en", "dark", None),
-    # The large preset is where the working tree's fixed row and the commit's
-    # scaled one were furthest apart.
-    ("zh-light-large", "zh", "light", 1.15),
+    (f"{width}-{language}-{theme}", language, theme, None, width)
+    for width in (980, 1320, 1600)
+    for language in ("zh", "en")
+    for theme in ("light", "dark")
+] + [
+    (f"{width}-{language}-{theme}-large", language, theme, 1.15, width)
+    for width, language, theme in ((980, "zh", "light"), (980, "en", "dark"), (1600, "zh", "dark"), (1600, "en", "light"))
 ]
+
+selected_cases = os.environ.get("SUPERGIT_SHOT_CASES", "")
+if selected_cases:
+    selected_cases = set(selected_cases.split(","))
+    combinations = [case for case in combinations if case[0] in selected_cases]
+    if not combinations:
+        raise SystemExit("SUPERGIT_SHOT_CASES matched no matrix cases")
 
 shots.mkdir(parents=True, exist_ok=True)
 failures = []
-for name, language, theme, font_scale in combinations:
+for name, language, theme, font_scale, width in combinations:
     home = root / ("home-" + name)
     settings_dir = home / "Library" / "Application Support" / "supergit"
     settings_dir.mkdir(parents=True)
@@ -121,7 +140,7 @@ for name, language, theme, font_scale in combinations:
     env = {
         **os.environ,
         "MYGO_AUTOMATION": str(socket),
-        "SUPERGIT_WINDOW_SIZE": "980x640",
+        "SUPERGIT_WINDOW_SIZE": f"{width}x640",
         "HOME": str(home),
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_NOSYSTEM": "1",
@@ -156,30 +175,84 @@ for name, language, theme, font_scale in combinations:
             return result.stdout
 
         auto("open", "--socket", str(socket))
-        # The History page is the narrow layout under review; the app may
-        # restore another page, so ask for it instead of assuming.
-        auto("key", "cmd+2", "--settle")
+        def controls():
+            entries = []
+            for line in auto("snapshot", "--full").splitlines():
+                match = re.match(r'\s*(@e\d+) \[(\w+)\](?: ("(?:[^"\\]|\\.)*"))?(.*)', line)
+                if match:
+                    entries.append((match[1], match[2], json.loads(match[3]) if match[3] else "", match[4]))
+            return entries
+
+        def press(role, label):
+            matches = [e for e in controls() if e[1] == role and e[2] == label]
+            if len(matches) != 1:
+                raise AssertionError(f"expected one {role} {label!r}, got {matches}")
+            auto("press", matches[0][0], "--settle")
+
+        def capture(suffix):
+            print(auto("screenshot", str(shots / (name + suffix + ".png"))).strip(), flush=True)
+            (shots / (name + suffix + ".snapshot.txt")).write_text(auto("snapshot", "--full"))
+
+        auto("key", "cmd+1", "--settle")
         auto("wait", "--text", ready_text, "--timeout", "30s", "--settle")
-        # The files column and the patch load in a goroutine; settle returns
-        # while they are still reading, so wait for the loading copy to leave
-        # before the screenshot or the columns look empty for no reason.
-        loading = "正在加载差异…" if language == "zh" else "Loading diff…"
-        auto("wait", "--text", loading, "--gone", "--timeout", "20s", "--settle")
-        shot = auto("screenshot", str(shots / (name + ".png"))).strip()
-        print(shot, flush=True)
-        (shots / (name + ".snapshot.txt")).write_text(auto("snapshot", "-i"))
-        # The working tree's files sit under the same pane as the commit's;
-        # Home walks the list back to the working tree's row. The patch rows
-        # are drawn, not labeled, so wait for the changed file's row and then
-        # for the patch's loading copy to leave.
-        auto("key", "home", "--settle")
-        auto("wait", "--text", "docs/release-notes.md", "--timeout", "20s", "--settle")
-        auto("wait", "--text", loading, "--gone", "--timeout", "20s", "--settle")
-        shot = auto("screenshot", str(shots / (name + "-worktree.png"))).strip()
-        print(shot, flush=True)
-        (shots / (name + "-worktree.snapshot.txt")).write_text(auto("snapshot", "-i"))
+        press("listItem", ready_text)
+        auto("wait", "--text", "Refs: narrow-tabs-fixture", "--timeout", "20s", "--settle")
+        entries = controls()
+        files_title = "文件" if language == "zh" else "Files"
+        title_at = next(i for i, e in enumerate(entries) if e[1] == "text" and e[2] == files_title)
+        file_scroll = next(e for e in entries[title_at + 1:] if e[1] == "scroll")
+        tab_at = next(i for i, e in enumerate(entries) if e[1] == "tabList")
+        tab_scroll = next(e for e in reversed(entries[:tab_at]) if e[1] == "scroll")
+        def bounds(entry):
+            match = re.search(r"bounds=([-0-9.]+),([-0-9.]+),([-0-9.]+)x([-0-9.]+)", entry[3])
+            if not match:
+                raise AssertionError(f"missing bounds: {entry}")
+            return tuple(float(value) for value in match.groups())
+        # The file scroll viewport excludes its column's one-DIP divider.
+        assert bounds(file_scroll)[2] + 1 >= 180 - 0.1, f"file column too narrow: {file_scroll}"
+        assert bounds(tab_scroll)[2] >= 300 - 0.1, f"details too narrow: {tab_scroll}"
+        capture("-summary")
+        for path in paths:
+            press("listItem", path)
+        tabs = [e for e in controls() if e[1] == "tab"]
+        assert len(tabs) == len(paths) + 1, "lost file tabs"
+        assert "checked" in tabs[-1][3] and "offscreen" not in tabs[-1][3], "active tab was not revealed"
+        close_label = ("关闭 " if language == "zh" else "Close ") + paths[-1]
+        close_button = next(e for e in controls() if e[1] == "button" and e[2] == close_label)
+        assert "offscreen" not in close_button[3], "active tab close control was not revealed"
+        capture("-tabs")
+        press("listItem", "Detail tabs empty fixture")
+        assert len([e for e in controls() if e[1] == "tab"]) == 1
+        capture("-empty")
+        changes = next(e for e in controls() if e[1] == "listItem" and (e[2] == "1 change" or e[2] == "1 changes" or "1 个改动" in e[2] or "1 项改动" in e[2]))
+        auto("press", changes[0], "--settle")
+        auto("wait", "--text", "+edited in the working tree", "--timeout", "20s", "--settle")
+        capture("-worktree")
+        entries = controls()
+        groups = ("已修改文件", "未跟踪文件", "已暂存文件") if language == "zh" else ("Modified Files", "Untracked Files", "Staged Files")
+        for group in groups:
+            assert any(e[1] == "button" and e[2] == group for e in entries), f"missing fixed group {group}"
+        commit_label = "提交" if language == "zh" else "Commit"
+        commit_button = next(e for e in entries if e[1] == "button" and e[2] == commit_label)
+        assert "disabled" in commit_button[3], "empty summary permits commit"
+        capture("-commit-disabled")
+        summary_label = "提交标题（必填）" if language == "zh" else "Commit summary (required)"
+        summary = next(e for e in entries if e[1] == "textField" and e[2] == summary_label)
+        auto("fill", summary[0], "Acceptance draft with staged changes", "--settle")
+        deadline = time.monotonic() + 20
+        while not any(e[1] == "button" and e[2] == commit_label and "disabled" not in e[3] for e in controls()):
+            if time.monotonic() > deadline:
+                raise AssertionError("staged fixture with summary never enables commit")
+            time.sleep(0.05)
+        assert "narrow@example.invalid" in auto("snapshot", "--full"), "effective author email missing"
+        capture("-commit-enabled")
+        assert fingerprint() == expected_state, "screenshot browsing changed fixture HEAD, Index or worktree"
         print(name, "captured", flush=True)
-    except Exception as error:  # keep the other three looks running
+    except Exception as error:  # keep the other matrix cases running
+        try:
+            capture("-failure")
+        except Exception:
+            pass
         failures.append((name, str(error)))
         print(name, "failed:", error, file=sys.stderr, flush=True)
     finally:

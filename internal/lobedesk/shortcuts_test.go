@@ -122,9 +122,10 @@ func TestTheSettingsCardListsEveryShortcut(t *testing.T) {
 // the patch in front, as it does for a commit's patch.
 func TestCopyLinesIsAvailableForTheWorkingTreePatch(t *testing.T) {
 	a := &app{
-		page: "history", worktreeSelected: true, selectedPath: "a.go", detailTab: detailTabFile,
+		page: "history", worktreeSelected: true, selectedPath: "a.go",
 		lineSel: map[int]bool{0: true},
 	}
+	a.detailTabs().Open(detailFileKey{Path: "a.go"})
 	for _, s := range shortcutTable() {
 		if s.ID != "diff.copyLines" {
 			continue
@@ -132,7 +133,7 @@ func TestCopyLinesIsAvailableForTheWorkingTreePatch(t *testing.T) {
 		if s.Available == nil || !s.Available(a) {
 			t.Fatal("⌘C is not available while the working tree's patch has a line selection")
 		}
-		a.detailTab = detailTabSummary
+		a.detailTabs().Activate(detailTabKey{Summary: true})
 		if s.Available(a) {
 			t.Error("⌘C is available on the working tree's summary tab")
 		}

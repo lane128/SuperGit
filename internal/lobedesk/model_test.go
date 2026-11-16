@@ -477,7 +477,8 @@ func TestMoveCommitLineSelection(t *testing.T) {
 		{Kind: "meta", Hunk: -1},
 		{Kind: "add", Hunk: 1},
 	}}
-	a := &app{commitDiff: diff, commitSel: map[int]bool{2: true}, commitAnchor: 2, commitCursor: 2, detailTab: detailTabFile, commitPath: "a.go"}
+	a := &app{commitDiff: diff, commitSections: []commitDiffSection{{Path: "a.go", Rows: []int{1, 2, 3, 4, 6}}}, commitSel: map[int]bool{2: true}, commitAnchor: 2, commitCursor: 2, commitPath: "a.go"}
+	a.detailTabs().Open(detailFileKey{Path: "a.go"})
 	if !a.moveCommitLineSelection(1, false) {
 		t.Fatal("plain move did not take")
 	}
@@ -542,7 +543,7 @@ func TestSelectionSetAndEdges(t *testing.T) {
 }
 
 func TestCanCommitOperation(t *testing.T) {
-	a := &app{repo: &gitrepo.Repository{}, commitText: "merge it", operation: gitrepo.Operation{Kind: "merge"}}
+	a := &app{repo: &gitrepo.Repository{}, commitText: "merge it", operation: gitrepo.Operation{Kind: "merge"}, commitIdentity: readyCommitIdentity("")}
 	if !a.canCommit() {
 		t.Error("a finished merge should be committable without staged files")
 	}
@@ -759,6 +760,7 @@ func TestTheWorkingTreeDiffLinesWalkOnTheHistoryPage(t *testing.T) {
 		lineAnchor: 0,
 		lineCursor: 0,
 	}
+	a.detailTabs().Open(detailFileKey{Path: "a.go"})
 	a.moveSelection(1)
 	if !a.lineSel[1] || a.lineSel[0] {
 		t.Fatalf("the arrow left the selection at %v; want line 1 alone", a.lineSel)
@@ -810,7 +812,7 @@ func TestOperationConflicts(t *testing.T) {
 }
 
 func TestCanCommitShortcut(t *testing.T) {
-	a := &app{page: "history", worktreeSelected: true}
+	a := &app{page: "history", worktreeSelected: true, repo: &gitrepo.Repository{Root: t.TempDir()}}
 	if !a.canCommitShortcut() {
 		t.Error("the working tree with no dialog should take ⌘↩")
 	}

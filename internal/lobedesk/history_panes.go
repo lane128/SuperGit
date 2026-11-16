@@ -9,6 +9,8 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"fmt"
+	"slices"
+	"supergit/internal/gitrepo"
 )
 
 // The history page keeps Sublime Merge's three columns after the locations
@@ -28,17 +30,17 @@ const (
 // historyFilesWidth is the files column's width this frame, read from the
 // share the row was laid out with.
 func (a *app) historyFilesWidth() float32 {
-	row := a.historySplit.rowWidth
-	if row <= 0 {
+	row := a.filesSplit.rowWidth
+	if row <= 0 && a.historySplit.rowWidth > 0 {
+		row = (a.historySplit.rowWidth - splitterWidth) * (1 - a.historyShare())
+	}
+	if row <= splitterWidth {
 		return historyFilesPaneWidth
 	}
-	// The splitter is fixed width, so the two panes share what is left of the
-	// row; measuring against the whole row over-subtracted it from the patch.
-	details := (row - splitterWidth) * (1 - a.historyShare())
-	if details <= 0 {
-		return historyFilesPaneWidth
-	}
-	return min(historyFilesPaneWidth, max(historyFilesPaneMin, details-historyDiffPaneMin))
+	state := a.filesSplit
+	state.rowWidth = row
+	def := historyFilesPaneWidth / (row - splitterWidth)
+	return max(historyFilesPaneMin, (row-splitterWidth)*state.fraction(def, historyFilesPaneMin, historyDiffPaneMin))
 }
 
 const (
@@ -46,12 +48,138 @@ const (
 	detailTabFile    = "file"
 )
 
+// normalizeDetailVisibility maps legacy preferences to content inside the
+// permanent first tab and drops selections when their content is hidden.
+func (a *app) normalizeDetailVisibility() {
+	if a.detailsInfoHidden && a.detailsDiffHidden {
+		a.detailsInfoHidden = false
+	}
+	if !a.worktreeSelected && a.detailsDiffHidden {
+		if !a.detailTabs().Active.Summary {
+			a.activateDetailTab(detailTabKey{Summary: true})
+		}
+		a.clearLineSelection()
+		a.clearCommitSelection()
+		a.commitCollapsedSel = nil
+	}
+	if a.detailsChangesHidden {
+		a.detailFileFocus = nil
+	}
+	if a.historyDetailsHidden {
+		a.detailFocusPending = false
+		a.detailFileFocus = nil
+		a.clearLineSelection()
+		a.clearCommitSelection()
+		a.commitCollapsedSel = nil
+	}
+}
+
+func (a *app) setHistoryDetailsHidden(hidden bool) {
+	a.saveDetailScroll()
+	a.historyDetailsHidden = hidden
+	a.normalizeDetailVisibility()
+	a.invalidate()
+}
+
+func (a *app) detailSummaryLabel() string {
+	if a.worktreeSelected {
+		return a.t("commit")
+	}
+	return a.t("summaryTab")
+}
+
+func (a *app) saveDetailScroll() {
+	tabs := a.detailTabs()
+	if tabs.Scroll == nil {
+		tabs.Scroll = make(map[detailTabKey]detailScrollPosition)
+	}
+	scroll := &a.commitInfoScroll
+	if !tabs.Active.Summary {
+		scroll = &a.commitDiffScroll
+		if a.worktreeSelected {
+			scroll = &a.diffScroll
+		}
+	}
+	tabs.Scroll[tabs.Active] = detailScrollPosition{X: scroll.X, Y: scroll.Y}
+}
+
+func (a *app) openDetailFile(file detailFileKey) {
+	if file.Path == "" || (!a.worktreeSelected && a.detailsDiffHidden) {
+		return
+	}
+	a.saveDetailScroll()
+	old := a.detailTabs().Active
+	a.detailTabs().Open(file)
+	a.applyDetailTab(old)
+}
+
+func (a *app) activateDetailTab(tab detailTabKey) {
+	if !tab.Summary && !a.worktreeSelected && a.detailsDiffHidden {
+		return
+	}
+	a.saveDetailScroll()
+	old := a.detailTabs().Active
+	if a.detailTabs().Activate(tab) {
+		a.applyDetailTab(old)
+	}
+}
+
+func (a *app) closeDetailFile(file detailFileKey) {
+	a.saveDetailScroll()
+	old := a.detailTabs().Active
+	a.detailTabs().Close(file)
+	delete(a.detailTabs().Scroll, detailTabKey{File: file})
+	a.applyDetailTab(old)
+}
+
+func (a *app) applyDetailTab(previous detailTabKey) {
+	tab := a.detailTabs().Active
+	a.detailReveal = true
+	if tab == previous {
+		a.invalidate()
+		return
+	}
+	a.detailFileFocus = nil
+	a.clearLineSelection()
+	a.clearCommitSelection()
+	a.commitCollapsedSel = nil
+	pos := a.detailTabs().Scroll[tab]
+	if tab.Summary {
+		a.commitInfoScroll.X, a.commitInfoScroll.Y = pos.X, pos.Y
+	} else if a.worktreeSelected {
+		file := tab.File
+		changed := a.selectedPath != file.Path || a.selectedStaged != file.Staged
+		a.selectedPath, a.selectedStaged = file.Path, file.Staged
+		a.diffScroll = ui.ScrollState{X: pos.X, Y: pos.Y}
+		if a.repo != nil {
+			if cached, ok := a.diffCache.get(a.repo.Root, a.loadSeq, file); ok {
+				a.diffSeq++ // Reject a pending read of a previous projection.
+				a.diff, a.diffErr, a.diffLoading = cached, "", false
+			} else if changed || (a.diff.Text == "" && !a.diffLoading) {
+				a.diff = gitrepo.Diff{}
+				a.diffErr = ""
+				a.loadDiff()
+			}
+		}
+	} else {
+		a.commitPath = tab.File.Path
+		a.commitDiffScroll = ui.ScrollState{X: pos.X, Y: pos.Y}
+	}
+	a.invalidate()
+}
+
 // historyDetailsPane is the share right of the commit list: the changed files
 // and the patch side by side. The details toggle in the page header collapses
 // both columns at once.
 func (a *app) historyDetailsPane(c *ui.Context) {
-	ui.Row(c).Grow(1 - a.historyShare()).Basis(0).MinWidth(0).AlignSelf(ui.Stretch).Children(func() {
+	row := ui.Row(c).Grow(1 - a.historyShare()).Basis(0).MinWidth(0).AlignSelf(ui.Stretch)
+	a.filesSplit.rowWidth = row.Bounds().W
+	row.Children(func() {
 		a.historyFilesPane(c)
+		if !a.detailsChangesHidden {
+			def := shareForWidth(a.filesSplit.rowWidth-splitterWidth, historyFilesPaneWidth)
+			a.splitHandle(c, &a.filesSplit, def, historyFilesPaneMin, historyDiffPaneMin, a.t("resizeFilesPane"))
+		}
 		a.historyDiffPane(c)
 	})
 }
@@ -65,33 +193,24 @@ func (a *app) detailFilePath() string {
 	return a.commitPath
 }
 
-// detailTabShown resolves the tab to draw. Settings can hide the commit
-// message or the commit's patch; the working tree always keeps its Summary,
-// because the commit box lives there. A pane with no file open, or with the
-// file hidden, falls back to the Summary so it is never blank.
+// detailTabShown classifies the active target for existing pane/shortcut
+// callers. The context's tab key is the sole source of active-file identity;
+// a hidden historical patch falls back to the permanent first tab.
 func (a *app) detailTabShown() string {
-	showSummary := a.worktreeSelected || !a.detailsInfoHidden
-	showFile := a.detailFilePath() != "" && (a.worktreeSelected || !a.detailsDiffHidden)
-	if !showSummary && showFile {
-		return detailTabFile
-	}
-	if !showFile {
-		return detailTabSummary
-	}
-	if a.detailTab == detailTabFile {
+	if !a.detailTabs().Active.Summary && (a.worktreeSelected || !a.detailsDiffHidden) {
 		return detailTabFile
 	}
 	return detailTabSummary
 }
 
-// detailSummaryShown reports whether the Summary tab is one of the pane's tabs.
+// The first tab remains available even when metadata is hidden.
 func (a *app) detailSummaryShown() bool {
-	return a.worktreeSelected || !a.detailsInfoHidden
+	return true
 }
 
 // detailFileShown reports whether the file tab is one of the pane's tabs.
 func (a *app) detailFileShown() bool {
-	return a.detailFilePath() != "" && (a.worktreeSelected || !a.detailsDiffHidden)
+	return len(a.detailTabs().OpenFiles) > 0 && (a.worktreeSelected || !a.detailsDiffHidden)
 }
 
 // historyFilesPane lists the selection's changed files: the working tree's
@@ -107,37 +226,38 @@ func (a *app) historyFilesPane(c *ui.Context) {
 		count = len(a.status.Entries)
 	}
 	ui.Column(c).Width(a.historyFilesWidth()).Shrink(0).MinHeight(0).AlignSelf(ui.Stretch).
-		BorderWidth(0, 1, 0, 0).BorderColor(tk.BorderSecondary).Children(func() {
-		ui.Row(c).Height(38).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
-			BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary).Children(func() {
-			display.Text(c, a.t("filesTab"), display.TextProps{Strong: true, FontSize: scaledFont(12)})
-			if !a.worktreeSelected && (a.commitFilesLoading || a.commitFilesErr != "") {
-				return
-			}
-			display.Tag(c, fmt.Sprint(count), display.TagProps{Variant: display.TagFilled, Size: theme.Small, Round: true})
-			// The working tree keeps the two bulk stage controls the
-			// workspace header used to carry; a commit's file list has no
-			// index to move files in or out of.
-			if a.worktreeSelected {
-				ui.Row(c).Grow(1).Basis(0)
-				a.filesToolbar(c)
-			}
-		})
-		layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitFilesScroll}, func() {
-			ui.Column(c).FillWidth().Padding(7).Gap(1).Children(func() {
-				if a.worktreeSelected {
-					a.workingFileSections(c)
+		Children(func() {
+			ui.Row(c).Height(38).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
+				BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary).Children(func() {
+				display.Text(c, a.t("filesTab"), display.TextProps{Strong: true, FontSize: scaledFont(12)})
+				if !a.worktreeSelected && (a.commitFilesLoading || a.commitFilesErr != "") {
 					return
 				}
-				a.commitFileList(c)
+				display.Tag(c, fmt.Sprint(count), display.TagProps{Variant: display.TagFilled, Size: theme.Small, Round: true})
+				// The working tree keeps the two bulk stage controls the
+				// workspace header used to carry; a commit's file list has no
+				// index to move files in or out of.
+				if a.worktreeSelected {
+					ui.Row(c).Grow(1).Basis(0)
+					a.filesToolbar(c)
+				}
 			})
-		}).Grow(1).Basis(0).MinHeight(0)
-	})
+			filesScroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitFilesScroll}, func() {
+				ui.Column(c).FillWidth().Padding(7).Gap(1).FocusGroup(ui.Horizontal | ui.Vertical).Children(func() {
+					if a.worktreeSelected {
+						a.workingFileSections(c)
+						return
+					}
+					a.commitFileList(c)
+				})
+			}).Grow(1).Basis(0).MinHeight(0)
+			a.commitFilesViewport = filesScroll.Bounds()
+		})
 }
 
-// historyDiffPane is the patch column. Its tab strip keeps the commit Summary
-// beside the open file, the way Sublime Merge's viewer does; the working tree
-// uses the Summary tab for its commit box.
+// historyDiffPane keeps the permanent Commit/Summary tab beside the open file
+// tabs. The first tab combines context information and all relevant patches;
+// each file tab projects exactly one path and, in the worktree, stage version.
 func (a *app) historyDiffPane(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	// The strip wears a quiet fill so the active tab, painted in the page's
@@ -150,17 +270,36 @@ func (a *app) historyDiffPane(c *ui.Context) {
 			// The active tab runs the full height of the strip and shares the
 			// page's ground, so it meets the body below with no gray seam; a
 			// bottom border here would cut that join.
-			ui.Row(c).Height(38).Shrink(0).Gap(2).Padding(0, 8).AlignItems(ui.Center).
-				Background(tk.FillTertiary).Role(ui.RoleTabList).Children(func() {
-				if a.detailSummaryShown() {
-					a.detailTabButton(c, tk, detailTabSummary, a.t("summaryTab"), "")
-				}
-				if a.detailFileShown() {
-					path := a.detailFilePath()
-					name, _ := splitRepoPath(path)
-					a.detailTabButton(c, tk, detailTabFile, name, path)
-				}
-			})
+			strip := layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Horizontal, State: &a.detailTabStrip}, func() {
+				ui.Row(c).Height(38).Gap(2).Padding(0, 8).AlignItems(ui.Center).
+					Background(tk.FillTertiary).Role(ui.RoleTabList).FocusGroup(ui.Horizontal).Children(func() {
+					a.detailTabButton(c, tk, detailTabKey{Summary: true}, a.detailSummaryLabel(), "")
+					if a.detailFileShown() {
+						// A close click mutates OpenFiles during this render pass.
+						// Keep the current frame's iteration stable until the next.
+						for _, file := range slices.Clone(a.detailTabs().OpenFiles) {
+							name, _ := splitRepoPath(file.Path)
+							if a.worktreeSelected {
+								stage := "unstaged"
+								if file.Staged {
+									stage = "staged"
+								}
+								name += " · " + a.t(stage)
+							}
+							a.detailTabButton(c, tk, detailTabKey{File: file}, name, file.Path)
+						}
+					}
+				})
+			}).Height(38).Shrink(0).FillWidth()
+			previousWidth := ui.Local(strip, "detail-tab-strip-width", func() float32 { return 0 })
+			width := strip.Bounds().W
+			if width > 0 && *previousWidth > 0 && width < *previousWidth-0.5 {
+				// Existing horizontal offset can leave the active tab outside a
+				// narrower viewport. Reveal it again once new bounds are known.
+				a.detailReveal = true
+				a.invalidate()
+			}
+			*previousWidth = width
 			a.historyDiffBody(c, tk)
 		})
 }
@@ -168,42 +307,47 @@ func (a *app) historyDiffPane(c *ui.Context) {
 // detailTabButton draws one tab. It fills the strip and wears the page's
 // surface when active, so it reads as the pane's edge rather than a floating
 // pill; the tooltip carries the full file path the label shortens.
-func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key, label, tooltip string) {
-	active := a.detailTabShown() == key
-	tab := ui.ButtonBase(c).Label(label).Row().Height(38).Padding(0, 10).Gap(6).
-		Radius(tk.BorderRadius, tk.BorderRadius, 0, 0).AlignItems(ui.Center).
-		Role(ui.RoleTab).AccessSelected(active)
-	if key == detailTabFile {
-		// The file tab takes what the Summary leaves, and the text ellipsizes
-		// inside it: a fixed 220 cap plus padding overflowed a 300-wide strip,
-		// clipping the name at the pane's edge.
-		tab.Grow(1).Basis(0).MinWidth(0)
-	}
-	if tooltip != "" {
-		tab.Tooltip(tooltip)
-	}
-	style := display.TextSecondary
+func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey, label, tooltip string) {
+	c = c.Key(key)
+	active := a.detailTabs().Active == key
+	wrapper := ui.Row(c).Height(38).Shrink(0).MaxWidth(260).AlignItems(ui.Center).
+		Radius(tk.BorderRadius, tk.BorderRadius, 0, 0)
 	if active {
-		tab.Background(tk.BgContainer)
-		style = display.TextDefault
-	} else if tab.Hovered() {
-		tab.Background(tk.FillSecondary)
+		wrapper.Background(tk.BgContainer)
 	}
-	tab.Children(func() {
-		text := display.Text(c, label, display.TextProps{
-			FontSize: scaledFont(11.5),
-			Strong:   active,
-			Type:     style,
-		}).SingleLine()
-		if key == detailTabFile {
-			text.Grow(1).Basis(0).MinWidth(0)
-		} else {
-			text.MaxWidth(220)
+	wrapper.Children(func() {
+		tab := ui.ButtonBase(c).Label(label).Row().Height(38).Padding(0, 10).MinWidth(0).
+			Role(ui.RoleTab).AccessSelected(active)
+		a.wireDetailTabKeys(tab, key)
+		if tooltip != "" {
+			tab.Tooltip(tooltip)
 		}
+		style := display.TextSecondary
+		if active {
+			style = display.TextDefault
+		} else if tab.Hovered() {
+			tab.Background(tk.FillSecondary)
+		}
+		tab.Children(func() {
+			display.Text(c, label, display.TextProps{FontSize: scaledFont(11.5), Strong: active, Type: style}).SingleLine().MaxWidth(204)
+		})
+		if tab.Clicked() {
+			a.activateDetailTab(key)
+		}
+		if !key.Summary {
+			close := ui.ButtonBase(c).Label(a.t("close") + " " + tooltip).Width(26).Height(30).Shrink(0).Center()
+			a.wireDetailTabKeys(close, key)
+			close.Children(func() { ui.Icon(c, lucide.X()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary) })
+			if close.Clicked() {
+				a.closeDetailFile(key.File)
+				a.requestDetailTabFocus()
+			}
+		}
+		a.focusRequestedDetailTab(tab, key)
 	})
-	if tab.Clicked() {
-		a.detailTab = key
-		a.invalidate()
+	if active && a.detailReveal {
+		wrapper.ScrollIntoView()
+		a.detailReveal = false
 	}
 }
 
@@ -221,23 +365,7 @@ func (a *app) historyDiffBody(c *ui.Context, tk *theme.Tokens) {
 			a.detailPlaceholder(c)
 			return
 		}
-		if a.worktreeSelected {
-			layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitInfoScroll}, func() {
-				ui.Column(c).FillWidth().Padding(14).Gap(12).Children(func() {
-					a.commitForm(c)
-					a.operationCard(c)
-				})
-			}).Grow(1).Basis(0).MinHeight(0)
-			return
-		}
-		commit, ok := a.selectedCommit()
-		if !ok {
-			a.detailPlaceholder(c)
-			return
-		}
-		layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitInfoScroll}, func() {
-			a.commitInfoContent(c, commit, tk)
-		}).Grow(1).Basis(0).MinHeight(0)
+		a.detailOverview(c)
 	}
 }
 
@@ -280,15 +408,8 @@ func (a *app) worktreeDiffHeader(c *ui.Context, tk *theme.Tokens) {
 			}
 			return
 		}
-		label := a.t("stageFile")
-		if a.selectedStaged {
-			label = a.t("unstageFile")
-		}
-		button := action.Button(c, label, action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-			Disabled(a.busy || a.loading)
-		if button.Clicked() {
-			a.toggleStage(entry, a.selectedStaged)
-		}
+		target, _ := a.fileActionTarget(entry, a.selectedStaged)
+		a.fileActionButtons(c.Key("file-actions"), target)
 	})
 	a.diffHeaderMenu(c, header)
 }
@@ -300,9 +421,8 @@ func (a *app) historyDiffFile(c *ui.Context, tk *theme.Tokens) {
 			return
 		}
 		a.worktreeDiffHeader(c, tk)
-		layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.diffScroll}, func() {
-			a.diffBody(c)
-		}).Grow(1).Basis(0).MinHeight(0)
+		// diffBody owns the two-axis viewport and binds diffScroll itself.
+		a.diffBody(c)
 		return
 	}
 	if a.detailsDiffHidden {

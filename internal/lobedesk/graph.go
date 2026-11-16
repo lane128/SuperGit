@@ -183,10 +183,11 @@ type commitGraphRow struct {
 // commitGraph is the layout for one rendered commit list. Spans are expanded
 // per row once, so drawing a row only visits the edges that cross it.
 type commitGraph struct {
-	Rows  []commitGraphRow
-	Spans [][]commitGraphEdge
-	Lanes int
-	Width float32
+	Worktree *worktreeGraphLink
+	Rows     []commitGraphRow
+	Spans    [][]commitGraphEdge
+	Lanes    int
+	Width    float32
 	// Gap is the distance between lane centres. It is graphLaneGap until a
 	// narrow list makes FitWidth compress the graph to leave the subject room.
 	Gap float32
@@ -349,16 +350,18 @@ func (g *commitGraph) FitWidth(maxWidth float32) {
 	if maxWidth <= 0 || g.Lanes <= 0 {
 		return
 	}
+	gutter := g.worktreeGutter()
+	maxWidth -= gutter
 	natural := graphWidth(g.Lanes)
 	if natural <= maxWidth {
-		g.Width = natural
+		g.Width = natural + gutter
 		g.Gap = graphLaneGap
 		return
 	}
 	gap := (maxWidth - 16) / float32(g.Lanes)
 	gap = max(graphLaneGapMin, min(graphLaneGap, gap))
 	g.Gap = gap
-	g.Width = 16 + float32(g.Lanes)*gap
+	g.Width = gutter + 16 + float32(g.Lanes)*gap
 }
 
 // LaneGap is the distance between lane centres this graph is drawn with.

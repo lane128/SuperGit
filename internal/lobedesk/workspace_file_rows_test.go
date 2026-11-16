@@ -64,10 +64,10 @@ func TestWorkspaceFileSectionsAreListsOfDistinctOptions(t *testing.T) {
 			unselected = info
 		}
 	}
-	if unselected.Description != a.t("staged") {
-		t.Errorf("the staged row reads %q; want it to say %q", unselected.Description, a.t("staged"))
+	if unselected.Description != a.t("fileGroupStaged") {
+		t.Errorf("the staged row reads %q; want it to say %q", unselected.Description, a.t("fileGroupStaged"))
 	}
-	if selectedRow.Description != a.t("unstaged") {
-		t.Errorf("the unstaged row reads %q; want it to say %q", selectedRow.Description, a.t("unstaged"))
+	if selectedRow.Description != a.t("fileGroupModified") {
+		t.Errorf("the unstaged row reads %q; want it to say %q", selectedRow.Description, a.t("fileGroupModified"))
 	}
 }

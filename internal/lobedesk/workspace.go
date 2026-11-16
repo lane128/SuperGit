@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"strings"
 
+	unicodewidth "golang.org/x/text/width"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/choice"
 	"github.com/lobehub/lobe-mygo/pkg/display"
-	"github.com/lobehub/lobe-mygo/pkg/field"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/overlay"
@@ -119,7 +120,8 @@ func (a *app) branchSelector(c *ui.Context) {
 		return
 	}
 	if len(a.branches) == 0 {
-		a.statusTag(c, branch, display.TagProps{Variant: display.TagFilled, Color: display.TagInfo, Size: theme.Small, Round: true, Icon: lucide.GitBranch()})
+		tag := a.statusTag(c, elideMiddle(branch, 24), display.TagProps{Variant: display.TagFilled, Color: display.TagInfo, Size: theme.Small, Round: true, Icon: lucide.GitBranch()})
+		tag.MaxWidth(220).Tooltip(branch).Description(branch)
 		return
 	}
 	open := &a.branchOpen
@@ -138,10 +140,10 @@ func (a *app) branchSelector(c *ui.Context) {
 		// The trigger shows only the branch name and an icon; without a name
 		// of its own a reader hears just the branch and cannot tell it is the
 		// branch switch.
-		trigger.Role(ui.RoleButton).Label(a.t("branches")).Description(branch)
+		trigger.Role(ui.RoleButton).Label(a.t("branches")).Description(branch).Tooltip(branch).MaxWidth(220)
 		trigger.Gap(6).Children(func() {
 			ui.Icon(c, lucide.GitBranch()).FontSize(scaledFont(13)).TextColor(tk.TextSecondary)
-			ui.Text(c, branch).FontSize(scaledFont(12)).SingleLine()
+			ui.Text(c, elideMiddle(branch, 24)).FontSize(scaledFont(12)).SingleLine().MinWidth(0).Shrink(1)
 			ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(11)).TextColor(tk.TextTertiary)
 		})
 	})
@@ -154,57 +156,35 @@ func (a *app) branchSelector(c *ui.Context) {
 // history page's Files column header now that the working tree is its first
 // row.
 func (a *app) filesToolbar(c *ui.Context) {
-	unstaged := a.unstagedEntries()
-	staged := a.stagedEntries()
-	untracked := a.untrackedEntries()
-	stageable := stageableCount(unstaged, untracked)
-	build := func() {
-		stageAll := action.ActionIcon(c, lucide.Plus(), action.ActionIconProps{
-			BlockSize: 24, GlyphSize: 14, Title: a.t("stageAll"),
-		}).Disabled(stageable == 0 || a.busy || a.loading)
-		if stageAll.Clicked() {
-			a.stageAll()
+	for _, staged := range []bool{false, true} {
+		kind, label, scope, icon := "stage", "stageAll", "stageAllScope", lucide.Plus()
+		if staged {
+			kind, label, scope, icon = "unstage", "unstageAll", "unstageAllScope", lucide.Minus()
 		}
-	}
-	// A list of nothing but conflicts has nothing this button may stage; say
-	// why rather than dimming it with no explanation.
-	if stageable == 0 && len(unstaged) > 0 && !a.busy && !a.loading {
-		ui.Box(c).Shrink(0).Tooltip(a.t("stageAllConflicts")).Children(build)
-	} else {
-		build()
-	}
-	unstageAll := action.ActionIcon(c, lucide.Minus(), action.ActionIconProps{
-		BlockSize: 24, GlyphSize: 14, Title: a.t("unstageAll"),
-	}).Disabled(len(staged) == 0 || a.busy || a.loading)
-	if unstageAll.Clicked() {
-		a.unstageAll()
+		_, reason := a.batchFileTargets(kind)
+		hint := a.t(scope)
+		if reason != "" {
+			hint += "\n" + reason
+		}
+		button := action.ActionIcon(c, icon, action.ActionIconProps{BlockSize: 24, GlyphSize: 14, Title: a.t(label)}).
+			Disabled(reason != "").Description(hint).Tooltip(hint)
+		if button.Clicked() {
+			if staged {
+				a.unstageAll()
+			} else {
+				a.stageAll()
+			}
+		}
 	}
 }
 
-// workingFileSections draws the working tree's files in the order the commit
-// form reads them: what is waiting (unstaged), what will be committed
-// (staged), then new files. The history page's Files column shows the working
-// tree through it whenever its first row is selected.
+// The same three sections remain visible even when all counts are zero.
 func (a *app) workingFileSections(c *ui.Context) {
+	for _, group := range a.workingFileGroups() {
+		a.fileSection(c.Key(group.Key), group.Key, group.Title, group.Entries, group.Staged)
+	}
 	if len(a.status.Entries) == 0 {
 		a.cleanFiles(c)
-		return
-	}
-	unstaged := a.unstagedEntries()
-	staged := a.stagedEntries()
-	untracked := a.untrackedEntries()
-	if len(unstaged) > 0 {
-		a.fileSection(c, filesSectionUnstaged, a.t("unstaged"), unstaged, false)
-	}
-	if len(staged) > 0 {
-		a.fileSection(c, filesSectionStaged, a.t("staged"), staged, true)
-	}
-	// New files come last: they are not part of the change the commit form
-	// will take until they are staged, and keeping them below the two tracked
-	// groups keeps the reading order from "what is waiting" to "what will be
-	// committed".
-	if len(untracked) > 0 {
-		a.fileSection(c, filesSectionUntracked, a.t("untracked"), untracked, false)
 	}
 }
 
@@ -239,6 +219,17 @@ func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.En
 			// reading from the left edge like the rows below it.
 			ui.Row(c).Grow(1).Basis(0)
 		})
+		if staged {
+			_, reason := a.batchFileTargets("unstage")
+			hint := a.t("unstageAllScope")
+			if reason != "" {
+				hint += "\n" + reason
+			}
+			if action.Button(c.Key("unstage-group"), a.t("unstageAll"), action.ButtonProps{Size: theme.Small}).
+				FillWidth().Disabled(reason != "").Description(hint).Tooltip(hint).Clicked() {
+				a.unstageAll()
+			}
+		}
 		if collapsed {
 			return
 		}
@@ -246,13 +237,38 @@ func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.En
 		// section's name in the description: the same path can appear in
 		// two sections as "unstaged" and "staged", and a screen reader
 		// otherwise hears two identical buttons.
-		ui.Column(c).FillWidth().Gap(1).Role(ui.RoleList).Children(func() {
-			for i := range entries {
-				row := a.fileRow(c, entries[i], staged)
-				// The description names the section; the tooltip gives the full
-				// path without replacing that status in the accessibility tree.
-				row.PositionInSet(i+1, len(entries)).Description(title).Tooltip(entries[i].Path)
+		heights := make([]float32, len(entries))
+		reveal, remembered := -1, -1
+		context := a.currentDetailContext()
+		for i, entry := range entries {
+			heights[i] = fileRowHeight() + fileRowGap
+			file := detailFileKey{Path: entry.Path, Staged: staged}
+			if a.detailFileRemembered != nil && a.detailFileRememberedContext == context && *a.detailFileRemembered == file {
+				remembered = i
 			}
+			if (a.detailFileFocus != nil && a.detailFileFocusContext == context && *a.detailFileFocus == file) ||
+				(a.revealSelection && a.selectedPath == entry.Path && a.selectedStaged == staged) {
+				reveal = i
+			}
+		}
+		ui.Column(c).FillWidth().Role(ui.RoleList).Children(func() {
+			virtualPatchRows(c, a.commitFilesViewport, &a.commitFilesScroll, heights, reveal, func(rowContext *ui.Context, i int) {
+				ui.Column(rowContext).FillWidth().Height(heights[i]).Shrink(0).Children(func() {
+					row := a.fileRow(rowContext, entries[i], staged)
+					// Keep full group positions and the Index/worktree identity.
+					row.PositionInSet(i+1, len(entries)).Description(title).Tooltip(entries[i].Path)
+					wasFocused := ui.Local(row, "file-was-focused", func() bool { return false })
+					if row.Focused() {
+						file := detailFileKey{Path: entries[i].Path, Staged: staged}
+						a.detailFileRemembered = &file
+						a.detailFileRememberedContext = context
+						if !*wasFocused {
+							row.ScrollIntoView()
+						}
+					}
+					*wasFocused = row.Focused()
+				})
+			}, remembered)
 		})
 	})
 }
@@ -333,14 +349,35 @@ func (a *app) expandFilesSection(key string) {
 func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Element {
 	tk := theme.TokensOf(c)
 	selected := a.selectedPath == entry.Path && a.selectedStaged == staged
+	if a.page == "history" {
+		selected = selected && a.worktreeSelected && a.detailTabShown() == detailTabFile
+	}
 	row := fileRowShell(c, tk, entry.Path, selected)
+	a.wireHistoryFileKeys(row, detailFileKey{Path: entry.Path, Staged: staged})
 	// The row is a button, so it takes Tab, Shift+F10 and the accessibility
 	// button role. A focused button also takes Enter and Space for itself,
 	// which would only reselect the row; the row's own shortcuts claim those
 	// keys first and run the page's actions (open the file, stage or unstage
 	// it), so mouse and keyboard paths agree.
-	row.OnShortcut(0, ui.KeyEnter, func() { a.openSelectedFile() })
-	row.OnShortcut(0, ui.KeySpace, func() { a.toggleSelectedStage() })
+	selectForKey := func() bool {
+		if !a.worktreeFilesShown() || !a.detailNavigationAllowed() || a.busy || a.repo == nil || len(a.lineSel) > 0 {
+			return false
+		}
+		// Roving focus can reach a row without clicking it. Bind actions to
+		// that row's raw path and Index/worktree version before invoking them.
+		a.selectFile(entry.Path, staged)
+		return true
+	}
+	row.OnShortcut(0, ui.KeyEnter, func() {
+		if selectForKey() {
+			a.openSelectedFile()
+		}
+	})
+	row.OnShortcut(0, ui.KeySpace, func() {
+		if selectForKey() {
+			a.toggleSelectedStage()
+		}
+	})
 	a.revealIfSelected(row, selected)
 	row.Children(func() {
 		a.statusTag(c, statusCode(entry, staged), display.TagProps{
@@ -361,9 +398,13 @@ func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Elemen
 			}
 			// The icon sits inside a 26-point row, so it stops short of the
 			// row's edges rather than filling them.
+			_, ready := a.fileActionTarget(entry, staged)
 			button := action.ActionIcon(c, icon, action.ActionIconProps{
 				BlockSize: 22, GlyphSize: 12, Title: title,
-			}).Disabled(a.busy || a.loading)
+			}).Disabled(!ready)
+			if entry.IsSubmodule() {
+				button.Description(a.t("fileActionsProtected")).Tooltip(a.t("fileActionsProtected"))
+			}
 			if button.Clicked() {
 				a.toggleStage(entry, staged)
 				return
@@ -389,6 +430,9 @@ func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Elemen
 }
 
 func (a *app) diffBody(c *ui.Context) {
+	if entry, conflict := a.conflictPreviewEntry(a.selectedPath); conflict {
+		a.conflictPreviewGuidance(c, entry)
+	}
 	switch {
 	case a.selectedPath == "":
 		a.diffPlaceholder(c, lucide.FileDiff(), a.t("selectFile"))
@@ -412,13 +456,27 @@ func (a *app) diffBody(c *ui.Context) {
 		return
 	}
 	width := diffWidth(a.diff)
+	heights := make([]float32, len(a.diff.Lines))
+	for i, line := range a.diff.Lines {
+		heights[i] = diffRowH
+		if line.Kind == "hunk" {
+			heights[i] = diffHunkH
+		}
+	}
+	reveal, pressed := -1, -1
+	if a.revealLine {
+		reveal = a.lineCursor
+	}
+	if a.lineDragHeld {
+		pressed = a.linePressIndex
+	}
 	scroll := layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Both, State: &a.diffScroll}, func() {
-		// One selectable container for the whole patch: a drag across rows then
-		// selects the code as text, and Cmd+C copies exactly what is highlighted.
+		// Keep one selectable container and full extent. Retain the pressed
+		// gutter even after it scrolls out, so it owns drag/release events.
 		ui.Column(c).Width(width).AlignSelf(ui.Start).Shrink(0).Selectable().Children(func() {
-			for i, line := range a.diff.Lines {
-				a.diffLine(c, line, width, i)
-			}
+			virtualPatchRows(c, a.diffViewportRect, &a.diffScroll, heights, reveal, func(row *ui.Context, i int) {
+				a.diffLine(row, a.diff.Lines[i], width, i)
+			}, pressed)
 		})
 	})
 	// Keep the box, not the element: elements expire at the end of a pass,
@@ -460,6 +518,10 @@ const menloAdvance float32 = 0.62
 // and a little clearance.
 const diffHoverActionReserve float32 = 34
 
+// diffCodeReserve includes the interactive row's gutter, right padding and
+// hover action. The scroll extent must leave all of these outside code text.
+const diffCodeReserve float32 = 92 + 12 + diffHoverActionReserve
+
 // diffHoverActionLeft is where a row's hover action sits in the patch's own
 // coordinates. The action belongs at the right edge of the visible band: a
 // patch wider than the pane would otherwise park it past the horizontal
@@ -492,16 +554,33 @@ func (a *app) syncDiffHoverScroll() bool {
 }
 
 func diffWidth(diff gitrepo.Diff) float32 {
-	longest := 0
+	longest := float32(0)
 	for _, line := range diff.Lines {
-		n := len([]rune(strings.ReplaceAll(line.Text, "\t", "    ")))
-		if n > longest {
-			longest = n
+		advance := float32(0)
+		for _, r := range line.Text {
+			switch {
+			case r == '\t':
+				advance += 4 * menloAdvance // The renderer uses four spaces.
+			case r < 0x80:
+				advance += menloAdvance
+			default:
+				// CJK/fullwidth fallback glyphs use one em, rather than
+				// Menlo's narrower ordinary advance or two such advances.
+				kind := unicodewidth.LookupRune(r).Kind()
+				if kind == unicodewidth.EastAsianWide || kind == unicodewidth.EastAsianFullwidth {
+					advance++
+				} else {
+					advance += menloAdvance
+				}
+			}
+		}
+		if advance > longest {
+			longest = advance
 		}
 	}
 	// The estimate has to follow the reader's text size: a fixed advance that
 	// fits the standard preset leaves the large preset's longest lines short.
-	width := float32(longest)*scaledFont(diffCodeSize)*menloAdvance + 110
+	width := longest*scaledFont(diffCodeSize) + diffCodeReserve
 	return min(max(width, 560), 20000)
 }
 
@@ -861,23 +940,16 @@ func (a *app) commitForm(c *ui.Context) {
 			})
 		})
 		display.Text(c, a.tf("commitTo", branch), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
-		ui.Column(c).FillWidth().Children(func() {
-			field.TextArea(c, &a.commitText, field.TextAreaProps{
-				Variant:     field.InputFilled,
-				Placeholder: a.t("commitPlaceholder"),
-				MinRows:     4,
-				MaxRows:     10,
-			}).FillWidth().FontSize(scaledFont(13)).LineHeight(1.45)
-		})
+		a.commitMessageFields(c)
 		display.Text(c, a.t("commitHelp"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10), Rows: 2})
 		wasAmend := a.amend
-		if a.headSubject != "" {
+		if a.headMessage != "" {
 			choice.Checkbox(c, &a.amend, a.t("amendLast"), choice.CheckboxProps{Size: 14})
 		}
 		if a.amend != wasAmend {
-			// Amend rewrites HEAD, so its prefill is HEAD's subject even while
+			// Amend rewrites HEAD, so its prefill is HEAD's complete message even while
 			// the list is scoped to another branch.
-			latest := a.headSubject
+			latest := a.headMessage
 			switch {
 			case a.amend && strings.TrimSpace(a.commitText) == "":
 				a.commitText = latest
@@ -885,6 +957,7 @@ func (a *app) commitForm(c *ui.Context) {
 				a.commitText = ""
 			}
 		}
+		a.commitIdentityView(c)
 		label := a.t("commit")
 		if a.amend {
 			label = a.t("amend")
@@ -892,10 +965,11 @@ func (a *app) commitForm(c *ui.Context) {
 		ready := a.canCommit()
 		variant := action.Primary
 		if !ready {
-			variant = action.Text
+			variant = action.Filled
 		}
 		button := action.Button(c, label, action.ButtonProps{Variant: variant, Size: theme.Large}).
-			FillWidth().Disabled(!ready).KeyShortcuts(ui.Cmd, ui.KeyEnter)
+			FillWidth().Disabled(!ready).KeyShortcuts(ui.Cmd, ui.KeyEnter).
+			Description(a.commitDisabledReason()).Tooltip(a.commitDisabledReason())
 		if button.Clicked() {
 			a.commit()
 		}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +42,17 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 }
 
 func run(ctx context.Context, root string, input string, args ...string) (string, error) {
+	stdout := limitedBuffer{limit: outputLimit}
+	err := runOutput(ctx, root, input, &stdout, args...)
+	if err == nil && stdout.truncated {
+		err = errors.New("Git 输出超过 4 MiB 显示上限；操作可能已经完成，请刷新状态确认")
+	}
+	return stdout.String(), err
+}
+
+// runOutput shares repository routing, cancellation and bounded stderr between
+// ordinary reads and streaming readers that retain only their requested page.
+func runOutput(ctx context.Context, root string, input string, stdout io.Writer, args ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	// log.showSignature prints verification text into stdout, which every
@@ -66,25 +78,23 @@ func run(ctx context.Context, root string, input string, args ...string) (string
 		}
 	}
 	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
-	var stdout = limitedBuffer{limit: outputLimit}
 	var stderr = limitedBuffer{limit: 256 << 10}
-	cmd.Stdout = &stdout
+	cmd.Stdout = stdout
 	cmd.Stderr = &stderr
 	if input != "" {
 		cmd.Stdin = strings.NewReader(input)
 	}
 	err := cmd.Run()
-	out := stdout.String()
 	if err != nil {
 		if ctx.Err() != nil {
-			return out, fmt.Errorf("Git 操作已取消或超时: %w", ctx.Err())
+			return fmt.Errorf("Git 操作已取消或超时: %w", ctx.Err())
 		}
-		return out, fmt.Errorf("git %s: %w\n%s", args[0], err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("git %s: %w\n%s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
-	if stdout.truncated || stderr.truncated {
-		return out, errors.New("Git 输出超过 4 MiB 显示上限；操作可能已经完成，请刷新状态确认")
+	if stderr.truncated {
+		return errors.New("Git 输出超过 4 MiB 显示上限；操作可能已经完成，请刷新状态确认")
 	}
-	return out, nil
+	return nil
 }
 func Open(ctx context.Context, path string) (*Repository, error) {
 	abs, err := filepath.Abs(path)
@@ -235,7 +245,36 @@ func (r *Repository) Commit(ctx context.Context, message string) error {
 
 // UndoCommit moves HEAD to its first parent and leaves the index and working
 // tree untouched, so the commit's changes stay staged.
+var ErrUndoTargetChanged = errors.New("HEAD or branch changed before undo")
+
+// UndoCommitChecked keeps Undo attached to the originally selected HEAD and
+// branch. External Git processes do not share this repository's write lock.
+func (r *Repository) UndoCommitChecked(ctx context.Context, expected Status) error {
+	if !oidRE.MatchString(expected.Head) {
+		return ErrUndoTargetChanged
+	}
+	return r.undoCommit(ctx, &expected)
+}
+
 func (r *Repository) UndoCommit(ctx context.Context) error {
+	return r.undoCommit(ctx, nil)
+}
+
+func (r *Repository) undoCommit(ctx context.Context, expected *Status) error {
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+	if expected != nil {
+		current, err := r.Status(ctx)
+		if err != nil {
+			return err
+		}
+		if current.Head != expected.Head || current.Branch != expected.Branch {
+			return ErrUndoTargetChanged
+		}
+		if err := r.idle(ctx); err != nil {
+			return errors.Join(ErrUndoTargetChanged, err)
+		}
+	}
 	if !r.hasHead(ctx) {
 		return errors.New("还没有可撤销的提交")
 	}
@@ -246,8 +285,6 @@ func (r *Repository) UndoCommit(ctx context.Context) error {
 	if strings.TrimSpace(parents) == "" {
 		return errors.New("根提交不能撤销")
 	}
-	r.writeMu.Lock()
-	defer r.writeMu.Unlock()
 	_, err = run(ctx, r.Root, "", "reset", "--soft", "HEAD^")
 	return err
 }

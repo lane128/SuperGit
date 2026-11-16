@@ -11,13 +11,49 @@ import (
 )
 
 type resetState struct {
+	root    string
+	head    string
+	branch  string
 	open    bool
 	sha     string
 	subject string
 }
 
+func (a *app) resetTargetCurrent(target resetState) bool {
+	if a.repo == nil || (target.root != "" && a.repo.Root != target.root) {
+		return false
+	}
+	if a.status.Head != target.head || a.status.Branch != target.branch {
+		a.queue("warning", a.t("resetTargetChanged"), "")
+		a.invalidate()
+		return false
+	}
+	return true
+}
+
+func (a *app) discardStaleReset() bool {
+	if a.reset.root != "" && !a.resetTargetCurrent(a.reset) {
+		a.reset = resetState{}
+		return true
+	}
+	return false
+}
+
 func (a *app) openResetDialog(commit gitrepo.Commit) {
-	a.reset = resetState{open: true, sha: commit.SHA, subject: commit.Subject}
+	a.discardStaleReset()
+	if a.reset.open {
+		a.queue("warning", a.t("confirmationPending"), "")
+		a.invalidate()
+		return
+	}
+	if a.rejectPendingDialog(toastMain) {
+		return
+	}
+	root := ""
+	if a.repo != nil {
+		root = a.repo.Root
+	}
+	a.reset = resetState{root: root, head: a.status.Head, branch: a.status.Branch, open: true, sha: commit.SHA, subject: commit.Subject}
 	a.invalidate()
 }
 
@@ -25,6 +61,14 @@ func (a *app) openResetDialog(commit gitrepo.Commit) {
 // nearly identical confirm dialogs. Soft and mixed only change references and
 // the index, so they run from the dialog; hard discards work and asks again.
 func (a *app) resetDialog(c *ui.Context) {
+	a.resetDialogFor(c, toastMain)
+}
+
+func (a *app) resetDialogFor(c *ui.Context, owner toastOwner) {
+	if owner != toastMain {
+		return
+	}
+	a.discardStaleReset()
 	if !a.reset.open {
 		return
 	}
@@ -78,11 +122,11 @@ func (a *app) resetDialog(c *ui.Context) {
 		// the reader still has the mode and the commit to choose again.
 		a.performReset(chosen, a.reset.sha)
 	case "hard":
-		sha, subject := a.reset.sha, a.reset.subject
+		target := a.reset
 		a.reset = resetState{}
 		a.askConfirm(a.t("resetHardConfirmTitle"),
-			a.tf("resetHardConfirmMessage", shortSHA(sha), subject), a.t("resetHardAction"), true, func() {
-				a.performReset("hard", sha)
+			a.tf("resetHardConfirmMessage", shortSHA(target.sha), target.subject), a.t("resetHardAction"), true, func() {
+				a.performResetTarget("hard", target)
 			})
 	}
 	if !a.reset.open && chosen == "" {
@@ -95,8 +139,21 @@ func (a *app) resetDialog(c *ui.Context) {
 // or repository-less app would otherwise close it for an operation that never
 // ran.
 func (a *app) performReset(mode, sha string) bool {
+	if a.discardStaleReset() {
+		return false
+	}
+	target := a.reset
+	target.sha = sha
+	return a.performResetTarget(mode, target)
+}
+
+func (a *app) performResetTarget(mode string, target resetState) bool {
+	if !a.resetTargetCurrent(target) {
+		return false
+	}
+	expected := gitrepo.Status{Head: target.head, Branch: target.branch}
 	started := a.performDoneAs(busyReset, a.t("resetFailed"), a.t("resetSuccess"), nil, func(ctx context.Context, repo *gitrepo.Repository) error {
-		return repo.ResetTo(ctx, sha, mode)
+		return repo.ResetToChecked(ctx, target.sha, mode, expected)
 	})
 	if started {
 		a.reset = resetState{}

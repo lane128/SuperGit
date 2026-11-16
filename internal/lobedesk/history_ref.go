@@ -519,8 +519,8 @@ func (a *app) reloadHistoryFromTip(tip string) {
 		return
 	}
 	repo, seq := a.repo, a.loadSeq
-	a.historyReload++
-	reload := a.historyReload
+	a.resetHistoryTraversal()
+	reload, ctx := a.historyReload, a.historyTraversalContext()
 	// A page of the previous walk is no longer wanted; its callback checks the
 	// same counter and drops out, so the flag is cleared here rather than
 	// waiting for a callback that will not touch it.
@@ -538,8 +538,8 @@ func (a *app) reloadHistoryFromTip(tip string) {
 		tips = []string{tip}
 	}
 	go func() {
-		page, err := repo.HistoryPage(a.ctx, tips, 0, 200)
-		mygo.RunOnMain(func() {
+		page, err := repo.HistoryPage(ctx, tips, 0, 200)
+		a.hopToMain(func() {
 			if a.historyPageStale(seq, repo, reload) {
 				return
 			}
@@ -560,9 +560,9 @@ func (a *app) reloadHistoryFromTip(tip string) {
 			if sha := a.pendingJumpSHA; sha != "" {
 				a.pendingJumpSHA = ""
 				a.jumpToCommit(sha)
-				return
 			}
 			a.invalidate()
+			a.loadMoreHistory()
 		})
 	}()
 }

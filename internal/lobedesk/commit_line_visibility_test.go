@@ -14,7 +14,6 @@ func TestHiddenCommitDetailsReleaseTheLineKeys(t *testing.T) {
 	newApp := func() *app {
 		a := &app{
 			page:       "history",
-			detailTab:  detailTabFile,
 			commitPath: "a.go",
 			commitDiff: gitrepo.Diff{Lines: []gitrepo.DiffLine{
 				{Kind: "hunk", Text: "@@ -1 +1 @@"},
@@ -23,6 +22,7 @@ func TestHiddenCommitDetailsReleaseTheLineKeys(t *testing.T) {
 			}},
 			commitSections: []commitDiffSection{{Path: "a.go", Start: 0, Rows: []int{0, 1, 2}}},
 		}
+		a.detailTabs().Open(detailFileKey{Path: "a.go"})
 		a.selectCommitLines([]int{1})
 		a.commitAnchor = 1
 		a.commitCursor = 1
@@ -67,17 +67,17 @@ func TestHiddenCommitDetailsReleaseTheLineKeys(t *testing.T) {
 
 	// A patch that is still loading, failed, or came back empty has no rows
 	// on screen either, so the keys belong to the commit list until it does.
-	// The file tab gives way to the Summary when the reader goes back to it:
-	// the patch is off screen then, so the keys belong to the list.
+	// The Summary now includes patches. Switching to it clears the previous
+	// file's selection, then a fresh summary selection may own the line keys.
 	a = newApp()
-	a.detailTab = detailTabSummary
-	if a.commitDiffShown() {
-		t.Error("the Summary in front still counts as showing the patch")
+	a.activateDetailTab(detailTabKey{Summary: true})
+	if !a.commitDiffShown() {
+		t.Error("the Summary's patches do not count as visible")
 	}
 	if a.moveCommitLineSelection(1, false) {
-		t.Error("the line arrows moved while the Summary covers the patch")
+		t.Error("the line arrows retained the file tab's cleared selection")
 	}
-	a.detailTab = detailTabFile
+	a.detailTabs().Activate(detailTabKey{File: detailFileKey{Path: "a.go"}})
 	if !a.commitDiffShown() {
 		t.Error("going back to the file tab did not bring the patch back")
 	}

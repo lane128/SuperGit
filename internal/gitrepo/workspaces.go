@@ -34,7 +34,23 @@ func canonical(path string) string {
 	abs, _ := filepath.Abs(path)
 	return abs
 }
+
+var ErrWorktreeTargetChanged = errors.New("worktree changed before removal")
+
+// RemoveWorktreeChecked verifies the checkout displayed before confirmation.
+// External Git processes do not share this repository's write lock.
+func (r *Repository) RemoveWorktreeChecked(ctx context.Context, expected Worktree) error {
+	if !oidRE.MatchString(expected.HEAD) {
+		return ErrWorktreeTargetChanged
+	}
+	return r.removeWorktree(ctx, expected.Path, &expected)
+}
+
 func (r *Repository) RemoveWorktree(ctx context.Context, path string) error {
+	return r.removeWorktree(ctx, path, nil)
+}
+
+func (r *Repository) removeWorktree(ctx context.Context, path string, expected *Worktree) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 	abs, err := filepath.Abs(path)
@@ -50,6 +66,9 @@ func (r *Repository) RemoveWorktree(ctx context.Context, path string) error {
 	}
 	for _, w := range list {
 		if canonical(w.Path) == canonical(abs) {
+			if expected != nil && (w.HEAD != expected.HEAD || w.Branch != expected.Branch || w.Locked != expected.Locked || w.Bare != expected.Bare) {
+				return ErrWorktreeTargetChanged
+			}
 			if w.Locked || w.Bare {
 				return errors.New("工作区已锁定或不可移除")
 			}
@@ -67,9 +86,32 @@ func (r *Repository) RemoveWorktree(ctx context.Context, path string) error {
 			return err
 		}
 	}
+	if expected != nil {
+		return ErrWorktreeTargetChanged
+	}
 	return errors.New("工作区不在当前仓库列表中")
 }
+
+var ErrSubmoduleTargetChanged = errors.New("submodule target changed before update")
+
+// ErrDirtySubmodule preserves the original refusal for existing callers while
+// allowing interfaces to provide recovery guidance in the current language.
+var ErrDirtySubmodule = errors.New("子模块内部有改动，请先提交或 Stash；更新不会丢弃内容")
+
+// UpdateSubmoduleChecked verifies the displayed Index and checkout identities.
+// External Git processes do not share the repository write lock.
+func (r *Repository) UpdateSubmoduleChecked(ctx context.Context, expected Submodule) error {
+	if !oidRE.MatchString(expected.Index) {
+		return ErrSubmoduleTargetChanged
+	}
+	return r.updateSubmodule(ctx, expected.Path, &expected)
+}
+
 func (r *Repository) UpdateSubmodule(ctx context.Context, path string) error {
+	return r.updateSubmodule(ctx, path, nil)
+}
+
+func (r *Repository) updateSubmodule(ctx context.Context, path string, expected *Submodule) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 	if err := r.path(path); err != nil {
@@ -84,8 +126,11 @@ func (r *Repository) UpdateSubmodule(ctx context.Context, path string) error {
 	}
 	for _, m := range modules {
 		if m.Path == path {
+			if expected != nil && (m.Name != expected.Name || m.Index != expected.Index || m.Recorded != expected.Recorded || m.Current != expected.Current || m.Branch != expected.Branch || m.Initialized != expected.Initialized) {
+				return ErrSubmoduleTargetChanged
+			}
 			if m.Dirty {
-				return errors.New("子模块内部有改动，请先提交或 Stash；更新不会丢弃内容")
+				return ErrDirtySubmodule
 			}
 			if m.Error != "" {
 				return errors.New(m.Error)
@@ -108,6 +153,9 @@ func (r *Repository) UpdateSubmodule(ctx context.Context, path string) error {
 			_, err := run(ctx, r.Root, "", "submodule", "update", "--init", "--checkout", "--", path)
 			return err
 		}
+	}
+	if expected != nil {
+		return ErrSubmoduleTargetChanged
 	}
 	return errors.New("此路径不是当前仓库配置的子模块")
 }

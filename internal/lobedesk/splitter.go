@@ -43,7 +43,9 @@ func clampSplit(share, rowWidth, minLeft, minRight float32) float32 {
 	}
 	lo := minLeft / room
 	hi := 1 - minRight/room
-	if lo > hi {
+	// Nested dividers can leave the exact minimum a few float32 ULPs short.
+	// Do not turn a rounding error into a 50/50 split that breaks both panes.
+	if lo > hi && lo-hi > 0.00001 {
 		return 0.5
 	}
 	if share < lo {

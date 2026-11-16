@@ -1,7 +1,9 @@
 package lobedesk
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
@@ -24,7 +26,7 @@ func TestAmendPrefillsHeadNotTheBrowsedBranch(t *testing.T) {
 	a := &app{
 		locale:      localeChinese,
 		repo:        &gitrepo.Repository{Root: t.TempDir()},
-		headSubject: "head subject",
+		headMessage: "head subject",
 		commits:     []gitrepo.Commit{{SHA: "aaaa", Subject: "other branch subject"}},
 	}
 	tt := commitFormTester(a)
@@ -41,13 +43,45 @@ func TestAmendPrefillsHeadNotTheBrowsedBranch(t *testing.T) {
 	}
 }
 
+func TestAmendPrefillsCompleteHeadMessageAfterReload(t *testing.T) {
+	a, callbacks := overviewFixture(t)
+	message := "Original title\n\nFirst paragraph\n\nSecond paragraph\n\nRefs: fixture"
+	if err := a.repo.AmendCommit(a.ctx, message); err != nil {
+		t.Fatal(err)
+	}
+	a.openRepository(a.repo.Root, false)
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	for a.loading {
+		select {
+		case fn := <-callbacks:
+			fn()
+		case <-timer.C:
+			t.Fatal("repository reload timed out")
+		}
+	}
+	if a.loadErr != "" {
+		t.Fatal(a.loadErr)
+	}
+	a.commitText = ""
+	tt := commitFormTester(a)
+	checkbox, ok := tt.AccessByRole(ui.RoleCheckBox, a.t("amendLast"))
+	if !ok {
+		t.Fatal("Amend checkbox missing after reload")
+	}
+	tt.ClickAt(checkbox.Bounds.X+checkbox.Bounds.W/2, checkbox.Bounds.Y+checkbox.Bounds.H/2)
+	if strings.TrimSuffix(a.commitText, "\n") != message {
+		t.Fatalf("Amend lost HEAD message: got %q; want %q", a.commitText, message)
+	}
+}
+
 // A failed history read leaves the list empty, but HEAD is still there and can
 // still be amended: the checkbox must not disappear with the list.
 func TestAmendStaysAvailableWithoutALoadedHistory(t *testing.T) {
 	a := &app{
 		locale:      localeChinese,
 		repo:        &gitrepo.Repository{Root: t.TempDir()},
-		headSubject: "head subject",
+		headMessage: "head subject",
 		historyErr:  "history read failed",
 	}
 	tt := commitFormTester(a)

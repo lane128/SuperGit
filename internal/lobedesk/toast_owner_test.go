@@ -8,7 +8,90 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/feedback"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
+
+	"supergit/internal/gitrepo"
 )
+
+func TestShownRepositoryNoticeExitsAfterRootSwitch(t *testing.T) {
+	a := &app{repo: &gitrepo.Repository{Root: "first"}}
+	a.queue("error", "old repository error", "old Git details")
+	a.queueFor(toastSettings, "warning", "settings save failed", "")
+	tt := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c)
+		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.flushNotice(c, toastMain)
+	}, 600, 300)
+	for i := 0; i < 5; i++ {
+		tt.Advance(50 * time.Millisecond)
+		tt.Frame()
+	}
+	if !tt.HasText("old repository error") {
+		t.Fatal("fixture did not display repository notice")
+	}
+	// Refresh creates a new Repository pointer at the same root. It must not
+	// hide the error a reader is still using.
+	a.repo = &gitrepo.Repository{Root: "first"}
+	tt.Frame()
+	if !tt.HasText("old repository error") {
+		t.Fatal("same-root refresh hid the active error")
+	}
+	a.repo = &gitrepo.Repository{Root: "second"}
+	for i := 0; i < 5; i++ {
+		tt.Advance(50 * time.Millisecond)
+		tt.Frame()
+	}
+	if tt.HasText("old repository error") || tt.HasText("old Git details") {
+		t.Fatal("already-flushed repository notice survived root switch")
+	}
+	if len(a.notices[toastSettings]) != 1 {
+		t.Fatal("root switch consumed another window's notice")
+	}
+}
+
+func TestQueuedRepositoryNoticeCannotMoveToAnotherRoot(t *testing.T) {
+	a := &app{repo: &gitrepo.Repository{Root: "first"}}
+	a.queue("error", "queued old error", "")
+	a.repo = &gitrepo.Repository{Root: "second"}
+	a.queue("success", "current result", "")
+	tt := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c)
+		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.flushNotice(c, toastMain)
+	}, 600, 300)
+	for i := 0; i < 5; i++ {
+		tt.Advance(50 * time.Millisecond)
+		tt.Frame()
+	}
+	if tt.HasText("queued old error") || !tt.HasText("current result") {
+		t.Fatal("queued result was displayed in the wrong repository")
+	}
+}
+
+func TestShownRepositoryNoticeCannotRunActionAfterRootSwitch(t *testing.T) {
+	a := &app{repo: &gitrepo.Repository{Root: "first"}}
+	acted := false
+	a.pushNotice(toastMain, &toastNotice{kind: "success", title: "old action", action: "Undo old action", onAction: func() { acted = true }})
+	tt := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c)
+		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.flushNotice(c, toastMain)
+	}, 600, 300)
+	for i := 0; i < 5; i++ {
+		tt.Advance(50 * time.Millisecond)
+		tt.Frame()
+	}
+	button, ok := tt.Find("Undo old action")
+	if !ok {
+		t.Fatal("fixture did not display action")
+	}
+	// The input can arrive against the last frame before the next render
+	// removes the old toast. Its callback must guard its own repository.
+	a.repo = &gitrepo.Repository{Root: "second"}
+	tt.ClickAt(button.X+button.W/2, button.Y+button.H/2)
+	if acted {
+		t.Fatal("old toast action ran against a new repository")
+	}
+}
 
 // A notice belongs to the window that shows it. Drawing the other window does
 // not take it out of its queue, so the main window no longer swallows a

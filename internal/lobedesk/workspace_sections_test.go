@@ -53,7 +53,7 @@ func TestFoldedSectionsLeaveTheKeyboardOrder(t *testing.T) {
 		{Path: "staged.go", Index: 'M', Worktree: ' '},
 		{Path: "new.md", Index: '?', Worktree: '?'},
 	}}}
-	if got, want := refsPaths(a.fileRefs()), "edited.go,staged.go,new.md"; got != want {
+	if got, want := refsPaths(a.fileRefs()), "edited.go,new.md,staged.go"; got != want {
 		t.Fatalf("fileRefs() = %q; want %q", got, want)
 	}
 	a.toggleFilesSection(filesSectionStaged)
@@ -61,7 +61,7 @@ func TestFoldedSectionsLeaveTheKeyboardOrder(t *testing.T) {
 		t.Errorf("fileRefs(folded staged) = %q; want %q", got, want)
 	}
 	a.toggleFilesSection(filesSectionStaged)
-	if got, want := refsPaths(a.fileRefs()), "edited.go,staged.go,new.md"; got != want {
+	if got, want := refsPaths(a.fileRefs()), "edited.go,new.md,staged.go"; got != want {
 		t.Errorf("fileRefs(unfolded) = %q; want %q", got, want)
 	}
 
@@ -136,7 +136,7 @@ func refsPaths(refs []fileRef) string {
 }
 
 // The first row the workspace selects follows the order the sections are
-// drawn in: waiting edits, then the index, then the new files.
+// drawn in: tracked edits, then new files, then the index.
 func TestFirstWorkspaceEntryFollowsTheSectionOrder(t *testing.T) {
 	onlyUntracked := []gitrepo.Entry{{Path: "new.md", Index: '?', Worktree: '?'}}
 	if path, staged := firstWorkspaceEntry(onlyUntracked); path != "new.md" || staged {
@@ -146,7 +146,7 @@ func TestFirstWorkspaceEntryFollowsTheSectionOrder(t *testing.T) {
 		{Path: "staged.go", Index: 'M', Worktree: ' '},
 		{Path: "new.md", Index: '?', Worktree: '?'},
 	}
-	if path, staged := firstWorkspaceEntry(mixed); path != "staged.go" || !staged {
-		t.Errorf("firstWorkspaceEntry(mixed) = (%q, %v); want (staged.go, true)", path, staged)
+	if path, staged := firstWorkspaceEntry(mixed); path != "new.md" || staged {
+		t.Errorf("firstWorkspaceEntry(mixed) = (%q, %v); want (new.md, false)", path, staged)
 	}
 }

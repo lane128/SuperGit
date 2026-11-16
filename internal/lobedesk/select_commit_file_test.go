@@ -1,16 +1,14 @@
 package lobedesk
 
 import (
-	"math"
 	"testing"
 
 	"supergit/internal/gitrepo"
 )
 
-// Clicking the file a second time still means "show me its patch": the reader
-// may have scrolled the diff away. The first click's early return used to
-// swallow the second one.
-func TestSelectCommitFileScrollsBackToTheShownFile(t *testing.T) {
+// Reopening an existing file tab keeps its own position and line selection.
+// It no longer scrolls an aggregate diff to that file's global offset.
+func TestSelectCommitFileKeepsItsOwnReadingPosition(t *testing.T) {
 	a := &app{
 		repo:        &gitrepo.Repository{Root: t.TempDir()},
 		selectedSHA: "aaaa",
@@ -24,10 +22,12 @@ func TestSelectCommitFileScrollsBackToTheShownFile(t *testing.T) {
 			{Path: "b.go", Rows: []int{1}},
 		},
 	}
-	a.selectCommitLines([]int{1})
-	want := diffFileHeaderH + diffRowH // b.go starts after a.go's header and row
 	a.selectCommitFile("b.go")
-	if math.Abs(float64(a.commitDiffScroll.Y-want)) > 0.01 {
+	a.selectCommitLines([]int{1})
+	want := float32(125)
+	a.commitDiffScroll.Y = want
+	a.selectCommitFile("b.go")
+	if a.commitDiffScroll.Y != want {
 		t.Errorf("second click scrolled to %v; want b.go's offset %v", a.commitDiffScroll.Y, want)
 	}
 	if a.commitPath != "b.go" {

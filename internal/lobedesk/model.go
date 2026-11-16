@@ -512,6 +512,9 @@ func (a *app) selectedCommit() (gitrepo.Commit, bool) {
 			return commit, true
 		}
 	}
+	if a.selectedSHA != "" && a.refreshSelectedCommit.SHA == a.selectedSHA {
+		return a.refreshSelectedCommit, true
+	}
 	return gitrepo.Commit{}, false
 }
 
@@ -527,33 +530,44 @@ func (a *app) selectedCommitIndex() int {
 	return -1
 }
 
-func (a *app) canCommit() bool {
-	if a.busy || a.loading || a.repo == nil || strings.TrimSpace(a.commitText) == "" {
-		return false
+func (a *app) canCommit() bool { return a.commitDisabledReason() == "" }
+
+// The button, keyboard shortcut and write entry point share the same guards.
+func (a *app) commitDisabledReason() string {
+	if a.busy {
+		return a.t("commitWaiting")
 	}
-	// A rebase or am continues through its own command; a plain commit would
-	// leave it half-finished, so the box stays disabled even with staged files.
+	if a.loading || a.repo == nil {
+		return a.t("loadingRepo")
+	}
+	summary, _, _ := strings.Cut(a.commitText, "\n")
+	if strings.TrimSpace(summary) == "" {
+		return a.t("commitTitleRequired")
+	}
+	if !a.commitIdentityReady() {
+		if !a.commitIdentity.Loaded || a.commitIdentity.Root != a.repo.Root {
+			return a.t("commitIdentityLoading")
+		}
+		return a.t("commitIdentityFailed")
+	}
+	// Rebase/am continue through their own command. All unresolved entries
+	// block both Commit and Amend, even when other files are already staged.
 	if a.operation.Kind != "" && !commitOperation(a.operation.Kind) {
-		return false
-	}
-	if a.amend {
-		return true
-	}
-	if len(a.stagedEntries()) > 0 {
-		return true
-	}
-	// A merge, cherry-pick or revert is finished by a commit even when the
-	// resolved tree matches HEAD, so staging nothing is not the same as
-	// having nothing to commit. Unresolved conflicts still block it.
-	if !commitOperation(a.operation.Kind) {
-		return false
+		return a.tf("operationContinuePrompt", a.operation.Kind)
 	}
 	for _, entry := range a.status.Entries {
 		if entry.Conflict {
-			return false
+			return a.t("commitConflictsHint")
 		}
 	}
-	return true
+	if a.amend || len(a.stagedEntries()) > 0 {
+		return ""
+	}
+	// Merge/cherry-pick/revert may finish with a tree identical to HEAD.
+	if commitOperation(a.operation.Kind) {
+		return ""
+	}
+	return a.t("stagePrompt")
 }
 
 // commitOperation reports whether an interrupted operation is finished by a

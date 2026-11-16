@@ -61,7 +61,7 @@ var actionCopyGroups = []actionCopies{
 		"popStash", "popStashFailed", "busyPopStash",
 	}},
 	{"push", "推送", "Push", []string{
-		"pushButton", "pushBranchAction", "pushDialogTitle", "pushFailed", "busyPush",
+		"pushButton", "pushBranchAction", "pushDialogTitle", "pushFailed", "pushUpstreamFailed", "busyPush",
 	}},
 	{"force push", "强制推送", "Force", []string{
 		"forcePush", "forcePushAction", "forcePushTitle", "forcePushFailed", "busyForcePush",
@@ -153,9 +153,11 @@ var actionCopyGroups = []actionCopies{
 // Failures that have no action copies to agree with. Keep the reason next to
 // the key: a failure that gains a busy label later should leave this list.
 var actionCopyExempt = map[string]string{
+	"commitIdentityFailed":  "a background identity read failure, not a commit action failure",
 	"chooseParentDirFailed": "the native folder picker has no busy label or menu item",
 	"diffFailed":            "a read failure, not a user action",
 	"historyLoadFailed":     "a read failure, not a user action",
+	"localWatchFailed":      "background local-change detection has no user action or busy label",
 	"openFailed":            "a read failure, not a user action",
 	"reloadFailed":          "a read failure, not a user action",
 	"resetUpstreamFailed":   "a read failure, not a user action",

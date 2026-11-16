@@ -134,7 +134,7 @@ func shortcutTable() []appShortcut {
 			Run: func(a *app) {
 				switch {
 				case a.worktreeDiffShown() && len(a.lineSel) > 0:
-					a.copyText(diffLinesText(a.diff, sortedSelection(a.lineSel)))
+					a.copyText(diffLinesText(a.activeWorktreeDiff(), sortedSelection(a.lineSel)))
 				case a.page == "history" && a.commitDiffShown() && len(a.commitSel) > 0:
 					a.copyText(diffLinesText(a.commitDiff, sortedSelection(a.commitSel)))
 				}

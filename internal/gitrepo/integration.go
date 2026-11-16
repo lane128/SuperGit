@@ -118,9 +118,34 @@ func (r *Repository) idle(ctx context.Context) error {
 	}
 	return nil
 }
+
+var ErrIntegrationTargetChanged = errors.New("current HEAD or branch changed before integration")
+
+// IntegrateChecked uses an immutable incoming commit and checks which current
+// branch the confirmation authorized. External Git does not share writeMu.
+func (r *Repository) IntegrateChecked(ctx context.Context, kind, sha string, expected Status) error {
+	if !oidRE.MatchString(sha) {
+		return errors.New("无效的提交 SHA")
+	}
+	return r.integrate(ctx, kind, sha, &expected)
+}
+
 func (r *Repository) Integrate(ctx context.Context, kind, ref string) error {
+	return r.integrate(ctx, kind, ref, nil)
+}
+
+func (r *Repository) integrate(ctx context.Context, kind, ref string, expected *Status) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
+	if expected != nil {
+		current, err := r.Status(ctx)
+		if err != nil {
+			return err
+		}
+		if current.Head != expected.Head || current.Branch != expected.Branch {
+			return ErrIntegrationTargetChanged
+		}
+	}
 	if err := r.clean(ctx); err != nil {
 		return err
 	}
@@ -164,10 +189,18 @@ func (r *Repository) Integrate(ctx context.Context, kind, ref string) error {
 	_, err = run(ctx, r.Root, "", args...)
 	return err
 }
+func (r *Repository) ContinueChecked(ctx context.Context, expected Operation) error {
+	return r.continueOperation(ctx, expected.Kind, &expected)
+}
+
 func (r *Repository) Continue(ctx context.Context, kind string) error {
+	return r.continueOperation(ctx, kind, nil)
+}
+
+func (r *Repository) continueOperation(ctx context.Context, kind string, expected *Operation) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
-	op, err := r.Operation(ctx)
+	op, err := r.operationForControl(ctx, expected)
 	if err != nil {
 		return err
 	}
@@ -193,10 +226,37 @@ func (r *Repository) Continue(ctx context.Context, kind string) error {
 
 // Skip drops the commit an operation stopped on and continues. A merge has
 // no commit to skip, so it can only continue or abort.
+var ErrOperationTargetChanged = errors.New("pending operation changed before control action")
+
+// operationForControl compares the operation displayed before confirmation.
+// Callers hold writeMu; external Git processes do not share that lock.
+func (r *Repository) operationForControl(ctx context.Context, expected *Operation) (Operation, error) {
+	op, err := r.Operation(ctx)
+	if err != nil {
+		return op, err
+	}
+	if expected != nil && (expected.Token == "" || op != *expected) {
+		return op, ErrOperationTargetChanged
+	}
+	return op, nil
+}
+
+func (r *Repository) SkipChecked(ctx context.Context, expected Operation) error {
+	return r.skip(ctx, expected.Kind, &expected)
+}
+
+func (r *Repository) AbortChecked(ctx context.Context, expected Operation) error {
+	return r.abort(ctx, expected.Kind, &expected)
+}
+
 func (r *Repository) Skip(ctx context.Context, kind string) error {
+	return r.skip(ctx, kind, nil)
+}
+
+func (r *Repository) skip(ctx context.Context, kind string, expected *Operation) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
-	op, err := r.Operation(ctx)
+	op, err := r.operationForControl(ctx, expected)
 	if err != nil {
 		return err
 	}
@@ -208,9 +268,13 @@ func (r *Repository) Skip(ctx context.Context, kind string) error {
 }
 
 func (r *Repository) Abort(ctx context.Context, kind string) error {
+	return r.abort(ctx, kind, nil)
+}
+
+func (r *Repository) abort(ctx context.Context, kind string, expected *Operation) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
-	op, err := r.Operation(ctx)
+	op, err := r.operationForControl(ctx, expected)
 	if err != nil {
 		return err
 	}

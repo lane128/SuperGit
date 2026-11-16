@@ -21,10 +21,11 @@ func TestSpaceOnTheFocusedWorktreeRowStagesItsFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.page = "history"
-	a.status = gitrepo.Status{
-		Branch:  "main",
-		Entries: []gitrepo.Entry{{Path: "base.txt", Index: '.', Worktree: 'M'}},
+	statusBefore, err := a.repo.Status(a.ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
+	a.status = statusBefore
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
 		ui.Column(c).Width(400).Height(80).Children(func() {

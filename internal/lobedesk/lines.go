@@ -17,6 +17,7 @@ import (
 // on all of them at once. Context and meta lines never take part.
 
 func (a *app) clearLineSelection() {
+	a.overviewLineTarget = nil
 	a.lineSel = nil
 	a.lineAnchor = -1
 	a.lineCursor = -1
@@ -30,11 +31,12 @@ func (a *app) clearLineSelection() {
 // lineIndices lists the changed rows of the current diff in order, which is
 // the set the keyboard walks and the mouse extends over.
 func (a *app) lineIndices() []int {
-	if a.diff.Lines == nil {
+	diff := a.activeWorktreeDiff()
+	if diff.Lines == nil {
 		return nil
 	}
 	var out []int
-	for i, line := range a.diff.Lines {
+	for i, line := range diff.Lines {
 		if line.Kind == "add" || line.Kind == "del" {
 			out = append(out, i)
 		}
@@ -46,6 +48,9 @@ func (a *app) lineIndices() []int {
 // extend it keeps the anchor and grows or shrinks the range, as Shift+arrows
 // do in an editor; without it the new row becomes the only selection.
 func (a *app) moveLineSelection(delta int, extend bool) bool {
+	if a.page == "history" && !a.worktreeDiffShown() {
+		return false
+	}
 	if len(a.lineSel) == 0 {
 		return false
 	}
@@ -70,7 +75,7 @@ func (a *app) moveLineSelection(delta int, extend bool) bool {
 	target := indices[position]
 	if extend {
 		lo, hi := a.lineAnchor, target
-		if lo < 0 || lo >= len(a.diff.Lines) {
+		if lo < 0 || lo >= len(a.activeWorktreeDiff().Lines) {
 			lo = target
 		}
 		if lo > hi {
@@ -272,27 +277,25 @@ func (a *app) dragToLine(index int) {
 // clickLine applies Finder-like selection rules: a plain click selects one
 // line, Shift extends from the anchor over changed lines, and Cmd toggles.
 func (a *app) clickLine(index int, mods ui.Modifiers) {
-	if index < 0 || index >= len(a.diff.Lines) {
+	diff := a.activeWorktreeDiff()
+	if index < 0 || index >= len(diff.Lines) {
 		return
 	}
-	switch a.diff.Lines[index].Kind {
-	case "add", "del":
-	default:
+	if diff.Lines[index].Kind != "add" && diff.Lines[index].Kind != "del" {
 		return
 	}
 	if a.lineSel == nil {
 		a.lineSel = make(map[int]bool)
 	}
 	switch {
-	case mods&ui.Shift != 0 && a.lineAnchor >= 0 && a.lineAnchor < len(a.diff.Lines):
+	case mods&ui.Shift != 0 && a.lineAnchor >= 0 && a.lineAnchor < len(diff.Lines):
 		lo, hi := a.lineAnchor, index
 		if lo > hi {
 			lo, hi = hi, lo
 		}
 		next := make(map[int]bool, hi-lo+1)
 		for i := lo; i <= hi; i++ {
-			switch a.diff.Lines[i].Kind {
-			case "add", "del":
+			if diff.Lines[i].Kind == "add" || diff.Lines[i].Kind == "del" {
 				next[i] = true
 			}
 		}
@@ -317,6 +320,9 @@ func (a *app) clickLine(index int, mods ui.Modifiers) {
 }
 
 func (a *app) discardLinesAllowed() bool {
+	if a.overviewLineTarget != nil {
+		return false
+	}
 	if a.selectedStaged || !a.lineActionsAllowed() {
 		return false
 	}
@@ -326,6 +332,10 @@ func (a *app) discardLinesAllowed() bool {
 
 // applyLines stages or unstages every chosen line through one partial patch.
 func (a *app) applyLines(indexes []int) {
+	if a.overviewLineTarget != nil {
+		a.applyOverviewLines(*a.overviewLineTarget, indexes)
+		return
+	}
 	if !a.lineActionsAllowed() {
 		return
 	}
@@ -562,6 +572,14 @@ func (a *app) invertWorkspaceLines() {
 
 // selectCommitLines replaces the committed diff's selection with indexes.
 func (a *app) selectCommitLines(indexes []int) {
+	visible := selectionSet(a.commitLineIndices())
+	filtered := make([]int, 0, len(indexes))
+	for _, index := range indexes {
+		if visible[index] {
+			filtered = append(filtered, index)
+		}
+	}
+	indexes = filtered
 	if len(indexes) == 0 {
 		a.clearCommitSelection()
 	} else {
@@ -575,7 +593,7 @@ func (a *app) selectCommitLines(indexes []int) {
 // invertCommitLines selects the committed rows the current selection leaves
 // out; context rows count here because they can be copied.
 func (a *app) invertCommitLines() {
-	a.selectCommitLines(invertIndexes(commitLineIndexes(a.commitDiff), a.commitSel))
+	a.selectCommitLines(invertIndexes(a.commitLineIndices(), a.commitSel))
 }
 
 func (a *app) lineMenu(c *ui.Context, row ui.Element, index int) {

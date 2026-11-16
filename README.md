@@ -19,7 +19,7 @@ open build/SuperGit.app
 
 ### Lobe UI 预览（实验）
 
-`cmd/supergit-lobe` 是基于 [Lobe MyGo](https://mygo.lobehub.com) 组件库的独立预览入口，与 `cmd/supergit` 共用 `internal/gitrepo` 真实 Git 后端。它只覆盖浏览工作区、暂存、提交、历史 Diff 和切换分支，用于验证 Lobe 视觉语言；不是发布构建，也不替代正式客户端的能力表。
+`cmd/supergit-lobe` 是基于 [Lobe MyGo](https://mygo.lobehub.com) 组件库的独立开发入口，与 `cmd/supergit` 共用 `internal/gitrepo` 真实 Git 后端。新版采用「位置 / 提交 / 文件 / 标签式详情」四列布局；默认 `make app` 打包入口仍为 `cmd/supergit`，待 TODO.md 中的能力、偏好迁移与原生验收门槛通过后再切换。下方能力表描述现有桌面入口，不代表 Lobe 已逐项验收。
 
 ```sh
 make lobe-build
@@ -28,7 +28,13 @@ make lobe-build
 make lobe-run REPO=/path/to/repository
 ```
 
-预览版不写偏好设置，不包含 Clone / Init / 冲突解决 / 远端同步等正式流程。正式客户端仍以 `cmd/supergit` 为准。逐轮功能对齐与验证记录见 `docs/lobe-preview-progress.md`。
+Lobe 的工作区首标签为「提交」，包含提交表单和全部改动；历史首标签为「摘要」，包含完整说明与全部补丁。点击文件打开可关闭的独立标签，同路径的已暂存、未暂存版本分开显示；切换标签保留提交草稿与各自滚动位置。标签仅在当前会话中保留。已通过 macOS 原生交互、16 组截图矩阵、2000 行补丁虚拟化测试与一次独立代码审查；审查发现的刷新目标错位已修复。文件列表现以一个 Tab 入口导航，↑/↓ 切文件，←/→ 到达分组标题与行内按钮，Shift+Tab 返回此前聚焦行；Space / Enter 使用聚焦文件的路径及暂存分组。工作区总览会优先读取视口内展开的待加载文件块，单文件与总览按刷新代次复用成功补丁，额外缓存预算为 16 MiB；手动重试仍读取 Git。跨平台发布门槛仍保留，执行进度见 `TODO.md`。
+
+本轮工作台改进增加三个可拖动并持久化的分栏边界、固定的已修改 / 未跟踪 / 已暂存分组、单行提交标题与多行说明、有效 Author / Email，以及带目标校验和确认的文件头 / 批量操作。主历史、引用历史与按文件历史自动分批读取完整范围，保留取消与失败重试，展开侧栏不再截断引用。按文件历史固定起始 HEAD 并跟随重命名；为避免 Git `--skip` 丢失祖先，每页重走此前范围并流式跳过旧记录，保留内存有界，深历史的遍历成本仍会增长。本轮完整显示矩阵、分栏重启和独立审查已执行；两项重要发现修复后再次通过全量测试、竞态检查、vet、构建和真实 Git 原生冒烟。后续已修复缩窄详情区后活动标签留在屏外的问题：自动显露活动标签和关闭按钮，回归测试、全量检查、新一轮完整显示矩阵与分栏重启验证通过。新增菜单 / 状态区域待范围明确；安装版尚未更新。详细证据与平台限制见改进计划及执行记录。
+
+Lobe 已接通独立于自动 Fetch 的本地变化检测：前台约 3 秒、后台约 15 秒，窗口聚焦立即检查。外部保存、暂存、提交、切分支与子模块 HEAD 变化会刷新；保留提交草稿与输入焦点，写入期间暂停检测。Git 元数据之外，还观察当前改动文件的大小、mtime、模式和链接目标；保持相同元数据的字节改写不保证识别。原生验证使用临时仓库与独立偏好，方法见 `docs/e2e-automation.md`；平台、构建状态、实际场景与待调查问题见 [Lobe 试用记录](docs/lobe-trial-log.md)。
+
+Lobe 偏好保存在系统用户配置目录的 `supergit/settings.json`，沿用已有详情开关字段；历史提交信息和补丁都被隐藏时恢复信息块。旧桌面入口使用下述 `SuperGit/preferences.json`。两者尚未完成主线迁移；`make native-check` 验证旧桌面入口，Lobe 使用 `make lobe-build` 与专用原生验证脚本。逐轮功能对齐记录见 `docs/lobe-preview-progress.md`。
 
 `⌘O` 打开、`⌘R` 刷新、`⌘Enter` 提交 Index。分隔线可拖动。外观、代码字号和最近 12 个仓库持久化到系统用户配置目录的 `SuperGit/preferences.json`；提交草稿和最近 40 条操作记录仅保留在会话中。
 
@@ -135,7 +141,7 @@ make app e2e-build
 
 原生自动化仅在显式 `e2e` 构建中链接 MyGo automation 插件。普通二进制不链接自动化服务。
 
-Lobe 预览版历史页在最小窗口下的外观用 `make lobe-e2e-build && python3 -I scripts/native-narrow-shots.py` 复查：脚本自建夹具，按中文／英文 × 浅色／深色各截一张 980×640 到 `build/narrow-shots/`，另加一组中文浅色 + 大字号；每组先截提交的文件与补丁，再按 Home 回到工作树行截工作树的文件与补丁，并保存无障碍快照。`make e2e-build` 构建的是打包版的旧界面，截不出这一版布局。
+Lobe 标签式布局用 `make lobe-e2e-build && python3 -I scripts/native-narrow-shots.py` 复查：脚本自建夹具，覆盖 980／1320／1600×640 × 中文／英文 × 浅色／深色，另加四组 1.15 大字号关键组合。每组保存长说明摘要、13 文件标签与长路径、空提交、工作区四张截图和无障碍快照到 `build/narrow-shots/`；检查最小列宽与活动标签、关闭入口可见性。`python3 -I scripts/native-detail-tabs-smoke.py` 另验证双版本标签、草稿、浏览只读、指定文件暂存及刷新、超限失败重试。实际结果及剩余验收见 TODO.md。`make e2e-build` 构建的是打包版旧界面。
 
 ```sh
 make native-check

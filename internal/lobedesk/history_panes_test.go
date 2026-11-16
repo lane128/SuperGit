@@ -9,6 +9,124 @@ import (
 	"supergit/internal/gitrepo"
 )
 
+func TestFileTabsOpenActivateAndClose(t *testing.T) {
+	a := &app{worktreeSelected: true}
+	first, second := detailFileKey{Path: "dir/a.go"}, detailFileKey{Path: "other/a.go", Staged: true}
+	a.openDetailFile(first)
+	a.openDetailFile(second)
+	a.openDetailFile(first)
+	if len(a.detailTabs().OpenFiles) != 2 || a.selectedPath != first.Path {
+		t.Fatal("file click did not reuse and activate its tab")
+	}
+	a.closeDetailFile(first)
+	if a.selectedPath != second.Path || !a.selectedStaged {
+		t.Fatal("closing active tab did not show neighbor's version")
+	}
+	a.closeDetailFile(second)
+	if !a.detailTabs().Active.Summary {
+		t.Fatal("closing final file did not return to first tab")
+	}
+}
+
+func TestDraftSurvivesClosingAFileTab(t *testing.T) {
+	a := &app{locale: localeEnglish, worktreeSelected: true, commitText: "draft title\n\ndraft body", amend: true}
+	first, second := detailFileKey{Path: "dir/a.go"}, detailFileKey{Path: "other/b.go", Staged: true}
+	a.openDetailFile(first)
+	a.openDetailFile(second)
+	tt := pageTester(a, a.historyDiffPane)
+	click := func(role ui.Role, label string) {
+		t.Helper()
+		node, ok := tt.AccessByRole(role, label)
+		if !ok {
+			t.Fatalf("missing %q", label)
+		}
+		tt.ClickAt(node.Bounds.X+node.Bounds.W/2, node.Bounds.Y+node.Bounds.H/2)
+	}
+	click(ui.RoleTab, "a.go · "+a.t("unstaged"))
+	if a.selectedPath != first.Path {
+		t.Fatal("tab click did not change the patch target")
+	}
+	click(ui.RoleButton, a.t("close")+" "+first.Path)
+	if a.selectedPath != second.Path {
+		t.Fatal("close click did not show neighbor")
+	}
+	click(ui.RoleTab, a.t("commit"))
+	if !a.detailTabs().Active.Summary || a.commitText != "draft title\n\ndraft body" || !a.amend {
+		t.Fatal("summary or draft state was lost")
+	}
+}
+
+// Closing the first tab while rendering three tabs must not mutate the slice
+// currently being ranged over, duplicate the last key or lose a surviving tab.
+func TestClosingFirstOfThreeTabsKeepsUniqueRenderedKeys(t *testing.T) {
+	a := &app{locale: localeEnglish, worktreeSelected: true}
+	for _, path := range []string{"first.go", "second.go", "third.go"} {
+		a.openDetailFile(detailFileKey{Path: path})
+	}
+	tt := pageTester(a, a.historyDiffPane)
+	close, ok := tt.AccessByRole(ui.RoleButton, a.t("close")+" first.go")
+	if !ok {
+		t.Fatal("first tab close button missing")
+	}
+	tt.ClickAt(close.Bounds.X+close.Bounds.W/2, close.Bounds.Y+close.Bounds.H/2)
+	tt.Frame()
+	if len(a.detailTabs().OpenFiles) != 2 {
+		t.Fatal("close lost surviving tabs")
+	}
+	for _, label := range []string{"second.go", "third.go"} {
+		if _, ok := tt.AccessByRole(ui.RoleTab, label+" · "+a.t("unstaged")); !ok {
+			t.Fatalf("surviving tab %s disappeared", label)
+		}
+	}
+}
+
+func TestSummaryDoesNotPretendASingleFileIsSelected(t *testing.T) {
+	a := &app{selectedSHA: "aaaa", commitPath: "a.go", commitFiles: []gitrepo.ChangedFile{{Path: "a.go", Status: "M"}}}
+	tt := pageTester(a, a.commitFileList)
+	row, ok := tt.AccessByRole(ui.RoleOption, "a.go")
+	if !ok {
+		t.Fatal("file row missing")
+	}
+	if row.Selected {
+		t.Fatal("summary announces a single file as open")
+	}
+}
+
+func TestDetailTabScrollIsKeptPerTarget(t *testing.T) {
+	for _, worktree := range []bool{true, false} {
+		a := &app{worktreeSelected: worktree}
+		first, second := detailFileKey{Path: "a"}, detailFileKey{Path: "b"}
+		a.openDetailFile(first)
+		if worktree {
+			a.diffScroll.Y = 123
+		} else {
+			a.commitDiffScroll.Y = 123
+		}
+		a.openDetailFile(second)
+		if worktree {
+			a.diffScroll.Y = 456
+		} else {
+			a.commitDiffScroll.Y = 456
+		}
+		a.activateDetailTab(detailTabKey{File: first})
+		got := a.commitDiffScroll.Y
+		if worktree {
+			got = a.diffScroll.Y
+		}
+		if got != 123 {
+			t.Fatalf("worktree=%v: first tab lost scroll: %v", worktree, got)
+		}
+		a.activateDetailTab(detailTabKey{File: second})
+		got = a.commitDiffScroll.Y
+		if worktree {
+			got = a.diffScroll.Y
+		}
+		if got != 456 {
+			t.Fatalf("worktree=%v: second tab lost scroll: %v", worktree, got)
+		}
+	}
+}
+
 func worktreePageApp() *app {
 	return &app{
 		locale: localeChinese,
@@ -34,7 +152,7 @@ func TestTheWorkingTreePatchKeepsItsStageAction(t *testing.T) {
 	a.worktreeSelected = true
 	a.selectedPath = "dir/a.go"
 	a.status.Entries[0].Path = "dir/a.go"
-	a.detailTab = detailTabFile
+	a.detailTabs().Open(detailFileKey{Path: a.detailFilePath(), Staged: a.selectedStaged})
 	tt := pageTester(a, func(c *ui.Context) { a.historyDiffFile(c, theme.TokensOf(c)) })
 	if _, ok := tt.Find(a.t("stageFile")); !ok {
 		t.Fatal("the working tree's patch has no stage action")
@@ -115,12 +233,12 @@ func TestTheWorktreeSummaryHoldsTheCommitBox(t *testing.T) {
 	a := worktreePageApp()
 	a.worktreeSelected = true
 	tt := pageTester(a, a.historyPage)
-	if _, ok := tt.Find(a.t("summaryTab")); !ok {
+	if _, ok := tt.Find(a.t("commit")); !ok {
 		t.Fatal("the working tree's details have no Summary tab")
 	}
 	box := false
 	for _, info := range tt.AccessAll() {
-		if info.Placeholder == a.t("commitPlaceholder") {
+		if info.Placeholder == a.t("commitSummaryHint") {
 			box = true
 			break
 		}
@@ -136,7 +254,7 @@ func TestHidingThePatchLeavesNoFileTab(t *testing.T) {
 	a := worktreePageApp()
 	a.selectedSHA = "aaaa"
 	a.commitPath = "a.go"
-	a.detailTab = detailTabFile
+	a.detailTabs().Open(detailFileKey{Path: a.detailFilePath(), Staged: a.selectedStaged})
 	if got := a.detailTabShown(); got != detailTabFile {
 		t.Fatalf("with the patch shown the pane shows %q; want the file", got)
 	}
@@ -239,16 +357,30 @@ func TestTheWorktreeRowSurvivesAnEmptySearch(t *testing.T) {
 func TestCommitShortcutReachesTheHistoryCommitBox(t *testing.T) {
 	a := worktreePageApp()
 	a.worktreeSelected = true
-	a.detailTab = detailTabSummary
+	if a.canCommitShortcut() {
+		t.Fatal("commit shortcut accepts a missing repository")
+	}
+	a.repo = &gitrepo.Repository{Root: t.TempDir()}
+	a.busy = true
+	if a.canCommitShortcut() {
+		t.Fatal("commit shortcut accepts a busy repository")
+	}
+	a.busy = false
+	a.loading = true
+	if a.canCommitShortcut() {
+		t.Fatal("commit shortcut accepts a repository reload")
+	}
+	a.loading = false
+	a.detailTabs().Activate(detailTabKey{Summary: true})
 	if !a.canCommitShortcut() {
 		t.Fatal("⌘↩ does nothing on the working tree's Summary")
 	}
-	a.detailTab = detailTabFile
 	a.selectedPath = "a.go"
+	a.detailTabs().Open(detailFileKey{Path: a.selectedPath})
 	if a.canCommitShortcut() {
 		t.Fatal("⌘↩ commits while the file tab covers the commit box")
 	}
-	a.detailTab = detailTabSummary
+	a.detailTabs().Activate(detailTabKey{Summary: true})
 	a.historyRefOpen = true
 	if a.canCommitShortcut() {
 		t.Fatal("⌘↩ commits behind the ref picker, which covers the commit box")
@@ -293,7 +425,7 @@ func TestTheFileTabNamesItsFullPath(t *testing.T) {
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
 		ui.Row(c).Width(300).Height(38).Children(func() {
-			a.detailTabButton(c, theme.TokensOf(c), detailTabFile, "this-file-name-is-long-enough-to-overflow-a-narrow-strip.go", "src/nested/this-file-name-is-long-enough-to-overflow-a-narrow-strip.go")
+			a.detailTabButton(c, theme.TokensOf(c), detailTabKey{File: detailFileKey{Path: a.selectedPath}}, "this-file-name-is-long-enough-to-overflow-a-narrow-strip.go", "src/nested/this-file-name-is-long-enough-to-overflow-a-narrow-strip.go")
 		})
 	}, 300, 38)
 	tab, ok := tt.AccessByRole(ui.RoleTab, "this-file-name-is-long-enough-to-overflow-a-narrow-strip.go")
@@ -331,12 +463,12 @@ func TestACommitFileRowTooltipsItsFullPath(t *testing.T) {
 func TestThePatchKeepsItsWidthAtTheSmallestWindow(t *testing.T) {
 	for _, window := range []float32{980, 1031, 1320} {
 		a := &app{}
-		row := window - sidebarWidth
+		row := window - sidebarWidth - splitterWidth
 		a.historySplit.rowWidth = row
 		share := a.historyShare()
 		list := (row - splitterWidth) * share
 		details := (row - splitterWidth) * (1 - share)
-		diff := details - a.historyFilesWidth()
+		diff := details - splitterWidth - a.historyFilesWidth()
 		if list < historySplitMinList {
 			t.Errorf("window %v gives the commit list %v, under %v", window, list, historySplitMinList)
 		}

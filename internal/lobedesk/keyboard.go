@@ -41,7 +41,11 @@ func (a *app) canToggleSelectedStage() bool {
 		return false
 	}
 	entry, ok := a.selectedEntry()
-	return ok && !entry.Conflict
+	if !ok {
+		return false
+	}
+	_, ready := a.fileActionTarget(entry, a.selectedStaged)
+	return ready
 }
 
 // openSelectedFile opens the working tree's selected file in its default app,
@@ -68,6 +72,9 @@ func (a *app) canOpenSelectedFile() bool {
 // typed the message. A hidden details pane or an open ref picker means the box
 // is not in front, so the key does not write the message the reader last saw.
 func (a *app) canCommitShortcut() bool {
+	if a.repo == nil || a.busy || a.loading {
+		return false
+	}
 	if a.historyDetailsHidden || a.historyRefOpen {
 		return false
 	}
@@ -81,7 +88,13 @@ func (a *app) canCommitShortcut() bool {
 // screen: the history page with its first row selected and the file tab in
 // front.
 func (a *app) worktreeDiffShown() bool {
-	return a.worktreeFilesShown() && a.detailTabShown() == detailTabFile
+	if !a.worktreeFilesShown() || a.historyDetailsHidden {
+		return false
+	}
+	if a.detailTabShown() == detailTabFile {
+		return true
+	}
+	return a.overviewLineTarget != nil && a.overviewTargetVisible(*a.overviewLineTarget)
 }
 
 // extendDiffSelection grows a diff line selection by one row. The working
@@ -172,9 +185,9 @@ func (a *app) fileRefs() []fileRef {
 			refs = append(refs, fileRef{path: entry.Path, staged: staged})
 		}
 	}
-	add(filesSectionUnstaged, a.unstagedEntries(), false)
-	add(filesSectionStaged, a.stagedEntries(), true)
-	add(filesSectionUntracked, a.untrackedEntries(), false)
+	for _, group := range a.workingFileGroups() {
+		add(group.Key, group.Entries, group.Staged)
+	}
 	return refs
 }
 

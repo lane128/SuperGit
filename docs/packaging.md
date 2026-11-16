@@ -2,6 +2,34 @@
 
 本文记录 `.app` 的图标素材规则、重打包后的图标缓存验证步骤，以及发布前的检查清单。相关文件和命令都以仓库当前内容为准，改构建流程时同步更新本文。
 
+## 构建入口与当前安装版
+
+| 目的 | 命令 | 实际入口 / 产物 |
+| --- | --- | --- |
+| 默认 macOS 应用包 | `make app` | `cmd/supergit` → `internal/desktop`；`build/SuperGit.app` |
+| 最新 Lobe 开发版 | `make lobe-build` | `cmd/supergit-lobe` → `internal/lobedesk`；`build/supergit-lobe` |
+| 运行 Lobe 开发版 | `make lobe-run REPO=/path/to/repository` | 直接运行源码对应的新版界面 |
+| 旧桌面原生验收 | `make native-check` | 旧 desktop 的构建与工作流脚本 |
+| Lobe 原生验收 | `make lobe-e2e-build`，再运行下方 Lobe 脚本 | 新版自动化构建与隔离 fixture |
+
+Lobe 达到能力核对、原生流程和可回退偏好迁移门槛后才接管默认打包，当前 `make app` 仍使用旧入口。旧 desktop 使用 `SuperGit/preferences.json`，Lobe 使用 `supergit/settings.json`；目前没有自动迁移两份真实偏好。
+
+先前单独安装的 `SuperGit Lobe.app` 测试包不会随源码或 `make lobe-build` 更新。核对安装版时须同时核对打包日期、可执行入口与本次验证记录；最新源码的验证结果不代表较早安装包已经包含这些修改。当前没有常规 Lobe `.app` Makefile 目标；后续打包、覆盖安装和发布分别按用户授权执行。
+
+Lobe 当前原生检查：
+
+```sh
+make check
+make lobe-build
+make lobe-e2e-build
+python3 -I scripts/native-detail-tabs-smoke.py
+python3 -I scripts/native-local-watch-smoke.py
+python3 -I scripts/native-narrow-shots.py
+python3 -I scripts/native-workbench-layout-smoke.py
+```
+
+各脚本顺序运行，使用临时仓库与独立偏好。验证对象、输出目录和实际试用结果见 [原生自动化说明](e2e-automation.md) 与 [Lobe 试用记录](lobe-trial-log.md)。macOS 原生通过不代表 Windows / Linux 或开发者签名、公证已经完成。
+
 ## 图标从哪里来
 
 应用有两张成品图标：
@@ -73,6 +101,6 @@ open build/SuperGit.app
    ```
    当前是 ad-hoc 签名（`codesign --force --sign -`），分发前需要开发者签名与公证，这一步尚未接入。
 4. **图标**：按上一节验证成品尺寸、`.icns` 档位与日夜 Dock 切换。
-5. **e2e 冒烟**：`make native-check`，覆盖打开/历史/暂存/提交/标签/工作树/键盘导航等脚本。
-6. **版本号**：手动改 `packaging/Info.plist` 的 `CFBundleShortVersionString` 与 `CFBundleVersion`；两个字段目前没有自动递增。
+5. **e2e 冒烟**：默认旧 desktop 使用 `make native-check`，覆盖打开/历史/暂存/提交/标签/工作树/键盘导航等脚本；Lobe 使用本文开头的专用构建和脚本，不能互相代替验收。
+6. **版本号**：`make app` 调用 `tools/appversion`，只改写 bundle 内的 plist 副本。`CFBundleShortVersionString` 取最近标签，去掉前缀 `v` 后仅接受 1–3 段数字；`CFBundleVersion` 取 `git rev-list --count HEAD`。标签 / 提交数不可用或格式非法时，对应字段沿用 `packaging/Info.plist` 的值；源码 plist 不会被自动修改。相同 HEAD 的未提交构建可能拥有同样的包版本，试用记录还需标明源码日期和未提交状态。
 7. **已知边界复核**：读一遍 `README.md` 的「当前边界与后续」，确认这次改动没有让其中任何一条过期（例如签名状态、预览版能力表）。

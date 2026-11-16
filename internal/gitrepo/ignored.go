@@ -6,6 +6,21 @@ import (
 	"strings"
 )
 
+// IgnoredFileError identifies a refusal that protects ignored local content.
+// Error preserves the legacy diagnostic for callers that render it directly.
+// Path is the raw repository-relative path, not a pathspec or display label.
+type IgnoredFileError struct {
+	Path           string
+	WouldOverwrite bool
+}
+
+func (e *IgnoredFileError) Error() string {
+	if e.WouldOverwrite {
+		return fmt.Sprintf("目标会覆盖被忽略文件 %q，请先移出或备份", e.Path)
+	}
+	return fmt.Sprintf("存在被忽略文件 %q；为保留内容，此操作已停止，请先移出或备份", e.Path)
+}
+
 func (r *Repository) ignoredFiles(ctx context.Context) ([]string, error) {
 	out, err := run(ctx, r.Root, "", "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
 	if err != nil {
@@ -22,7 +37,7 @@ func (r *Repository) noIgnored(ctx context.Context) error {
 		return err
 	}
 	if len(files) > 0 {
-		return fmt.Errorf("存在被忽略文件 %q；为保留内容，此操作已停止，请先移出或备份", files[0])
+		return &IgnoredFileError{Path: files[0]}
 	}
 	return nil
 }
@@ -41,7 +56,7 @@ func (r *Repository) protectIgnored(ctx context.Context, ref string) error {
 		}
 		for _, local := range files {
 			if local == incoming || strings.HasPrefix(local, incoming+"/") || strings.HasPrefix(incoming, local+"/") {
-				return fmt.Errorf("目标会覆盖被忽略文件 %q，请先移出或备份", local)
+				return &IgnoredFileError{Path: local, WouldOverwrite: true}
 			}
 		}
 	}

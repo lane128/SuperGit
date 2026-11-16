@@ -31,8 +31,8 @@ func TestResetSettingsReportsAFailedWrite(t *testing.T) {
 	}
 }
 
-// A reset that does write says so, in the window that has the keyboard. With
-// no settings window in the test that is the main window.
+// A direct reset that does write reports success to its default main owner.
+// The settings confirmation explicitly supplies the settings window owner.
 func TestResetSettingsReportsTheSuccessfulWrite(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 

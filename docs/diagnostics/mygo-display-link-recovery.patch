@@ -1,0 +1,52 @@
+diff --git a/internal/darwin/surface.go b/internal/darwin/surface.go
+--- a/internal/darwin/surface.go
++++ b/internal/darwin/surface.go
+@@ -399,8 +399,6 @@ func (s *surface) RequestFrame() {
+ 	}
+ 	if s.link != 0 {
+ 		switch {
+-		case s.linkRunning:
+-			s.due = true
+ 		case time.Since(s.lastFrame) > 2*s.refresh() && (s.visible() || !s.drawn):
+ 			// After a pause, the frame draws at once, in this pass of the
+ 			// run loop (drawSoon). A window out of sight waits for the
+@@ -409,6 +407,8 @@ func (s *surface) RequestFrame() {
+ 			// same: the link does not tick for a window made hidden, which
+ 			// that frame makes ready to show (OnReadyToShow).
+ 			s.drawSoon()
++		case s.linkRunning:
++			s.due = true
+ 		default:
+ 			// Frames that follow each other draw at the display's
+ 			// refreshes; the link keeps running while they come, rather
+diff --git a/internal/darwin/stalled_display_link_test.go b/internal/darwin/stalled_display_link_test.go
+new file mode 100644
+--- /dev/null
++++ b/internal/darwin/stalled_display_link_test.go
+@@ -0,0 +1,26 @@
++//go:build darwin
++
++package darwin
++
++import (
++	"testing"
++	"time"
++)
++
++// A display link can remain unpaused without delivering another callback.
++// A later state change must still draw instead of trusting linkRunning forever.
++func TestRequestedFrameRecoversWhenRunningDisplayLinkStopsTicking(t *testing.T) {
++	load()
++	h := &frameHandler{}
++	b := &Backend{bySurface: map[id]*surface{}}
++	s := &surface{
++		w: &window{b: b, h: h}, view: 1, link: 1,
++		linkRunning: true, lastFrame: time.Now().Add(-time.Second),
++	}
++	b.bySurface[s.view] = s
++	s.RequestFrame()
++	drainMainQueue()
++	if len(h.paced) != 1 || h.paced[0] {
++		t.Fatalf("stalled display link: frames %v, want one unpaced recovery frame", h.paced)
++	}
++}

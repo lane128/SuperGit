@@ -15,6 +15,7 @@ import (
 // its branch rows, and the ones past the cap are chosen here with a search box
 // rather than in a menu that would grow past the window.
 type checkoutBranchState struct {
+	root    string
 	open    bool
 	sha     string
 	subject string
@@ -36,8 +37,30 @@ type checkoutBranchState struct {
 	reveal bool
 }
 
+func (a *app) discardStaleCheckoutBranch() bool {
+	if a.checkoutBranch.root != "" && (a.repo == nil || a.repo.Root != a.checkoutBranch.root) {
+		a.checkoutBranch = checkoutBranchState{}
+		return true
+	}
+	return false
+}
+
 func (a *app) openCheckoutBranchDialog(commit gitrepo.Commit) {
+	a.discardStaleCheckoutBranch()
+	if a.checkoutBranch.open {
+		a.queue("warning", a.t("promptPending"), "")
+		a.invalidate()
+		return
+	}
+	if a.rejectPendingDialog(toastMain) {
+		return
+	}
+	root := ""
+	if a.repo != nil {
+		root = a.repo.Root
+	}
 	a.checkoutBranch = checkoutBranchState{
+		root:    root,
 		open:    true,
 		sha:     commit.SHA,
 		subject: commit.Subject,
@@ -89,6 +112,14 @@ func filterBranchesAt(branches []gitrepo.Branch, query string) []gitrepo.Branch 
 }
 
 func (a *app) checkoutBranchDialog(c *ui.Context) {
+	a.checkoutBranchDialogFor(c, toastMain)
+}
+
+func (a *app) checkoutBranchDialogFor(c *ui.Context, owner toastOwner) {
+	if owner != toastMain {
+		return
+	}
+	a.discardStaleCheckoutBranch()
 	if !a.checkoutBranch.open {
 		return
 	}
@@ -165,8 +196,9 @@ func (a *app) checkoutBranchDialog(c *ui.Context) {
 			})
 	})
 	if chosen != "" {
+		sha := a.checkoutBranch.sha
 		a.checkoutBranch = checkoutBranchState{}
-		a.switchBranch(chosen)
+		a.switchBranchAt(chosen, sha)
 		return
 	}
 	if !a.checkoutBranch.open {

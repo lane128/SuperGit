@@ -3,7 +3,6 @@ package lobedesk
 import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/feedback"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
@@ -55,9 +54,8 @@ func (a *app) settingsRoot(c *ui.Context) {
 	a.applyTheme(c)
 	tk := theme.TokensOf(c)
 	a.syncDockIcon(tk.Dark)
-	// Dialog state is shared with the main window; only the window with the
-	// keyboard draws it, so a confirmation opened here stays here and one
-	// opened in the main window does not appear twice.
+	// Dialogs retain their initiating window even when keyboard focus changes.
+	// Focus determines whether this window drains its notification queue.
 	focused := a.settingsFocused()
 	// The page keeps one identity across theme and palette changes. Its
 	// controls read the new tokens every frame and animate to them over the
@@ -66,15 +64,14 @@ func (a *app) settingsRoot(c *ui.Context) {
 	// theme's color after the transition.
 	ui.Column(c).Fill().Background(tk.BgLayout).Children(func() {
 		a.settingsPage(c)
-		if focused {
-			a.confirmDialog(c)
-			a.promptDialog(c)
-			a.resetDialog(c)
-			a.checkoutBranchDialog(c)
-			a.blameDialog(c)
-			a.worktreeFormDialog(c)
-		}
-		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.confirmDialogFor(c, toastSettings)
+		a.noticeDetailsDialog(c, toastSettings)
+		a.promptDialogFor(c, toastSettings)
+		a.resetDialogFor(c, toastSettings)
+		a.checkoutBranchDialogFor(c, toastSettings)
+		a.worktreeFormDialogFor(c, toastSettings)
+		a.blameDialogFor(c, toastSettings)
+		a.toastHost(c, toastSettings)
 		if focused {
 			a.flushNotice(c, toastSettings)
 		}

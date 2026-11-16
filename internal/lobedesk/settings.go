@@ -18,6 +18,8 @@ type persistedSettings struct {
 	AutoFetch      *bool    `json:"autoFetch,omitempty"`
 	AutoFetchPrune *bool    `json:"autoFetchPrune,omitempty"`
 	AutoFetchEvery *int     `json:"autoFetchEvery,omitempty"`
+	SidebarSplit   *float32 `json:"sidebarSplit,omitempty"`
+	FilesSplit     *float32 `json:"filesSplit,omitempty"`
 	HistorySplit   *float32 `json:"historySplit,omitempty"`
 	StashSplit     *float32 `json:"stashSplit,omitempty"`
 	// BranchDetailsSplit is the branch page's list/detail divider, kept apart
@@ -78,14 +80,18 @@ func defaultSettings() persistedSettings {
 // reads the app, not part of the look being reset. Only preferences change;
 // repositories and the working tree are untouched.
 func (a *app) resetSettings() {
+	a.resetSettingsFor(toastMain)
+}
+
+func (a *app) resetSettingsFor(owner toastOwner) {
 	a.applySettings(resetDefaults(persistedSettings{Language: string(a.locale)}))
 	a.resetLayout()
 	a.syncLocale()
 	// Only claim success once the file is written: persistSettings queues the
 	// failure, and a success beside it would replace the warning the reader
 	// still has to act on.
-	if a.saveSettings() {
-		a.queueFor(a.settingsNoticeOwner(), "success", a.t("resetSettingsDone"), "")
+	if a.saveSettingsFor(owner) {
+		a.queueFor(owner, "success", a.t("resetSettingsDone"), "")
 	}
 	a.invalidate()
 }
@@ -108,6 +114,8 @@ func (a *app) applyDefaults() {
 // resetLayout returns every divider to the width its page opens with and
 // brings back any pane the reader had collapsed.
 func (a *app) resetLayout() {
+	a.sidebarSplit.share = 0
+	a.filesSplit.share = 0
 	a.historySplit.share = 0
 	a.stashSplit.share = 0
 	a.branchSplit.share = 0
@@ -188,6 +196,12 @@ func (a *app) applySettings(settings persistedSettings) {
 	if settings.AutoFetchEvery != nil {
 		a.autoFetchEvery = fetchIntervalOf(*settings.AutoFetchEvery)
 	}
+	if settings.SidebarSplit != nil && *settings.SidebarSplit > 0 && *settings.SidebarSplit < 1 {
+		a.sidebarSplit.share = *settings.SidebarSplit
+	}
+	if settings.FilesSplit != nil && *settings.FilesSplit > 0 && *settings.FilesSplit < 1 {
+		a.filesSplit.share = *settings.FilesSplit
+	}
 	if settings.HistorySplit != nil && *settings.HistorySplit > 0 {
 		a.historySplit.share = *settings.HistorySplit
 	}
@@ -209,12 +223,7 @@ func (a *app) applySettings(settings persistedSettings) {
 	if settings.DetailsDiff != nil {
 		a.detailsDiffHidden = !*settings.DetailsDiff
 	}
-	// The files column has nothing to open into without both the Summary and
-	// the patch; a settings file that hid both came from the old stacked
-	// layout, where that was allowed.
-	if a.detailsInfoHidden && a.detailsDiffHidden {
-		a.detailsInfoHidden = false
-	}
+	a.normalizeDetailVisibility()
 	if settings.HistoryLine != "" {
 		a.historyLine = graphLineOf(settings.HistoryLine)
 	}
@@ -430,6 +439,12 @@ func (a *app) persistSettings() {
 // queues the failure so every caller says why the choice will not survive a
 // restart; a caller with its own success message checks the result first.
 func (a *app) saveSettings() bool {
+	return a.saveSettingsFor(toastMain)
+}
+
+// saveSettingsFor routes feedback to the UI that initiated the write. Native
+// keyboard focus may belong to another window when an action is delivered.
+func (a *app) saveSettingsFor(owner toastOwner) bool {
 	path, err := settingsPath()
 	var settings persistedSettings
 	if err == nil {
@@ -440,6 +455,8 @@ func (a *app) saveSettings() bool {
 			Theme: a.themeMode, Palette: a.palette, Language: string(a.locale),
 			ShowGraph: &showGraph, AutoFetch: &autoFetch, AutoFetchPrune: &autoFetchPrune,
 			AutoFetchEvery:     fetchIntervalSetting(a.autoFetchEvery),
+			SidebarSplit:       splitSetting(a.sidebarSplit.share),
+			FilesSplit:         splitSetting(a.filesSplit.share),
 			HistorySplit:       splitSetting(a.historySplit.share),
 			StashSplit:         splitSetting(a.stashSplit.share),
 			BranchDetailsSplit: splitSetting(a.branchSplit.share),
@@ -457,7 +474,7 @@ func (a *app) saveSettings() bool {
 		err = writeSettings(path, settings)
 	}
 	if err != nil {
-		a.queueFor(a.settingsNoticeOwner(), "warning", a.t("settingsSaveFailed"), err.Error())
+		a.queueFor(owner, "warning", a.t("settingsSaveFailed"), err.Error())
 		a.invalidate()
 		return false
 	}

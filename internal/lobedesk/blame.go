@@ -3,7 +3,6 @@ package lobedesk
 import (
 	"strings"
 
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -45,13 +44,41 @@ func (a *app) openBlame(path string) {
 	a.openBlameAt(path, "")
 }
 
-// openBlameAt blames rev's version of path. The commit details pass the
-// selected commit, so the dialog describes the file the patch showed rather
-// than whatever the worktree holds now.
+func (a *app) clearBlame() {
+	a.blameSeq++
+	a.blameRoot = ""
+	a.blameOpen = false
+	a.blamePath = ""
+	a.blameRev = ""
+	a.blame = nil
+	a.blameErr = ""
+	a.blameLoading = false
+	a.blameIgnoreWS = false
+}
+
+func (a *app) discardStaleBlame() bool {
+	if a.blameRoot != "" && (a.repo == nil || a.repo.Root != a.blameRoot) {
+		a.clearBlame()
+		return true
+	}
+	return false
+}
+
+// openBlameAt blames rev's version of path; an empty rev reads the worktree.
 func (a *app) openBlameAt(path, rev string) {
+	a.discardStaleBlame()
 	if a.repo == nil || path == "" {
 		return
 	}
+	if a.blameOpen {
+		a.queue("warning", a.t("confirmationPending"), "")
+		a.invalidate()
+		return
+	}
+	if a.rejectPendingDialog(toastMain) {
+		return
+	}
+	a.blameRoot = a.repo.Root
 	a.blameOpen = true
 	a.blamePath = path
 	a.blameRev = rev
@@ -63,7 +90,7 @@ func (a *app) openBlameAt(path, rev string) {
 }
 
 func (a *app) loadBlame() {
-	if a.repo == nil || a.blamePath == "" {
+	if a.discardStaleBlame() || !a.blameOpen || a.repo == nil || a.blamePath == "" {
 		return
 	}
 	a.blameSeq++
@@ -74,8 +101,8 @@ func (a *app) loadBlame() {
 	a.blameErr = ""
 	go func() {
 		lines, err := repo.BlameAt(a.ctx, rev, path, ignoreWS)
-		mygo.RunOnMain(func() {
-			if seq != a.blameSeq || a.blamePath != path || a.blameRev != rev {
+		a.hopToMain(func() {
+			if !a.blameOpen || a.repo == nil || a.repo.Root != repo.Root || seq != a.blameSeq || a.blamePath != path || a.blameRev != rev {
 				return
 			}
 			a.blameLoading = false
@@ -90,7 +117,18 @@ func (a *app) loadBlame() {
 }
 
 func (a *app) blameDialog(c *ui.Context) {
+	a.blameDialogFor(c, toastMain)
+}
+
+func (a *app) blameDialogFor(c *ui.Context, owner toastOwner) {
+	if owner != toastMain {
+		return
+	}
+	a.discardStaleBlame()
 	if !a.blameOpen {
+		if a.blameRoot != "" {
+			a.clearBlame()
+		}
 		return
 	}
 	tk := theme.TokensOf(c)
@@ -140,6 +178,9 @@ func (a *app) blameDialog(c *ui.Context) {
 			}
 		})
 	})
+	if !a.blameOpen {
+		a.clearBlame()
+	}
 }
 
 // blameRowName is the row's accessible name: the commit the line comes from
@@ -172,12 +213,21 @@ func (a *app) blameRowDescription(line gitrepo.BlameLine) string {
 	return strings.Join(parts, " · ")
 }
 
+func (a *app) blameCommitAction(sha string) func() {
+	root, seq := a.blameRoot, a.blameSeq
+	return func() {
+		if a.blameRoot == root && a.blameSeq == seq {
+			a.openBlameCommit(sha)
+		}
+	}
+}
+
 // openBlameCommit leaves the dialog and shows the blamed commit in history.
 func (a *app) openBlameCommit(sha string) {
-	if sha == "" || strings.Trim(sha, "0") == "" {
+	if a.discardStaleBlame() || !a.blameOpen || sha == "" || strings.Trim(sha, "0") == "" {
 		return
 	}
-	a.blameOpen = false
+	a.clearBlame()
 	a.openPage("history")
 	a.showCommit(sha)
 	a.invalidate()
@@ -216,11 +266,12 @@ func (a *app) blameRows(c *ui.Context) {
 				gutter := gutterInk(tk, ground)
 				if !uncommitted {
 					sha := line.SHA
-					row = row.OnClick(func() { a.openBlameCommit(sha) }).Tooltip(a.t("jumpToCommit"))
+					jump := a.blameCommitAction(sha)
+					row = row.OnClick(jump).Tooltip(a.t("jumpToCommit"))
 					// A focused button takes Enter for itself, which would only
 					// report a click nobody listens to; the row's shortcut runs
 					// the same jump the pointer does.
-					row.OnShortcut(0, ui.KeyEnter, func() { a.openBlameCommit(sha) })
+					row.OnShortcut(0, ui.KeyEnter, jump)
 				}
 				row.Children(func() {
 					sha := shortSHA(line.SHA)
@@ -267,13 +318,18 @@ func (a *app) blameMenu(c *ui.Context, row ui.Element, line gitrepo.BlameLine) {
 		{Divider: true},
 		{Key: "history", Label: a.t("fileHistory"), Icon: lucide.History()},
 	}
-	switch overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: items}) {
+	chosen := overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: items})
+	if chosen != "" && (a.discardStaleBlame() || !a.blameOpen) {
+		return
+	}
+	switch chosen {
 	case "view":
 		a.openBlameCommit(line.SHA)
 	case "copy-sha":
 		a.copyText(line.SHA)
 	case "history":
-		a.blameOpen = false
-		a.showFileHistory(a.blamePath)
+		path := a.blamePath
+		a.clearBlame()
+		a.showFileHistory(path)
 	}
 }

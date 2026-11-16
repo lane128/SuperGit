@@ -123,5 +123,19 @@ func (r *Repository) Worktrees(ctx context.Context) ([]Worktree, error) {
 			current.Locked = true
 		}
 	}
+	// Git reports a submodule's main worktree as its absorbed git directory
+	// (.git/modules/...) even when called from a linked checkout. Resolve that
+	// first record through Git's own core.worktree interpretation. Linked
+	// records already name their checkout; a bare record has no checkout.
+	if len(result) > 0 && !result[0].Bare {
+		main, err := Open(ctx, result[0].Path)
+		if err == nil {
+			result[0].Path = main.Root
+		} else if ctx.Err() != nil {
+			return nil, err
+		}
+		// An unavailable main directory must not hide reachable linked trees.
+		// Keep Git's listed path when it cannot currently be opened.
+	}
 	return result, nil
 }

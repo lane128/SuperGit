@@ -14,6 +14,28 @@ import (
 
 type Remote struct{ Name, URL, PushURL, Fingerprint string }
 
+var ErrRemoteTargetChanged = errors.New("remote configuration changed before write")
+
+// checkRemoteTarget compares the effective fetch and push destinations captured
+// by Remotes. The repository mutex cannot serialize external Git config edits.
+func (r *Repository) checkRemoteTarget(ctx context.Context, expected Remote) error {
+	if !remoteNameRE.MatchString(expected.Name) || expected.Fingerprint == "" {
+		return ErrRemoteTargetChanged
+	}
+	fetch, err := run(ctx, r.Root, "", "remote", "get-url", "--all", "--", expected.Name)
+	if err != nil {
+		return errors.Join(ErrRemoteTargetChanged, err)
+	}
+	push, err := run(ctx, r.Root, "", "remote", "get-url", "--push", "--all", "--", expected.Name)
+	if err != nil {
+		return errors.Join(ErrRemoteTargetChanged, err)
+	}
+	if fmt.Sprintf("%x", sha256.Sum256([]byte(fetch+"\x00"+push))) != expected.Fingerprint {
+		return ErrRemoteTargetChanged
+	}
+	return nil
+}
+
 var remoteNameRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]*$`)
 
 func validURL(value string) error {
@@ -148,18 +170,46 @@ func (r *Repository) RemoteBranches(ctx context.Context) ([]Branch, error) {
 	return result, nil
 }
 
+var ErrRemoteDeleteTargetChanged = errors.New("remote branch changed or deletion was refused")
+
+// DeleteRemoteBranchChecked uses an explicit expected OID, so a background
+// fetch cannot silently authorize deletion of a newer remote branch tip.
+func (r *Repository) DeleteRemoteBranchChecked(ctx context.Context, remote Remote, branch, expectedSHA string) error {
+	if !oidRE.MatchString(expectedSHA) {
+		return ErrRemoteDeleteTargetChanged
+	}
+	return r.deleteRemoteBranch(ctx, remote.Name, branch, &remote, expectedSHA)
+}
+
 // DeleteRemoteBranch removes a branch from the remote. Git also drops the
 // matching remote-tracking ref as part of the successful push.
 func (r *Repository) DeleteRemoteBranch(ctx context.Context, remote, branch string) error {
+	return r.deleteRemoteBranch(ctx, remote, branch, nil, "")
+}
+
+func (r *Repository) deleteRemoteBranch(ctx context.Context, remote, branch string, expectedRemote *Remote, expectedSHA string) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
+	if expectedRemote != nil {
+		if err := r.checkRemoteTarget(ctx, *expectedRemote); err != nil {
+			return err
+		}
+	}
 	if err := r.checkRemote(ctx, remote, true); err != nil {
 		return err
 	}
 	if err := r.branchName(ctx, branch); err != nil {
 		return err
 	}
-	_, err := run(ctx, r.Root, "", "push", "--no-recurse-submodules", "--", remote, ":refs/heads/"+branch)
+	args := []string{"push", "--no-recurse-submodules"}
+	if expectedSHA != "" {
+		args = append(args, "--force-with-lease=refs/heads/"+branch+":"+expectedSHA)
+	}
+	args = append(args, "--", remote, ":refs/heads/"+branch)
+	_, err := run(ctx, r.Root, "", args...)
+	if err != nil && expectedSHA != "" {
+		return errors.Join(ErrRemoteDeleteTargetChanged, err)
+	}
 	return err
 }
 func (r *Repository) Fetch(ctx context.Context, remote string) error {
@@ -213,27 +263,64 @@ func (r *Repository) PullFF(ctx context.Context) error {
 	_, err = run(ctx, r.Root, "", "merge", "--ff-only", "--no-edit", "--no-autostash", "--no-overwrite-ignore", "--", sha)
 	return err
 }
+
+var ErrPushTargetChanged = errors.New("source branch changed before push")
+var ErrPushUpstreamFailed = errors.New("push succeeded but upstream setup failed")
+
+type pushExpectation struct {
+	remote    Remote
+	sourceSHA string
+}
+
+// PushChecked publishes only the source commit selected by the confirmation.
+func (r *Repository) PushChecked(ctx context.Context, remote Remote, source Branch, destination string, setUpstream bool) error {
+	if !oidRE.MatchString(source.SHA) {
+		return ErrPushTargetChanged
+	}
+	return r.push(ctx, remote.Name, source.Name, destination, "", setUpstream, &pushExpectation{remote: remote, sourceSHA: source.SHA})
+}
+
 func (r *Repository) Push(ctx context.Context, remote, source, destination string, setUpstream bool) error {
-	return r.push(ctx, remote, source, destination, "", setUpstream)
+	return r.push(ctx, remote, source, destination, "", setUpstream, nil)
 }
 
 // PushBranch publishes a local branch without either checking it out or
 // resolving it through HEAD, which is what the branch list's Push action
 // needs for a branch the user is not standing on.
 func (r *Repository) PushBranch(ctx context.Context, remote, branch, destination string, setUpstream bool) error {
-	return r.push(ctx, remote, branch, destination, "", setUpstream)
+	return r.push(ctx, remote, branch, destination, "", setUpstream, nil)
+}
+
+var ErrForcePushTargetChanged = errors.New("remote branch changed or force push was refused")
+
+// PushForceChecked binds the lease to the confirmation, independently of any
+// fetch that updates local tracking refs before the push starts.
+func (r *Repository) PushForceChecked(ctx context.Context, remote Remote, source Branch, destination, expectedRemoteSHA string) error {
+	if !oidRE.MatchString(source.SHA) {
+		return ErrPushTargetChanged
+	}
+	if expectedRemoteSHA != "" && !oidRE.MatchString(expectedRemoteSHA) {
+		return ErrForcePushTargetChanged
+	}
+	lease := "--force-with-lease=refs/heads/" + destination + ":" + expectedRemoteSHA
+	return r.push(ctx, remote.Name, source.Name, destination, lease, false, &pushExpectation{remote: remote, sourceSHA: source.SHA})
 }
 
 // PushForce rewrites the remote branch with --force-with-lease, which refuses
 // the push when the remote moved since the last fetch instead of discarding
 // commits that were pushed from elsewhere.
 func (r *Repository) PushForce(ctx context.Context, remote, source, destination string) error {
-	return r.push(ctx, remote, source, destination, "--force-with-lease", false)
+	return r.push(ctx, remote, source, destination, "--force-with-lease", false, nil)
 }
 
-func (r *Repository) push(ctx context.Context, remote, source, destination, force string, setUpstream bool) error {
+func (r *Repository) push(ctx context.Context, remote, source, destination, force string, setUpstream bool, expected *pushExpectation) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
+	if expected != nil {
+		if err := r.checkRemoteTarget(ctx, expected.remote); err != nil {
+			return err
+		}
+	}
 	if err := r.checkRemote(ctx, remote, true); err != nil {
 		return err
 	}
@@ -244,7 +331,13 @@ func (r *Repository) push(ctx context.Context, remote, source, destination, forc
 	}
 	sha, err := r.resolve(ctx, "refs/heads/"+source)
 	if err != nil {
+		if expected != nil {
+			return errors.Join(ErrPushTargetChanged, err)
+		}
 		return err
+	}
+	if expected != nil && sha != expected.sourceSHA {
+		return ErrPushTargetChanged
 	}
 	if err := r.checkPublishedSubmodules(ctx, sha); err != nil {
 		return err
@@ -255,13 +348,35 @@ func (r *Repository) push(ctx context.Context, remote, source, destination, forc
 	} else {
 		args = append(args, "--no-force")
 	}
-	if setUpstream {
+	if setUpstream && expected == nil {
 		args = append(args, "--set-upstream")
 	}
-	args = append(args, "--", remote, fmt.Sprintf("refs/heads/%s:refs/heads/%s", source, destination))
+	sourceRef := "refs/heads/" + source
+	if expected != nil {
+		sourceRef = expected.sourceSHA
+	}
+	args = append(args, "--", remote, fmt.Sprintf("%s:refs/heads/%s", sourceRef, destination))
 	_, err = run(ctx, r.Root, "", args...)
-	if err != nil && force != "" && strings.Contains(err.Error(), "stale info") {
-		return errors.New("远端自上次获取后已有新提交，请先获取再强制推送")
+	if err != nil && force != "" {
+		if expected != nil {
+			return errors.Join(ErrForcePushTargetChanged, err)
+		}
+		if strings.Contains(err.Error(), "stale info") {
+			return errors.New("远端自上次获取后已有新提交，请先获取再强制推送")
+		}
+	}
+	if err == nil && expected != nil && setUpstream {
+		// An OID source does not let `push --set-upstream` identify the local
+		// branch. Store Git's remote/merge pair rather than assuming the remote
+		// uses refs/remotes/<name>/* as its fetch mapping.
+		for _, setting := range [][2]string{
+			{"branch." + source + ".remote", remote},
+			{"branch." + source + ".merge", "refs/heads/" + destination},
+		} {
+			if _, err := run(ctx, r.Root, "", "config", "--local", "--replace-all", setting[0], setting[1]); err != nil {
+				return errors.Join(ErrPushUpstreamFailed, err)
+			}
+		}
 	}
 	return err
 }

@@ -344,8 +344,15 @@ func (a *app) detailAction(c *ui.Context, label, hint string, disabled, danger b
 func (a *app) branchDetailActions(c *ui.Context, sel branchDetailSelection) {
 	tk := theme.TokensOf(c)
 	blocked := a.busy || a.loading
-	ui.Row(c).FillWidth().Shrink(0).Padding(12, 14).Gap(6).Wrap().AlignItems(ui.Center).
-		BorderWidth(1, 0, 0, 0).BorderColor(tk.BorderSecondary).Children(func() {
+	footer := ui.Row(c).FillWidth().Shrink(0).Padding(12, 14).Gap(6).Wrap().AlignItems(ui.Center).
+		BorderWidth(1, 0, 0, 0).BorderColor(tk.BorderSecondary)
+	a.mainToastBottomInset = footer.Bounds().H
+	if a.mainToastBottomInset <= 0 {
+		// Layout bounds arrive on the next frame. Keep the initial overlay
+		// away from the action rows until their real height is available.
+		a.mainToastBottomInset = 160
+	}
+	footer.Children(func() {
 		switch sel.kind {
 		case branchDetailLocal:
 			branch := sel.branch
@@ -357,12 +364,10 @@ func (a *app) branchDetailActions(c *ui.Context, sel branchDetailSelection) {
 				a.switchBranch(branch.Name)
 			})
 			a.detailAction(c, a.t("mergeIntoCurrent"), currentHint, blocked || branch.Current, false, func() {
-				a.askConfirm(a.t("mergeIntoCurrent"), a.tf("mergeCommitMessage", branch.Name),
-					a.t("mergeIntoCurrent"), false, func() { a.integrate("merge", branch.Name) })
+				a.confirmIntegrate("merge", branch.Name, branch.SHA)
 			})
 			a.detailAction(c, a.t("rebaseOnto"), currentHint, blocked || branch.Current, false, func() {
-				a.askConfirm(a.t("rebaseOnto"), a.tf("rebaseCommitMessage", branch.Name),
-					a.t("rebaseOnto"), false, func() { a.integrate("rebase", branch.Name) })
+				a.confirmIntegrate("rebase", branch.Name, branch.SHA)
 			})
 			remote, _ := a.branchPushTarget(branch)
 			pushHint := ""
@@ -373,10 +378,10 @@ func (a *app) branchDetailActions(c *ui.Context, sel branchDetailSelection) {
 				a.confirmPushBranch(branch)
 			})
 			a.detailAction(c, a.t("renameBranch"), "", blocked, false, func() {
-				a.promptRenameBranch(branch.Name)
+				a.promptRenameBranch(branch)
 			})
 			a.detailAction(c, a.t("deleteBranch"), currentHint, blocked || branch.Current, true, func() {
-				a.confirmDeleteBranch(branch.Name)
+				a.confirmDeleteBranch(branch)
 			})
 			a.detailAction(c, a.t("copyName"), "", false, false, func() {
 				a.copyText(branch.Name)
@@ -405,7 +410,7 @@ func (a *app) branchDetailActions(c *ui.Context, sel branchDetailSelection) {
 				a.promptCheckoutRemoteBranch(ref.Name, sel.name)
 			})
 			a.detailAction(c, a.t("deleteRemoteBranch"), "", blocked || sel.remote == "", true, func() {
-				a.confirmDeleteRemoteBranch(sel.remote, sel.name)
+				a.confirmDeleteRemoteBranch(sel.remote, sel.name, ref.SHA)
 			})
 			a.detailAction(c, a.t("copyName"), "", false, false, func() {
 				a.copyText(ref.Name)
@@ -424,7 +429,7 @@ func (a *app) branchDetailActions(c *ui.Context, sel branchDetailSelection) {
 			// does the same instead of showing a button that cannot act.
 			if a.tagPushRemote() != "" {
 				a.detailAction(c, a.t("pushTag"), "", blocked, false, func() {
-					a.confirmPushTag(tag.Name)
+					a.confirmPushTag(tag)
 				})
 			}
 			a.detailAction(c, a.t("deleteTagAction"), "", blocked, true, func() {

@@ -94,11 +94,27 @@ func buildCommitDiff(files []gitrepo.FileDiff) (gitrepo.Diff, []commitDiffSectio
 	return combined, sections
 }
 
+// visibleCommitSections projects sections without renumbering their lines.
+// A type change may contribute several sections for the same file.
+func (a *app) visibleCommitSections() []commitDiffSection {
+	tab := a.detailTabs().Active
+	if tab.Summary {
+		return a.commitSections
+	}
+	var out []commitDiffSection
+	for _, sec := range a.commitSections {
+		if sec.Path == tab.File.Path {
+			out = append(out, sec)
+		}
+	}
+	return out
+}
+
 // commitDiffHeight is how tall the whole stacked diff draws: a header per file
 // and the rows of every section that is open.
 func (a *app) commitDiffHeight() float32 {
 	height := float32(0)
-	for _, sec := range a.commitSections {
+	for _, sec := range a.visibleCommitSections() {
 		height += diffFileHeaderH
 		if a.commitCollapsed[sec.Path] {
 			continue

@@ -54,6 +54,12 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 				}
 			})
 		}
+		if a.commitMessageErr != "" {
+			display.Text(c, a.commitMessageErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(12), Rows: 4})
+			if action.Button(c, a.t("retryCommitMessage"), action.ButtonProps{Size: theme.Small}).Disabled(a.commitDiffLoading).Clicked() {
+				a.loadCommitDetail(true)
+			}
+		}
 		if body := commitBody(a.commitMessage); body != "" {
 			display.Text(c, body, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12)})
 		}

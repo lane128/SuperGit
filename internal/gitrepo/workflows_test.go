@@ -154,9 +154,15 @@ func TestStashApplyErrorHints(t *testing.T) {
 	if got := r.stashApplyError(ctx, overlap, "弹出"); got == nil || !strings.Contains(got.Error(), "重叠") || !strings.Contains(got.Error(), "弹出") {
 		t.Errorf("overlap hint = %v", got)
 	}
+	if got := r.stashApplyError(ctx, overlap, "弹出"); !errors.Is(got, overlap) {
+		t.Error("overlap hint discarded the original Git error")
+	}
 	conflict := errors.New("git stash: exit status 1\nCONFLICT (content): Merge conflict in base.txt")
 	if got := r.stashApplyError(ctx, conflict, "应用"); got == nil || !strings.Contains(got.Error(), "冲突") {
 		t.Errorf("conflict hint = %v", got)
+	}
+	if got := r.stashApplyError(ctx, conflict, "应用"); !errors.Is(got, conflict) {
+		t.Error("conflict hint discarded the original Git error")
 	}
 	other := errors.New("git stash: exit status 128\nfatal: bad revision")
 	if got := r.stashApplyError(ctx, other, "应用"); got != other {
@@ -173,6 +179,9 @@ func TestStashApplyErrorHints(t *testing.T) {
 	notUnstashed := errors.New("git stash: exit status 1\nIndex was not unstashed.")
 	if got := conflictRepo.stashApplyError(ctx, notUnstashed, "弹出"); got == nil || !strings.Contains(got.Error(), "冲突") {
 		t.Errorf("conflicted status hint = %v", got)
+	}
+	if got := conflictRepo.stashApplyError(ctx, notUnstashed, "弹出"); !errors.Is(got, notUnstashed) {
+		t.Error("status-detected conflict discarded the original Git error")
 	}
 }
 
