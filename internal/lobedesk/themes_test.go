@@ -114,6 +114,13 @@ func TestLanePaletteStaysDistinctInEveryScheme(t *testing.T) {
 	}
 	cases := []paletteCase{{"fallback", nil, false}}
 	for _, th := range appThemes {
+		// SuperGit separates semantic status inks from history lanes. Its
+		// registered twelve-color palette is checked by the ordered-palette
+		// test and TestSuperGitSelectionAndStatusFamiliesStayConsistent;
+		// lanePaletteOf is not used to render its history.
+		if th.key == themePaletteSuperGit {
+			continue
+		}
 		for _, dark := range []bool{false, true} {
 			cases = append(cases, paletteCase{th.key, th.config.Tokens(dark), !dark})
 		}

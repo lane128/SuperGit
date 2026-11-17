@@ -7,7 +7,6 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
@@ -83,7 +82,7 @@ func (a *app) stashPage(c *ui.Context) {
 					// error carries the way back: retry the list read.
 					ui.Column(c).Padding(12).Gap(6).Children(func() {
 						display.Text(c, a.stashesErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(11), Rows: 3})
-						if action.Button(c, a.t("retry"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+						if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
 							a.reload()
 						}
 					})
@@ -130,10 +129,12 @@ func (a *app) stashSaveMenu(c *ui.Context) {
 		{Key: "tracked", Label: a.t("saveStash"), Icon: lucide.Archive()},
 		{Key: "untracked", Label: a.t("saveStashUntracked"), Icon: lucide.Archive()},
 	}}, func(trigger ui.Element) {
-		action.StyleButton(c, trigger, a.t("saveStashAction"), action.ButtonProps{Variant: action.Default, Size: theme.Small})
-		trigger.Gap(6).Children(func() {
-			ui.Icon(c, lucide.Archive()).FontSize(scaledFont(13)).TextColor(tk.TextSecondary)
-			ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(11)).TextColor(tk.TextTertiary)
+		styleWorkbenchButton(c, trigger, buttonNormal, false, *open)
+		trigger.Label(a.t("saveStashAction"))
+		trigger.Children(func() {
+			ui.Icon(c, lucide.Archive()).FontSize(scaledFont(14)).TextColor(tk.TextSecondary)
+			ui.Text(c, a.t("saveStashAction")).SingleLine()
+			ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(14)).TextColor(tk.TextSecondary)
 		})
 	})
 	switch chosen {
@@ -252,7 +253,7 @@ func (a *app) stashDetail(c *ui.Context) {
 			ui.Column(c).Fill().Center().Gap(8).Padding(24).Children(func() {
 				display.Text(c, a.stashDiffErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(12), Rows: 4}).
 					MaxWidth(520).TextAlign(ui.Center)
-				if action.Button(c, a.t("retry"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+				if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
 					a.loadStashDiff()
 				}
 			})
@@ -292,16 +293,13 @@ func (a *app) stashDetailHeader(c *ui.Context, tk *theme.Tokens) {
 		}
 		if stash, ok := a.selectedStashObject(); ok {
 			blocked := a.busy || a.loading
-			if action.Button(c, a.t("applyStash"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-				Disabled(blocked).Clicked() {
+			if workbenchButton(c, a.t("applyStash"), buttonNormal, blocked).Clicked() {
 				a.applyStash(stash)
 			}
-			if action.Button(c, a.t("popStash"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-				Disabled(blocked).Clicked() {
+			if workbenchButton(c, a.t("popStash"), buttonNormal, blocked).Clicked() {
 				a.popStash(stash)
 			}
-			if action.Button(c, a.t("dropStashAction"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-				Disabled(blocked).Clicked() {
+			if workbenchButton(c, a.t("dropStashAction"), buttonDanger, blocked).Clicked() {
 				a.confirmDropStash(stash)
 			}
 		}

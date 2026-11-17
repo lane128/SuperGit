@@ -23,7 +23,7 @@ type overviewPatchTarget struct {
 
 func (a *app) overviewTargetVisible(target overviewPatchTarget) bool {
 	if a.repo == nil || a.repo.Root != target.Root || a.overviewRoot != target.Root || a.overviewSeq != target.Generation ||
-		a.page != "history" || !a.worktreeSelected || a.historyDetailsHidden || !a.detailTabs().Active.Summary || a.detailContexts.Worktree.Collapsed[target.File] {
+		!a.detailPaneVisible() || !a.worktreeSelected || !a.detailTabs().Active.Summary || a.detailContexts.Worktree.Collapsed[target.File] {
 		return false
 	}
 	for _, entry := range a.overviewEntries {
@@ -123,6 +123,7 @@ func (a *app) overviewPatchLine(c *ui.Context, target overviewPatchTarget, index
 			ui.Text(c, lineNumber(line.Old)).Width(34).Shrink(0).TextAlign(ui.End).Font("Menlo").FontSize(scaledFont(10)).TextColor(gutterInk(tk, bg))
 			ui.Text(c, lineNumber(line.New)).Width(34).Shrink(0).TextAlign(ui.End).Font("Menlo").FontSize(scaledFont(10)).TextColor(gutterInk(tk, bg))
 		})
+		markDiffGutter(numbers, changed && selected && a.lineSel[index], gutterInk(tk, bg))
 		if changed && numbers.Clicked() {
 			a.selectOverviewLine(target, index, numbers.ClickModifiers())
 		}

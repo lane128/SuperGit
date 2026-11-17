@@ -16,7 +16,7 @@ const (
 	diffFileHeaderH float32 = 26
 	// diffRowH is one line of a patch and diffHunkH a hunk header, matching
 	// what the rows draw.
-	diffRowH  float32 = 21
+	diffRowH  float32 = 23
 	diffHunkH float32 = 24
 )
 

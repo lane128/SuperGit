@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
@@ -132,8 +131,9 @@ func (a *app) blameDialogFor(c *ui.Context, owner toastOwner) {
 		return
 	}
 	tk := theme.TokensOf(c)
+	width, height := c.Size()
 	ui.Modal(c, &a.blameOpen, func() {
-		ui.Column(c).Width(900).Height(620).Padding(16).Gap(10).
+		ui.Column(c).Width(min(900, max(0, width-40))).Height(min(620, max(0, height-40))).Padding(16).Gap(10).
 			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
 			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Icon(c, lucide.FileSearch()).FontSize(scaledFont(15)).TextColor(tk.TextSecondary)
@@ -146,18 +146,17 @@ func (a *app) blameDialogFor(c *ui.Context, owner toastOwner) {
 					display.Text(c, "@"+shortSHA(a.blameRev), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).Shrink(0)
 				}
 				display.Text(c, a.blameLinesLabel(len(a.blame)), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).Shrink(0)
-				toggle := action.Button(c, a.t("blameIgnoreWhitespace"), action.ButtonProps{
-					Variant: action.Text, Size: theme.Small,
-				}).Shrink(0)
-				if a.blameIgnoreWS {
-					toggle.TextColor(tk.Blue)
-				}
+				toggle := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, false, a.blameIgnoreWS).
+					Role(ui.RoleToggleButton).Label(a.t("blameIgnoreWhitespace")).Checked(a.blameIgnoreWS).Shrink(0)
+				toggle.Children(func() {
+					ui.Text(c, a.t("blameIgnoreWhitespace")).SingleLine()
+				})
 				if toggle.Clicked() {
 					a.blameIgnoreWS = !a.blameIgnoreWS
 					a.loadBlame()
 					a.invalidate()
 				}
-				close := action.ActionIcon(c, lucide.X(), action.ActionIconProps{Size: theme.Small, Title: a.t("close")})
+				close := workbenchIconButton(c, lucide.X(), a.t("close"), buttonNormal, false)
 				if close.Clicked() {
 					a.blameOpen = false
 				}
@@ -169,7 +168,7 @@ func (a *app) blameDialogFor(c *ui.Context, owner toastOwner) {
 				ui.Column(c).Fill().Center().Gap(8).Padding(24).Children(func() {
 					display.Text(c, a.blameErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(12), Rows: 4}).
 						MaxWidth(600).TextAlign(ui.Center)
-					if action.Button(c, a.t("retry"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+					if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
 						a.loadBlame()
 					}
 				})
@@ -177,7 +176,7 @@ func (a *app) blameDialogFor(c *ui.Context, owner toastOwner) {
 				a.blameRows(c)
 			}
 		})
-	})
+	}).Padding(0) // The inner panel owns padding; Modal still supplies dismissal and shadow.
 	if !a.blameOpen {
 		a.clearBlame()
 	}

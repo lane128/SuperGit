@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
@@ -91,24 +90,13 @@ func (a *app) titleBar(c *ui.Context) {
 	}
 	ui.Row(c).Height(height).Shrink(0).AlignItems(ui.Center).
 		Padding(0, 12, 0, 12).DragWindow().Children(func() {
-		left := ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(8).Padding(0, 0, 0, inset)
+		left := ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Gap(8).Padding(0, 0, 0, inset)
 		left.Children(func() {
-			ui.Icon(c, lucide.GitFork()).FontSize(scaledFont(15)).TextColor(tk.TextSecondary)
-			display.Text(c, "SuperGit", display.TextProps{Strong: true, FontSize: scaledFont(13)})
-			layout.Divider(c, layout.DividerProps{Vertical: true}).Margin(0, 3)
+			a.workbenchNavigation(c)
 			if a.repo != nil {
-				repoName := display.Text(c, a.repoName(), display.TextProps{Strong: true, FontSize: scaledFont(12)}).SingleLine().MaxWidth(220).Tooltip(a.repo.Root)
-				a.repoMenu(c, repoName)
-			} else {
-				display.Text(c, a.t("noRepo"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12)}).SingleLine()
-			}
-			if a.repo != nil {
-				// The title bar is the one place every page shares, so the
-				// branch switch and the remote actions live here now that the
-				// working tree is folded into the history page. The selector
-				// falls back to the plain status tag while no branch list is
-				// loaded, which is what this spot used to draw on its own.
-				a.branchSelector(c)
+				// Page tabs keep their width; the branch label yields space to
+				// shared repository actions while retaining its full tooltip.
+				ui.Row(c).Grow(1).Basis(0).MinWidth(0).MaxWidth(180).Children(func() { a.branchSelector(c) })
 				if a.status.Ahead > 0 || a.status.Behind > 0 {
 					display.Text(c, aheadBehind(a.status.Ahead, a.status.Behind), display.TextProps{
 						Type: display.TextSecondary, FontSize: scaledFont(11), Code: true,
@@ -119,21 +107,17 @@ func (a *app) titleBar(c *ui.Context) {
 				// middle of it, and the page the reader was on says nothing.
 				// The title bar is on every page, so the state is never hidden.
 				if a.operation.Kind != "" {
-					// It opens the history page with the working-tree row
-					// selected: that is where the operation card offers
-					// continue, skip and abort.
-					op := action.Button(c, a.tf("operation", a.operation.Kind), action.ButtonProps{
-						Variant: action.Default, Size: theme.Small,
-					}).TextColor(tk.Warning).Tooltip(a.t("operationWhere"))
+					// Changes keeps continue, skip and abort beside the files.
+					op := workbenchButton(c, a.tf("operation", a.operation.Kind), buttonNormal, false).
+						TextColor(tk.Warning).Tooltip(a.t("operationWhere"))
 					if op.Clicked() {
-						a.page = "history"
+						a.openPage("changes")
 						a.selectWorktree()
 						a.invalidate()
 					}
 				}
 			}
 		})
-		ui.Row(c).Grow(1).Basis(0).MinWidth(0)
 		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(6).Children(func() {
 			// Background work can outlast the moment a toast would be read,
 			// so the bar says what it is doing while it runs instead of
@@ -149,13 +133,11 @@ func (a *app) titleBar(c *ui.Context) {
 				icon.Rotate(icon.Loop("spin", 900*time.Millisecond, ui.Linear) * 360)
 				display.Text(c, text, display.TextProps{
 					Type: display.TextSecondary, FontSize: scaledFont(11),
-				})
+				}).SingleLine().MaxWidth(110).Tooltip(text)
 				// A git command can hang on a network that stopped answering;
 				// without this the only way out is the three-minute timeout.
 				if a.busy || a.fetching {
-					if cancel := action.ActionIcon(c, lucide.X(), action.ActionIconProps{
-						Size: theme.Small, Title: a.t("cancel"),
-					}); cancel.Clicked() {
+					if cancel := workbenchIconButton(c, lucide.X(), a.t("cancel"), buttonNormal, false); cancel.Clicked() {
 						a.cancelOperation()
 					}
 				}
@@ -167,9 +149,7 @@ func (a *app) titleBar(c *ui.Context) {
 				a.remoteActions(c)
 				layout.Divider(c, layout.DividerProps{Vertical: true}).Margin(0, 3)
 			}
-			refresh := action.ActionIcon(c, lucide.RefreshCw(), action.ActionIconProps{
-				Size: theme.Small, Title: a.t("refresh"),
-			}).Disabled(a.loading || a.busy || a.repo == nil)
+			refresh := workbenchIconButton(c, lucide.RefreshCw(), a.t("refresh"), buttonNormal, a.loading || a.busy || a.repo == nil)
 			if refresh.Clicked() {
 				a.reload()
 			}
@@ -215,7 +195,7 @@ func (a *app) progressText() string {
 	return ""
 }
 
-// repoMenu gives the repository name in the title bar a menu for actions on
+// repoMenu gives the repository name in the sidebar a menu for actions on
 // the checkout as a whole, rather than on one file or commit.
 func (a *app) repoMenu(c *ui.Context, target ui.Element) {
 	root := a.repo.Root
@@ -273,12 +253,14 @@ func itoa(n int) string {
 // to it, the way a branch tree in a Git client does, instead of making the
 // reader find the branch again on another page.
 func (a *app) sidebar(c *ui.Context) {
-	tk := theme.TokensOf(c)
+	tk := a.sidebarTokens(c)
 	ui.Column(c).Width(a.workbenchSidebarWidth()).Shrink(0).AlignSelf(ui.Stretch).Padding(6, 6).
 		Background(tk.BgContainer).
 		Children(func() {
+			a.sidebarHeader(c)
 			ui.Column(c).FillWidth().Gap(1).Margin(0, 2).Children(func() {
 				a.sidebarItem(c, lucide.History(), "history", a.t("history"), shortcutKeys("page.history"))
+				a.sidebarItem(c, lucide.GitFork(), "branches", a.t("manageBranches"), shortcutKeys("page.branches"))
 			})
 			layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.sidebarScroll}, func() {
 				ui.Column(c).FillWidth().Gap(1).Margin(0, 4).Children(func() {
@@ -362,7 +344,7 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 // the arrow. The rows below are the way into the page; the heading no longer
 // navigates, so clicking its text cannot surprise with a page switch.
 func (a *app) sidebarGroup(c *ui.Context, key, title string, count int, items func()) {
-	tk := theme.TokensOf(c)
+	tk := a.sidebarTokens(c)
 	countInk := tertiaryTextInk(tk, tk.FillTertiary.Over(tk.BgContainer))
 	open := a.sidebarGroupOpen(key)
 	chevron := lucide.ChevronRight()
@@ -380,7 +362,7 @@ func (a *app) sidebarGroup(c *ui.Context, key, title string, count int, items fu
 		ui.Icon(c, chevron).FontSize(scaledFont(12)).TextColor(tk.TextSecondary).Shrink(0)
 		display.Text(c, a.t(title), display.TextProps{
 			Type: display.TextSecondary, Strong: true, FontSize: scaledFont(11),
-		}).SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
+		}).TextColor(tk.TextSecondary).SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
 		if count > 0 {
 			display.Text(c, fmt.Sprint(count), display.TextProps{FontSize: scaledFont(10)}).
 				TextColor(countInk).Shrink(0)
@@ -400,13 +382,12 @@ func (a *app) sidebarGroup(c *ui.Context, key, title string, count int, items fu
 // history list is scoped to it. current marks the checked-out branch with its
 // own glyph, so a long name that clips still says which branch is live.
 func (a *app) sidebarRefRow(c *ui.Context, icon *ui.SVG, label string, selected, current bool, onClick func()) ui.Element {
-	tk := theme.TokensOf(c)
+	tk := a.sidebarTokens(c)
 	row := ui.ButtonBase(c).Label(label).Row().FillWidth().Height(24).Padding(0, 6).Gap(6).
 		AlignItems(ui.Center).Radius(tk.BorderRadius).AccessSelected(selected)
-	// BgElevated is the sidebar's own ground in the light themes, which left
-	// the chosen ref with no visible state while hover looked chosen.
+	// Selection has its own surface, distinct from the sidebar and hover.
 	if selected {
-		row.Background(selectionBg(tk, tk.BgContainer))
+		row.Background(a.sidebarSelectionBg(tk))
 	} else if row.Hovered() {
 		row.Background(tk.FillTertiary)
 	}
@@ -465,24 +446,26 @@ func (a *app) toggleSidebarGroup(key string) {
 }
 
 func (a *app) sidebarHeader(c *ui.Context) {
-	tk := theme.TokensOf(c)
+	tk := a.sidebarTokens(c)
 	name := "SuperGit"
 	if a.repo != nil {
 		name = a.repoName()
 	}
 	ui.Row(c).FillWidth().Padding(2, 6, 2, 8).Gap(8).AlignItems(ui.Center).Children(func() {
 		display.Avatar(c, name, display.AvatarProps{
-			Size:       24,
-			Shape:      display.AvatarSquare,
-			Fallback:   display.AvatarText,
-			Background: tk.FillSecondary,
+			Size:     24,
+			Shape:    display.AvatarSquare,
+			Fallback: display.AvatarText,
+			// Avatar computes its ink from RGB, so use an opaque surface.
+			Background: tk.BgElevated,
 		})
 		text := display.Text(c, name, display.TextProps{FontSize: scaledFont(12), Strong: true}).
-			SingleLine().Grow(1).Basis(0).MinWidth(0)
+			TextColor(tk.Text).SingleLine().Grow(1).Basis(0).MinWidth(0)
 		if a.repo != nil {
 			// The name is the folder; the path is what tells two checkouts of
 			// the same repository apart.
 			text.Tooltip(a.repo.Root)
+			a.repoMenu(c, text)
 		}
 	})
 }
@@ -491,7 +474,7 @@ func (a *app) sidebarHeader(c *ui.Context) {
 // opens it. The name is the row's label, so a screen reader reads the same word
 // the row shows.
 func (a *app) sidebarItem(c *ui.Context, icon *ui.SVG, page, title, keys string) {
-	tk := theme.TokensOf(c)
+	tk := a.sidebarTokens(c)
 	active := a.page == page
 	disabled := a.repo == nil && page != "settings"
 	row := ui.ButtonBase(c).Label(title).Row().FillWidth().Height(32).Padding(0, 8).Gap(8).
@@ -499,7 +482,7 @@ func (a *app) sidebarItem(c *ui.Context, icon *ui.SVG, page, title, keys string)
 	if !disabled {
 		switch {
 		case active:
-			row.Background(selectionBg(tk, tk.BgContainer))
+			row.Background(a.sidebarSelectionBg(tk))
 		case row.Hovered():
 			row.Background(tk.FillTertiary)
 		}
@@ -515,7 +498,7 @@ func (a *app) sidebarItem(c *ui.Context, icon *ui.SVG, page, title, keys string)
 	// darkest surface it can land on; darken it per row so it stays readable.
 	keyGround := tk.BgContainer
 	if active {
-		keyGround = selectionBg(tk, tk.BgContainer)
+		keyGround = a.sidebarSelectionBg(tk)
 	} else if row.Hovered() {
 		keyGround = tk.FillTertiary.Over(tk.BgContainer)
 	}
@@ -547,7 +530,7 @@ func (a *app) sidebarItem(c *ui.Context, icon *ui.SVG, page, title, keys string)
 // sidebarOpenRow opens a repository from the sidebar, where the rail kept the
 // same action at its foot.
 func (a *app) sidebarOpenRow(c *ui.Context) {
-	tk := theme.TokensOf(c)
+	tk := a.sidebarTokens(c)
 	row := ui.ButtonBase(c).Label(a.t("openRepo")).Row().FillWidth().Height(32).Padding(0, 8).Gap(8).
 		AlignItems(ui.Center).Radius(tk.BorderRadius)
 	if row.Hovered() {
@@ -573,6 +556,13 @@ func (a *app) openPage(page string) {
 	if a.page == page || a.repo == nil {
 		return
 	}
+	if page == "changes" {
+		a.openChanges()
+	} else if page == "history" {
+		a.restoreHistorySelection()
+	} else if a.page == "history" || a.page == "changes" {
+		a.saveDetailScroll()
+	}
 	a.page = page
 	if page != "history" {
 		// The ref picker belongs to the history header. Leaving the page
@@ -597,6 +587,8 @@ func (a *app) contentCard(c *ui.Context) {
 				a.loadingPage(c)
 			case a.repo == nil:
 				a.emptyPage(c)
+			case a.page == "changes":
+				a.changesPage(c)
 			case a.page == "history":
 				a.historyPage(c)
 			case a.page == "branches":
@@ -630,7 +622,7 @@ func (a *app) emptyPage(c *ui.Context) {
 		display.Text(c, a.t("openRepo"), display.TextProps{Heading: 5, Strong: true, FontSize: scaledFont(tk.FontSize)})
 		display.Text(c, a.t("openRepoHint"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(13), Rows: 3}).
 			MaxWidth(420).TextAlign(ui.Center)
-		choose := action.Button(c, a.t("chooseFolder"), action.ButtonProps{Variant: action.Primary, Size: theme.Large})
+		choose := workbenchButton(c, a.t("chooseFolder"), buttonPrimary, false)
 		if choose.Clicked() {
 			a.chooseRepository()
 		}
@@ -663,7 +655,7 @@ func (a *app) reloadFailedBanner(c *ui.Context) {
 		if a.loading {
 			label = a.t("retrying")
 		}
-		button := action.Button(c, label, action.ButtonProps{Variant: action.Default, Size: theme.Small}).Disabled(blocked)
+		button := workbenchButton(c, label, buttonNormal, blocked)
 		if !blocked && button.Clicked() {
 			a.reload()
 		}
@@ -702,7 +694,7 @@ func (a *app) failedRead(c *ui.Context, message string, padding float32, retryLa
 		if a.loading {
 			label = a.t("retrying")
 		}
-		button := action.Button(c, label, action.ButtonProps{Variant: action.Default, Size: theme.Small}).Disabled(retrying)
+		button := workbenchButton(c, label, buttonNormal, retrying)
 		if !retrying && button.Clicked() {
 			a.reload()
 		}

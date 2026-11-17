@@ -83,6 +83,8 @@ edit("src/diff/empty.go", "package diff\n", "Fix the crash on an empty diff", 17
 git("switch", "main")
 git("merge", "--no-ff", "hotfix", "-m", "Merge hotfix into main", env={"GIT_AUTHOR_DATE": "1700000700 +0000", "GIT_COMMITTER_DATE": "1700000700 +0000"})
 paths = [f"same-name/{n:02d}/file.go" for n in range(12)] + ["very-long-directory-name/another-long-directory/long-file-name-for-detail-tab-review.txt"]
+if os.environ.get("SUPERGIT_SHOT_EXTERNAL_OPEN") == "1":
+    paths[-1] = "very-long-directory-name/another-long-directory/文件 name;$(touch nope).txt"
 for path in paths:
     target = workspace / path
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -132,8 +134,18 @@ for name, language, theme, font_scale, width in combinations:
     settings_dir = home / "Library" / "Application Support" / "supergit"
     settings_dir.mkdir(parents=True)
     settings = {"theme": theme, "language": language}
+    if palette := os.environ.get("SUPERGIT_SHOT_PALETTE"):
+        settings["palette"] = palette
     if font_scale:
         settings["fontScale"] = font_scale
+    for preference, variable, allowed in (
+        ("historyLine", "SUPERGIT_SHOT_GRAPH_LINE", {"thin", "standard", "thick"}),
+        ("historyNode", "SUPERGIT_SHOT_GRAPH_NODE", {"small", "standard", "large"}),
+    ):
+        if value := os.environ.get(variable):
+            if value not in allowed:
+                raise SystemExit(f"Invalid {variable}: {value}")
+            settings[preference] = value
     (settings_dir / "settings.json").write_text(json.dumps(settings) + "\n")
     socket = root / (name + ".sock")
     session = f"supergit-narrow-{name}"
@@ -145,6 +157,15 @@ for name, language, theme, font_scale, width in combinations:
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_NOSYSTEM": "1",
     }
+    open_sentinel = root / (name + ".open-args")
+    if os.environ.get("SUPERGIT_SHOT_EXTERNAL_OPEN") == "1":
+        launcher_dir = root / (name + "-launcher")
+        launcher_dir.mkdir()
+        launcher = launcher_dir / "open"
+        launcher.write_text("#!/bin/sh\nprintf '%s\\0' \"$@\" > \"$SUPERGIT_OPEN_SENTINEL\"\n")
+        launcher.chmod(0o700)
+        env["PATH"] = str(launcher_dir) + os.pathsep + env.get("PATH", "")
+        env["SUPERGIT_OPEN_SENTINEL"] = str(open_sentinel)
     log = (shots / (name + ".log")).open("w")
     app = subprocess.Popen(
         [str(app_binary), str(workspace)],
@@ -193,6 +214,20 @@ for name, language, theme, font_scale, width in combinations:
             print(auto("screenshot", str(shots / (name + suffix + ".png"))).strip(), flush=True)
             (shots / (name + suffix + ".snapshot.txt")).write_text(auto("snapshot", "--full"))
 
+        startup_summary = "提交标题（必填）" if language == "zh" else "Commit summary (required)"
+        auto("wait", "--text", startup_summary, "--timeout", "20s", "--settle")
+        startup_tab = next(e for e in controls() if e[1] == "tab" and e[2] == ("改动" if language == "zh" else "Changes"))
+        assert "checked" in startup_tab[3], "launch did not select Changes"
+        assert any(e[1] == "textField" and e[2] == startup_summary for e in controls()), "launch did not show working-tree commit editor"
+        partial_state = "部分暂存" if language == "zh" else "Partially staged"
+        for action_name in (("暂存文件", "取消暂存") if language == "zh" else ("Stage file", "Unstage file")):
+            assert any(e[1] == "button" and e[2] == action_name and partial_state in e[3] for e in controls()), "partial file state lost its version-specific action: " + action_name
+        capture("-startup-changes")
+        if os.environ.get("SUPERGIT_SHOT_BRANCH_ENTRY") == "1":
+            press("button", "管理分支" if language == "zh" else "Manage branches")
+            auto("wait", "--text", "创建分支…" if language == "zh" else "New branch…", "--timeout", "20s", "--settle")
+            assert any(e[1] == "button" and e[2] == ("创建分支…" if language == "zh" else "New branch…") for e in controls()), "mouse entry did not open branch management"
+            capture("-branch-management")
         auto("key", "cmd+1", "--settle")
         auto("wait", "--text", ready_text, "--timeout", "30s", "--settle")
         press("listItem", ready_text)
@@ -201,7 +236,12 @@ for name, language, theme, font_scale, width in combinations:
         files_title = "文件" if language == "zh" else "Files"
         title_at = next(i for i, e in enumerate(entries) if e[1] == "text" and e[2] == files_title)
         file_scroll = next(e for e in entries[title_at + 1:] if e[1] == "scroll")
-        tab_at = next(i for i, e in enumerate(entries) if e[1] == "tabList")
+        details_label = "文件详情" if language == "zh" else "File details"
+        tab_at = next(i for i, e in enumerate(entries) if e[1] == "tabList" and e[2] == details_label)
+        def detail_tabs():
+            current = controls()
+            start = next(i for i, e in enumerate(current) if e[1] == "tabList" and e[2] == details_label)
+            return [e for e in current[start + 1:] if e[1] == "tab"]
         tab_scroll = next(e for e in reversed(entries[:tab_at]) if e[1] == "scroll")
         def bounds(entry):
             match = re.search(r"bounds=([-0-9.]+),([-0-9.]+),([-0-9.]+)x([-0-9.]+)", entry[3])
@@ -212,17 +252,44 @@ for name, language, theme, font_scale, width in combinations:
         assert bounds(file_scroll)[2] + 1 >= 180 - 0.1, f"file column too narrow: {file_scroll}"
         assert bounds(tab_scroll)[2] >= 300 - 0.1, f"details too narrow: {tab_scroll}"
         capture("-summary")
+        if os.environ.get("SUPERGIT_SHOT_GRAPH_IDENTITIES") == "1":
+            for subject, suffix in (
+                ("Detail tabs empty fixture", "-graph-selected-head"),
+                ("Merge hotfix into main", "-graph-selected-merge"),
+            ):
+                row = next(e for e in controls() if e[1] == "listItem" and e[2] == subject)
+                assert "offscreen" not in row[3], "graph identity row is outside the visible fixture: " + subject
+                press("listItem", subject)
+                selected = next(e for e in controls() if e[1] == "listItem" and e[2] == subject)
+                assert "checked" in selected[3], "graph identity selection was not applied: " + subject
+                capture(suffix)
+            press("listItem", ready_text)
+            auto("wait", "--text", "Refs: narrow-tabs-fixture", "--timeout", "20s", "--settle")
         for path in paths:
             press("listItem", path)
-        tabs = [e for e in controls() if e[1] == "tab"]
+        tabs = detail_tabs()
         assert len(tabs) == len(paths) + 1, "lost file tabs"
         assert "checked" in tabs[-1][3] and "offscreen" not in tabs[-1][3], "active tab was not revealed"
         close_label = ("关闭 " if language == "zh" else "Close ") + paths[-1]
         close_button = next(e for e in controls() if e[1] == "button" and e[2] == close_label)
         assert "offscreen" not in close_button[3], "active tab close control was not revealed"
         capture("-tabs")
+        if os.environ.get("SUPERGIT_SHOT_EXTERNAL_OPEN") == "1":
+            selected_file = next(e for e in controls() if e[1] == "listItem" and e[2] == paths[-1])
+            auto("focus", selected_file[0], "--settle")
+            auto("key", "shift+f10", "--settle")
+            press("menuItem", "在 Finder 中显示" if language == "zh" else "Reveal in Finder")
+            opened_path = pathlib.Path(git("rev-parse", "--show-toplevel").removesuffix("\n")) / paths[-1]
+            expected_open = b"-R\0" + str(opened_path).encode() + b"\0"
+            deadline = time.monotonic() + 10
+            while not open_sentinel.exists() or open_sentinel.read_bytes() != expected_open:
+                if app.poll() is not None or time.monotonic() >= deadline:
+                    actual = open_sentinel.read_bytes() if open_sentinel.exists() else b""
+                    raise AssertionError(f"external reveal arguments {actual!r}; expected {expected_open!r}")
+                time.sleep(0.05)
+            (shots / (name + "-external-open.json")).write_text(json.dumps({"path": str(opened_path), "relative_path": paths[-1], "action": "reveal", "argument_count": 2, "literal_path_verified": True}, ensure_ascii=False) + "\n")
         press("listItem", "Detail tabs empty fixture")
-        assert len([e for e in controls() if e[1] == "tab"]) == 1
+        assert len(detail_tabs()) == 1
         capture("-empty")
         changes = next(e for e in controls() if e[1] == "listItem" and (e[2] == "1 change" or e[2] == "1 changes" or "1 个改动" in e[2] or "1 项改动" in e[2]))
         auto("press", changes[0], "--settle")
@@ -246,6 +313,42 @@ for name, language, theme, font_scale, width in combinations:
             time.sleep(0.05)
         assert "narrow@example.invalid" in auto("snapshot", "--full"), "effective author email missing"
         capture("-commit-enabled")
+        # Changes keeps the editor and action beside either file version.
+        press("tab", "改动" if language == "zh" else "Changes")
+        capture("-changes-overview")
+        for label, expected in (("release-notes.md · " + ("未暂存" if language == "zh" else "Unstaged"), "+edited in the working tree"),
+                                ("release-notes.md · " + ("已暂存" if language == "zh" else "Staged"), "+staged version")):
+            path_rows = [e for e in controls() if e[1] == "listItem" and e[2] == "docs/release-notes.md"]
+            auto("press", path_rows[0 if "working" in expected else 1][0], "--settle")
+            auto("wait", "--text", expected, "--timeout", "20s", "--settle")
+            comparison = ("暂存区 → 工作树" if language == "zh" else "Index → Working tree") if "working" in expected else ("HEAD → 暂存区" if language == "zh" else "HEAD → Index")
+            auto("wait", "--text", comparison, "--timeout", "20s", "--settle")
+            assert any(e[1] == "text" and e[2] == "docs/release-notes.md" for e in controls()), "Diff header lost original path"
+            current = controls()
+            action = next(e for e in current if e[1] == "button" and e[2] == commit_label)
+            editor = next(e for e in current if e[1] == "textField" and e[2] == summary_label)
+            active = next(e for e in detail_tabs() if "checked" in e[3])
+            assert active[2] == label, f"Changes lost version identity: {active}"
+            x, y, w, h = bounds(action)
+            ex, ey, ew, eh = bounds(editor)
+            assert h > 0 and y + h <= 640 and "offscreen" not in action[3], "Changes commit action is unreachable"
+            detail_at = next(i for i, e in enumerate(current) if e[1] == "tabList" and e[2] == details_label)
+            detail_viewport = next(e for e in reversed(current[:detail_at]) if e[1] == "scroll")
+            assert x >= 160 and ex + ew <= bounds(detail_viewport)[0] + 1, "commit editor is not beside Diff"
+            assert "Acceptance draft with staged changes" in auto("snapshot", "--full"), "Changes lost draft"
+            version = "unstaged" if "working" in expected else "staged"
+            capture("-changes-" + version)
+            first_addition = next(i for i, e in enumerate(current) if e[1] == "insertion")
+            gutter = next(e for e in reversed(current[:first_addition]) if e[1] == "button")
+            auto("press", gutter[0], "--settle")
+            selected_text = "已选 1 行" if language == "zh" else "1 selected ·"
+            auto("wait", "--text", selected_text, "--timeout", "20s", "--settle")
+            action_label = ("暂存选区" if language == "zh" else "Stage selection") if version == "unstaged" else ("取消暂存选区" if language == "zh" else "Unstage selection")
+            selection_action = next(e for e in controls() if e[1] == "button" and e[2] == action_label)
+            sx, sy, sw, sh = bounds(selection_action)
+            assert sx >= 0 and sx + sw <= width and sy + sh <= 640 and "offscreen" not in selection_action[3], "selection action is clipped"
+            capture("-changes-selection-" + version)
+            press("button", "清除差异行选择" if language == "zh" else "Clear the Line Selection")
         assert fingerprint() == expected_state, "screenshot browsing changed fixture HEAD, Index or worktree"
         print(name, "captured", flush=True)
     except Exception as error:  # keep the other matrix cases running

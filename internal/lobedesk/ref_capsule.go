@@ -67,11 +67,11 @@ func refCapsuleColors(color, ground ui.Color) refCapsuleStyle {
 // same hue. Lifting is only what the failing colors need: one that already
 // clears the minimum is returned unchanged.
 func capsuleInk(color, surface ui.Color, min float64) ui.Color {
-	if surfaceLuminance(surface) >= 0.5 {
-		return deepInk(color, surface, min)
-	}
 	if contrastRatio(color, surface) >= min {
 		return color
+	}
+	if surfaceLuminance(surface) >= 0.5 {
+		return deepInk(color, surface, min)
 	}
 	white := ui.RGB(255, 255, 255)
 	for step := float32(0.05); step <= 0.95; step += 0.05 {

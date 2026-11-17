@@ -115,6 +115,8 @@ for side in ("ours", "theirs"):
                         raise RuntimeError("native automation unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
+                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("key", "cmd+1", "--settle")
                 wait("In progress: " + kind)
                 press("button", "In progress: " + kind)
                 wait(path.name)

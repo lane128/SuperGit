@@ -104,10 +104,14 @@ func (a *app) commitSummaryKey(k ui.TextKey) bool {
 func (a *app) commitMessageFields(c *ui.Context) {
 	a.syncCommitFields()
 	s := &a.commitFields
+	fontSize, maxRows := float32(13), 8
+	if a.page == "changes" {
+		fontSize, maxRows = 12, 3
+	}
 	ui.Column(c.Key("commit-message")).FillWidth().Gap(5).Children(func() {
 		display.Text(c, a.t("commitSummary"), display.TextProps{FontSize: scaledFont(11)})
 		summary := field.Input(c.Key("summary"), &s.Summary, field.InputProps{Variant: field.InputFilled, Placeholder: a.t("commitSummaryHint")}).
-			FillWidth().FontSize(scaledFont(13)).Label(a.t("commitSummary")).OnTextKey(a.commitSummaryKey)
+			FillWidth().FontSize(scaledFont(fontSize)).Label(a.t("commitSummary")).OnTextKey(a.commitSummaryKey)
 		start, end := summary.TextSelection()
 		summary.OnPaste(func(text string) bool { return a.pasteCommitSummary(text, start, end) })
 		if s.PendingPaste {
@@ -118,8 +122,8 @@ func (a *app) commitMessageFields(c *ui.Context) {
 			a.storeCommitFields()
 		}
 		display.Text(c, a.t("commitDescription"), display.TextProps{FontSize: scaledFont(11)})
-		body := field.TextArea(c.Key("body"), &s.Body, field.TextAreaProps{Variant: field.InputFilled, Placeholder: a.t("commitDescriptionHint"), MinRows: 3, MaxRows: 8}).
-			FillWidth().FontSize(scaledFont(13)).LineHeight(1.45).Label(a.t("commitDescription"))
+		body := field.TextArea(c.Key("body"), &s.Body, field.TextAreaProps{Variant: field.InputFilled, Placeholder: a.t("commitDescriptionHint"), MinRows: 3, MaxRows: maxRows}).
+			FillWidth().FontSize(scaledFont(fontSize)).LineHeight(1.45).Label(a.t("commitDescription"))
 		if body.Changed() {
 			a.storeCommitFields()
 		}

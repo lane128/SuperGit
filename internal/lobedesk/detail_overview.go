@@ -177,7 +177,7 @@ func (a *app) worktreeOverviewFile(c *ui.Context, tk *theme.Tokens, entry worktr
 		if entry.Err != "" {
 			ui.Column(c).FillWidth().Padding(12).Gap(6).Children(func() {
 				display.Text(c, entry.Err, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(11), Rows: 4})
-				if action.Button(c, a.t("retry"), action.ButtonProps{Size: theme.Small}).Clicked() {
+				if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
 					a.retryWorktreeOverview(root, seq, key)
 				}
 			})
@@ -219,10 +219,12 @@ func (a *app) detailOverview(c *ui.Context) {
 	scroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitInfoScroll}, func() {
 		ui.Column(c).FillWidth().Children(func() {
 			if a.worktreeSelected {
-				ui.Column(c).FillWidth().Padding(14).Gap(12).Children(func() {
-					a.commitForm(c)
-					a.operationCard(c)
-				})
+				if a.page != "changes" {
+					ui.Column(c).FillWidth().Padding(14).Gap(12).Children(func() {
+						a.commitForm(c)
+						a.operationCard(c)
+					})
+				}
 				a.worktreeOverview(c)
 				return
 			}

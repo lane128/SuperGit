@@ -73,7 +73,18 @@ def run():
                 return matches[-1]
 
             def press(label, role="button", contains=False):
-                auto("press", find(label, role, contains)[0], "--settle")
+                # Success toasts can precede the repository refresh. Wait for
+                # this action's guard to clear rather than treating text as ready.
+                deadline = time.monotonic() + 25
+                while True:
+                    entries = controls()
+                    matches = [e for e in entries if e[1] == role and (label in e[2] if contains else e[2] == label) and "disabled" not in e[3]]
+                    if matches:
+                        auto("press", matches[-1][0], "--settle")
+                        return
+                    if app.poll() is not None or time.monotonic() > deadline:
+                        raise AssertionError(f"Missing enabled {role} {label}: {entries}")
+                    time.sleep(0.05)
 
             def wait(text):
                 auto("wait", "--text", text, "--timeout", "25s", "--settle")
@@ -101,6 +112,8 @@ def run():
                         raise TimeoutError("Native automation socket unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
+                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("key", "cmd+1", "--settle")
                 wait("Stash fixture base")
                 auto("key", "cmd+3", "--settle")
                 wait("Save changes…")

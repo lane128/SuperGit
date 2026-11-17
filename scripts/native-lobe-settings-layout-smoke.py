@@ -49,7 +49,10 @@ for language, theme, scale in cases:
         repo, home = root / "repo", root / "home"
         settings = home / "Library/Application Support/supergit/settings.json"
         settings.parent.mkdir(parents=True)
-        settings.write_text(json.dumps({"language": language, "theme": theme, "fontScale": scale, "autoFetch": False}))
+        fixture_settings = {"language": language, "theme": theme, "fontScale": scale, "autoFetch": False}
+        if palette := os.environ.get("SUPERGIT_SETTINGS_PALETTE"):
+            fixture_settings["palette"] = palette
+        settings.write_text(json.dumps(fixture_settings))
         git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         git_env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
 
@@ -95,8 +98,8 @@ for language, theme, scale in cases:
             def ref(line):
                 return re.search(r"@e\d+", line)[0]
 
-            def coordinate_press(label):
-                line = line_for(label)
+            def coordinate_press(label, role="button"):
+                line = line_for(label, role)
                 assert "offscreen" not in line, (label, line)
                 match = re.search(r"bounds=([-\d.]+),([-\d.]+),([-\d.]+)x([-\d.]+)", line)
                 x, y, width, height = map(float, match.groups())
@@ -111,6 +114,8 @@ for language, theme, scale in cases:
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
                 auto("window", "w1")
+                auto("wait", "--text", "Commit summary (required)" if language == "en" else "提交标题（必填）", "--timeout", "30s", "--settle")
+                auto("key", "cmd+1", "--settle")
                 auto("wait", "--text", "Settings layout fixture", "--timeout", "25s", "--settle")
                 settings_label = "Settings" if language == "en" else "设置"
                 auto("press", ref(line_for(settings_label)), "--settle")
@@ -121,23 +126,37 @@ for language, theme, scale in cases:
                 auto("window", panel)
                 auto("wait", "--text", "English", "--timeout", "25s", "--settle")
                 initial = snapshot()
-                scroll_bounds = re.search(r"\[scroll\].*bounds=0,([\d.]+),([\d.]+)x([\d.]+)", initial)
+                scroll_bounds = re.search(r"\[scroll\].*bounds=([-\d.]+),([\d.]+),([\d.]+)x([\d.]+)", initial)
                 assert scroll_bounds, "settings scroll viewport missing"
-                scroll_top, scroll_width, scroll_height = map(float, scroll_bounds.groups())
-                assert abs(scroll_width - panel_width) < 1, (panel_width, scroll_bounds[0])
+                scroll_left, scroll_top, scroll_width, scroll_height = map(float, scroll_bounds.groups())
+                assert abs(scroll_left - 132) < 1 and abs(scroll_left + scroll_width - panel_width) < 1, (panel_width, scroll_bounds[0])
                 assert 0 < scroll_top + scroll_height <= panel_height + 1, (panel_height, scroll_bounds[0])
-                interactive = 0
-                for line in initial.splitlines():
-                    if not re.search(r"\[(button|radio|checkBox|toggleButton)\]", line):
-                        continue
-                    bounds = re.search(r"bounds=([-\d.]+),([-\d.]+),([-\d.]+)x([-\d.]+)", line)
-                    assert bounds, line
-                    x, y, width, height = map(float, bounds.groups())
-                    assert x >= 0 and x + width <= panel_width + 1, line
-                    interactive += 1
-                assert interactive >= 20, "settings controls were not loaded"
+
+                def check_controls(text):
+                    count = 0
+                    for line in text.splitlines():
+                        if not re.search(r"\[(button|radio|checkBox|toggleButton|tab)\]", line):
+                            continue
+                        bounds = re.search(r"bounds=([-\d.]+),([-\d.]+),([-\d.]+)x([-\d.]+)", line)
+                        assert bounds, line
+                        x, y, width, height = map(float, bounds.groups())
+                        assert x >= 0 and x + width <= panel_width + 1, line
+                        count += 1
+                    return count
+
+                interactive = check_controls(initial)
+                assert interactive >= 14, "Appearance and category controls were not loaded"
                 (captures / "appearance.snapshot.txt").write_text(initial)
                 auto("screenshot", str(captures / "appearance.png"))
+                categories = (("history", "History" if language == "en" else "历史"), ("git", "Git"), ("shortcuts", "Shortcuts" if language == "en" else "快捷键"), ("about", "About" if language == "en" else "关于"))
+                for key, label in categories:
+                    coordinate_press(label, "tab")
+                    current = snapshot()
+                    assert "checked" in line_for(label, "tab"), "selected category is not exposed"
+                    interactive += check_controls(current)
+                    (captures / (key + ".snapshot.txt")).write_text(current)
+                    auto("screenshot", str(captures / (key + ".png")))
+                assert interactive >= 40, "category settings controls were not loaded"
                 reset = "Reset all settings…" if language == "en" else "恢复默认设置…"
                 auto("act", ref(line_for(reset)), "scrollIntoView", "--settle")
                 (captures / "bottom.snapshot.txt").write_text(snapshot())
@@ -150,6 +169,7 @@ for language, theme, scale in cases:
                 assert fingerprint() == before, "settings browsing or reset cancellation changed Git state"
                 assert settings.read_bytes() == settings_before, "reset cancellation changed saved preferences"
                 if options.persistence:
+                    coordinate_press("Appearance" if language == "en" else "外观", "tab")
                     dark = "Dark" if language == "en" else "深色"
                     light = "Light" if language == "en" else "浅色"
                     failed = "Could not save settings" if language == "en" else "保存设置失败"
@@ -177,6 +197,7 @@ for language, theme, scale in cases:
                     saved = json.loads(settings.read_text())
                     assert saved["theme"] == "light" and saved["language"] == language
                     assert saved["autoFetch"] is False, "save recovery changed unrelated automatic fetch choice"
+                    coordinate_press("About" if language == "en" else "关于", "tab")
                     auto("act", ref(line_for(reset)), "scrollIntoView", "--settle")
                     coordinate_press(reset)
                     coordinate_press("Reset all settings" if language == "en" else "恢复默认设置")

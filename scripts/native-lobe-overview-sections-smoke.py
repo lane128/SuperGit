@@ -78,6 +78,8 @@ with tempfile.TemporaryDirectory(prefix="supergit-overview-sections.") as direct
                     raise RuntimeError("native automation unavailable")
                 time.sleep(0.05)
             auto("open", "--socket", str(socket))
+            auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+            auto("key", "cmd+1", "--settle")
             auto("wait", "--text", "1000 changes", "--timeout", "30s", "--settle")
             auto("press", ref("listItem", "1000 changes"), "--settle")
             auto("wait", "--text", "+changed files/0000.txt", "--timeout", "60s", "--settle")

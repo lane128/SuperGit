@@ -51,8 +51,12 @@ func (a *app) overviewBatchActions(c *ui.Context) {
 			if reason != "" {
 				hint += "\n" + reason
 			}
-			button := action.Button(c.Key(item.Kind), a.t(item.Label), action.ButtonProps{Size: theme.Small}).
-				Grow(1).Basis(0).MinWidth(0).Disabled(reason != "").Description(hint).Tooltip(hint)
+			role := buttonNormal
+			if item.Kind == "discard" {
+				role = buttonDanger
+			}
+			button := workbenchButton(c.Key(item.Kind), a.t(item.Label), role, reason != "").
+				Grow(1).Basis(0).MinWidth(0).Description(hint).Tooltip(hint)
 			if button.Clicked() {
 				switch item.Kind {
 				case "stage":

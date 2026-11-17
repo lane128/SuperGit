@@ -81,9 +81,15 @@ def run():
                 return entries
 
             def press(label):
-                matches = [e for e in controls() if e[1] == "button" and e[2] == label and "disabled" not in e[3]]
-                if not matches:
-                    raise AssertionError(f"Missing enabled button {label}: {controls()}")
+                deadline = time.monotonic() + 25
+                while True:
+                    state = controls()
+                    matches = [e for e in state if e[1] == "button" and e[2] == label and "disabled" not in e[3]]
+                    if matches:
+                        break
+                    if app.poll() is not None or time.monotonic() > deadline:
+                        raise AssertionError(f"Missing enabled button {label}: {state}")
+                    time.sleep(0.05)
                 auto("press", matches[-1][0], "--settle")
 
             def wait(text):
@@ -113,6 +119,8 @@ def run():
                         raise TimeoutError("Native automation socket unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
+                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("key", "cmd+1", "--settle")
                 wait("Operation main change")
                 press("In progress: cherry-pick")
                 wait("In progress: cherry-pick")

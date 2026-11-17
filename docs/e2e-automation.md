@@ -29,6 +29,60 @@ python3 -I scripts/native-detail-tabs-smoke.py
 
 原生适配器把 `ui.RoleOption` 输出为 `listItem`，标签选中态输出为 `checked`；无标签文本框可能仅输出 `placeholder=`。解析快照时不能要求每个控件都有引号包围的名称。
 
+## 经典三栏 Changes 首轮验证（2026-11-17）
+
+Changes 新入口将 Files／提交编辑区与 Diff 并排。顶部页面页签与详情页签分别以 `Workbench pages`／`File details` 标记原生 TabList（中文对应“工作台页面”／“文件详情”）；脚本必须按详情 TabList 限定标签计数，不能把页面页签计入文件数。测量 Diff 边界应读取外层横向 Scroll 视口，内部 TabList 会随横向偏移而移动。
+
+本轮 `SUPERGIT_SHOT_PALETTE=supergit SUPERGIT_SHOT_CASES=980-zh-light,980-en-dark-large python3 -I scripts/native-narrow-shots.py` 通过，18 张截图和快照在 `build/narrow-shots-sskgkn9q/`。每组保留原六种场景，新增 Changes 总览／未暂存／已暂存三种；检查草稿、双版本、固定提交按钮及编辑区相对 Diff 视口的位置，并保持 Git 指纹不变。已查看英文深色大字号已暂存截图；完整 16 组新布局矩阵尚未执行。
+
+更新后的 `native-detail-tabs-smoke.py` 从 Changes 执行指定文件暂存、实际提交、失败 hook 后草稿保留、Amend 作者保留以及批量 Stage／Unstage／Discard 确认；原先的版本、窗口设置、切仓库、2405 提交与 2403 文件历史回归全部通过。`native-workbench-layout-smoke.py` 重跑通过历史布局三处分栏拖动／重启恢复及 Files 双击复位；Changes 自身的分栏拖动及不同宽度恢复仍需专项验收。`build/detail-tabs-smoke/changes-staged.png` 捕获到刷新中的禁用状态，不作为提交按钮已就绪的证据；实际写入检查均等待按钮就绪并核对 Git 字节。
+
+后续比较基准增量又通过两组窄窗检查，18 张截图位于 `build/narrow-shots-7b0h48t3/`，新增断言完整原始路径及 Index → Working tree／HEAD → Index（中文为“暂存区 → 工作树”／“HEAD → 暂存区”）。已检查英文深色大字号未暂存截图。`native-workbench-layout-smoke.py` 现另通过 Changes 指针拖动、草稿保留、偏好写入和重启恢复，结果在 `build/workbench-layout-smoke/changes-result.json`；已检查 `changes-divider-restored.png`。Go 回归另外验证 Changes 宽度在最小空间夹紧后恢复首选宽度，不覆盖偏好。
+
+选区条增量已通过完整 `make check`（tests／race／vet）。`python3 -I scripts/native-lobe-long-patch-baseline.py --selection-bar --selected-lines 40 --font-scale 1.15` 的三轮验证均确认精确 Index、工作文件字节不变，以及取消暂存后完整指纹恢复；结果在 `build/lobe-long-patch-yw4wcvzg/`，已检查暂存／取消暂存代表截图。两组窄窗新增选区动作可见性与清除检查，共 22 张截图在 `build/narrow-shots-yfembwc0/`。
+
+后续顶栏合并将 Changes／History／Stash 嵌入标题栏，仓库名及原路径右键菜单移到侧栏。首轮两组原生窄窗 22 张截图通过，证据 `build/narrow-shots-3dc5lko8/`；已查看英文深色大字号已暂存选区截图。设计检查建议补相邻控件不重叠断言，新断言发现长分支按钮越过可收缩容器、与 ahead／behind 计数重叠；修复后专项及完整 Go 测试通过。完整原生矩阵现已通过 16 组、176 张截图，覆盖 980／1320／1600、中英文、浅深色及四组 1.15 字号，证据 `build/narrow-shots-f552yhkq/`；已查看宽窗英文浅色大字号代表截图。该矩阵早于随后头像背景从半透明 FillSecondary 改为不透明 BgElevated 的对比度修复，最终源码重跑已通过两组窄窗 22 张截图（`build/narrow-shots-jl70iaa8/`）、历史／Changes 分栏拖动与重启恢复，以及 detail-tabs 全部十组（包括实际暂存、提交、失败 hook 草稿保留和 Amend 作者保留）；已查看英文深色大字号截图，头像文字对比度恢复。该源码的完整 `make check` 已通过 tests／race／vet，`git diff --check` 同时通过。继续调查默认页面迁移时，发现 Changes 的仓库重置会错误地选中首条历史提交；真实仓库回归先失败，重置逻辑改为按当前页面选择工作区后通过，同时确认 History 原有初始选中行为保留。该上下文修复随后通过完整 `make check`。
+
+默认页面现已迁移到 Changes。新增原生启动断言先在旧默认页复现提交编辑区不可见（`build/narrow-shots-hd78gn6a/`），改动后通过中英文两组窄窗，共 24 张截图位于 `build/narrow-shots-glq8ti3w/`。每组先确认 Changes 选中并显示工作区提交编辑器，保留启动截图，然后 Cmd+1 进入历史检查；已查看英文深色大字号启动截图。历史相关脚本统一先等 Changes 编辑区加载，再显式进入 History；设置和窄窗矩阵按语言使用对应标签。launch-to-history 性能探针因此包含显式页面切换耗时，不能与以前默认 History 的数据当作同一口径比较。
+
+默认页迁移后，detail-tabs 全十组、历史／Changes 分栏拖动重启，以及 operation 脚本中的 cherry-pick／rebase／merge／revert 取消、继续、跳过与精确 Git 状态检查均通过。默认页迁移的完整 tests／race／vet、32 个原生脚本的语法检查和 diff 检查均通过；设置八组矩阵及自动刷新（外部文件保存、Stage／Commit／切分支与子模块 HEAD）通过。随后 Stash 探针在再次保存后立即 Pop 时失败：快照中刷新和 Pop 都仍禁用，证明“Stash saved”提示并不代表后续刷新完成；已将脚本 press 改为限时等待目标操作实际启用，保留生产守卫，语法与 diff 检查通过。修正等待后，Stash 保存／Apply／Pop／Drop、重叠拒绝和真实三方冲突全部通过；三轮 40 行选区暂存／取消暂存精确字节校验通过（`build/lobe-long-patch-z5xx9m4l/`）。完整默认启动矩阵通过 16 组／192 张截图（`build/narrow-shots-j1c6ojfi/`）。
+
+下一增量在文件状态标签之外，用空框／横杠框／勾框表示未暂存／部分暂存／已暂存；部分暂存的两个版本都显示整个路径的混合状态，但操作和说明仍按该行版本提供 Stage file／Unstage file。原始路径、刷新代次、子模块及冲突守卫继续沿用。八种状态／版本组合的实际控件测试先失败后通过，另保留原文件状态标签与窄列边界检查。SDK ActionIcon 的 Title 创建独立 Tooltip 关系，状态说明通过该入口提供，Label 保留短操作名称。该增量已通过两组窄窗状态断言／24 张截图（`build/narrow-shots-kz4gxn0c/`），已查看英文深色大字号启动图，部分暂存两版均显示横杠框；detail-tabs 全十组实际文件操作回归通过。该增量的完整 tests／race／vet 及差异格式检查通过。历史图形和跨平台执行仍待验收。
+
+历史节点增量已通过专项 DAG／配色／几何回归，包含真实 HEAD、重复父 SHA、仅加载一个子提交的筛选结果与全部节点／线宽组合的选择环间距。原生宽 DAG 的三轮输入压力检查通过（32,002 提交、32 个并行分支、33 父提交的 HEAD），覆盖读取期间滚动／搜索、取消／重试和根提交导航，证据 `build/lobe-wide-history-08kbtb1n/`；已查看首轮根提交截图。两组默认节点预设的窄窗检查通过，共 24 张截图在 `build/narrow-shots-uo9evshj/`，已查看中浅／英深大字号 History 摘要图，确认 HEAD 空环、合并中心点与分叉菱形并存。小节点＋粗线原生补查另通过两组／24 张截图（`build/narrow-shots-u7pcwj7z/`），已查看英文深色大字号摘要图：空心 HEAD 与合并中心点仍可区分，当前普通选中节点的外环保留间隙；随后启用 `SUPERGIT_SHOT_GRAPH_IDENTITIES=1`，新增选中 HEAD／合并节点的原生断言与截图，两组／28 张截图通过（`build/narrow-shots-h_bux1_x/`）；已查看中文浅色选中 HEAD 和英文深色大字号选中合并，身份环与选择环之间有可见间隙。这些截图的详情区仍在加载，只用于节点几何验收。该增量完整 `make check` 已通过 tests／race／vet，差异格式检查通过（`build/lobe-graph-check.log`）。窄窗脚本可用 `SUPERGIT_SHOT_GRAPH_LINE=thin|standard|thick`、`SUPERGIT_SHOT_GRAPH_NODE=small|standard|large` 指定隔离偏好；无效值会拒绝运行。
+
+整体验收反馈修复：侧栏新增“管理分支”／“Manage branches”入口，复用原 Branches 页与 Cmd+2；设置保存失败保留 warning，直到用户关闭，避免当前会话已生效被误认为持久化成功。两项均由实际渲染回归先复现再修复：中英入口点击后保持原历史引用；主／设置两窗口真实写入失败在模拟超过 30 秒后仍可见，其他普通／撤销提示的计时保持原样。原生分支入口两组／26 张截图通过（`build/narrow-shots-_uejh95g/`），已查看英文深色大字号管理页。中英文设置持久化探针通过旧配置保留、当前主题保留、恢复保存、确认重置与 Git 指纹检查（`build/lobe-settings-layout-v7vgp2ya/`）；结果的 save-warning／reset-success visual_verified 均为 false，原因仍为设置窗口未获 OS 焦点，因此不据此宣称原生失败提示视觉或 30 秒驻留验收完成。30 秒驻留目前由实际 ToastHost 渲染回归覆盖。本修复的完整 tests／race／vet 与差异格式检查已通过（`build/lobe-acceptance-fixes-check.log`）。
+
+Diff 选行标记增量：单文件和工作区概览的增删选行在原有 92 DIP 行号栏右侧留白绘制勾形，保留行号、代码位置与原按钮命中区域。实际渲染回归覆盖选中增删行、未选上下文行及按钮 Checked 状态。首次原生矩阵虽通过 16 组／192 张截图，但视觉检查发现 SDK Painter.Line 仅绘制水平／垂直线；补充斜线像素断言先复现，再用 StrokePolyline 修复。最终源码两组／24 张截图通过（`build/narrow-shots-dpa2a7o6/`），已查看中文浅色未暂存和英文深色大字号已暂存选行图。三轮 40 条删除行通过选区栏暂存／取消暂存，核对准确 Index、工作字节保留及完整指纹恢复（`build/lobe-long-patch-1o6zvkm0/results.json`）。完整 tests／race／vet 和差异格式检查通过（`build/lobe-diff-marker-diagonal-check.log`）；早期源码的全量检查已中止，不计作最终验证。实际屏幕阅读器播报仍未验收。
+
+设置帮助文案增量：560×480 最小窗口、1.15 倍字号下，英文外观说明需要四行，旧共享帮助组件的三行上限会截断结尾。真实渲染高度对照先复现，再取消行数上限，复用现有设置滚动区；中英完整内容、最小窗口选项／导航／重置可达性回归通过。原生最小窗口八组语言／主题／字号矩阵通过，包含边界、坐标 Reset／取消、Git 与保存偏好保持（`build/lobe-settings-layout-ylf8dwt0/`）；已查看英文深色大字号及中文浅色大字号外观图，完整说明与卡片留白可见。完整 tests／race／vet 及差异格式检查通过（`build/lobe-settings-help-check.log`）。
+
+SuperGit 侧栏配色增量：按 UI-Spec 使用浅／深模式独立深蓝背景、选中面和浅色正文／次要文字，颜色副本仅供侧栏渲染；主内容、菜单和其他配色保留窗口 token。实际渲染背景／选中面断言先复现旧样式，再修复通过；另检查主内容不受影响、其他配色保持、正文／次要文字／快捷键／当前分支勾在侧栏各状态背景上的对比度不低于 4.5:1，并运行既有导航回归。原生中文浅色与英文深色大字号两组／26 张截图通过，覆盖分支管理入口与 Changes／History 浏览（`build/narrow-shots-xrrbtua7/`）；已查看浅色启动和深色 History 摘要图。完整 tests／race／vet 与差异格式检查通过（`build/lobe-sidebar-theme-check.log`）。
+
+Changes 操作按钮增量：选区暂存／取消暂存改用共享绿色主操作，概览批量暂存／取消暂存与文件分组取消暂存迁移到共享普通按钮，概览批量放弃使用危险角色；处理函数、目标身份、禁用说明和确认流程保持原有逻辑。既有选区／批量范围／概览动作／工作区／按钮回归通过。原生浅色中文、深色英文大字号两组／24 张截图通过（`build/narrow-shots-sqjdvnw6/`），已查看概览批量操作和选区按钮。detail-tabs 全十组通过，包含准确文件暂存、草稿、hook 失败、Index-only 提交／Amend、批量范围与放弃取消（`build/lobe-changes-buttons-native.log`）。完整 tests／race／vet 及差异格式检查通过（`build/lobe-changes-buttons-check.log`）。设置分段控件后续已完成：共享 29pt 缩放高度与蓝色选中态，保留 toggleButton 勾选语义、点击当前值不清空／不保存和 Tab＋空格切换一次；新渲染回归先复现旧 26pt／白底选中样式，再通过。设置、持久化、禁用说明和最小窗口回归通过。原生八组最小窗口矩阵通过（`build/lobe-settings-layout-3gbexj5u/`），已查看英文深色和中文浅色大字号图；中英文失败／恢复／重置数据验证通过（`build/lobe-settings-layout-6q2_htxt/results.json`），warning／reset visual flags 仍因 OS 焦点为 false。完整 tests／race／vet 与差异格式检查通过（`build/lobe-settings-segments-check.log`）。Toast 样式后续增量已实现：复用引擎队列／时钟／归属，使用 10 DIP 圆角、16 DIP 与原有底部动作区避让、共享实底关闭／操作按钮；可撤销提示从 ToastParts.Left 读取剩余时间。产品与设计审查发现键盘进入后层 Undo 时不可见，实际渲染回归先复现，再修复为悬停或焦点进入均展开；聚焦超过 10 秒仍可用空格撤销。首轮原生探针因逐帧倒计时使 settle 等到提示过期而失败，FramePending 回归复现后改用 100ms 定时刷新，不改计时来源。悬停暂停、离开后恢复并过期、持久错误不显示倒计时与窗口／仓库归属回归通过。560×480／1.15 字号下，中英／浅深色三条多行 warning 展开几何检查通过；该有限夹具不代表任意长正文均已覆盖。最终源码原生长补丁单行丢弃／Undo 三轮均恢复完整指纹且 Index 保持（`build/lobe-long-patch-_xpjjw3w/results.json`），detail-tabs 十组通过（`build/lobe-toast-final-native.log`）；已查看实际 Undo／进度条截图。Stash 六组及重叠失败／冲突流程通过（`build/lobe-toast-error-native.log`），已查看新的紧凑错误卡与完整错误详情截图。最终完整 tests／race／vet 与差异格式检查通过（`build/lobe-toast-final-check.log`，已读取；lobedesk tests 48.701s、race 312.532s）。运行期间补充的最小窗口几何回归另经四组定向验证通过。Toast 样式与撤销倒计时增量验收完成；设置窗口 OS 焦点与屏幕阅读器实际播报仍未验收。
+
+文件与 Diff 行密度增量：工作区／历史文件列表共享 29pt 缩放行高和 12pt 文件名，单文件／概览／历史补丁共享 23pt 行高，虚拟占位继续消费同一尺寸。实际渲染回归先复现旧 26pt／11pt 文件行和 21pt Diff 行，再通过新尺寸、相邻行位置与大字号中英文字完整性检查；相关选行／概览／大列表／虚拟化回归通过。原生窄窗两组／24 张截图通过（`build/narrow-shots-41s5samx/`），已查看中文浅色未暂存与英文深色大字号已暂存选行图。1.15 字号下三轮 40 行选区栏暂存／取消暂存均核对准确 Index、工作字节保持与完整指纹恢复（`build/lobe-long-patch-b53lxnv0/results.json`，已读取）。detail-tabs 十组通过，包含 2405 提交及 2403 文件历史导航（`build/lobe-file-diff-density-native.log`）。完整 tests／race／vet 与差异格式检查通过（`build/lobe-file-diff-density-check.log`，已读取；lobedesk tests 62.086s、race 312.463s），文件与 Diff 密度增量验收完成。历史 34pt 单行画稿与当前作者／时间双行内容的重排独立验收。
+
+历史行密度增量：保留作者／时间偏好，双行标准 44pt、大字号 50.6pt、行间隔随字号缩放到 2pt；二者均隐藏时采用缩放后的 34pt 单行，工作区伪行同步省略通用的“提交改动”副标题。小字号引用胶囊仍固定 20pt，实际渲染测得 39.6pt 行高底部留白不足，因此双行保底 41.6pt。中英／三字号／四种显隐组合共 24 组渲染检查及历史／线图／导航回归通过。原生粗线／大节点两组／28 张截图通过（`build/narrow-shots-w7aly0u_/`），已查看中文浅色选中 merge 和英文深色大字号选中 HEAD，行内容与图谱中心对齐；这些身份截图中详情仍在加载，不据此宣称 Diff 加载完成。32002 提交、32 条并行分支的大历史三轮通过读取中滚轮／搜索、取消／重试、根导航与夹具状态保持，完成后只构建 31 个行控件（`build/lobe-wide-history-reaygx9t/results.json`，已读取）。detail-tabs 十组及其大历史末行揭示通过（`build/lobe-history-density-native.log`）。完整 tests／race／vet 与差异格式检查通过（`build/lobe-history-density-check.log`，已读取；lobedesk tests 63.982s、race 302.342s）。保留元数据的历史行密度增量验收完成；Windows／Linux 原生、实际辅助功能播报和设置窗口 OS 焦点视觉限制仍未关闭。
+
+整合后三栏布局验收：SuperGit 配色完整十六组矩阵通过，包含 980／1320／1600 宽度、中英、浅深主题及四组 1.15 大字号，共 208 张截图与 208 份快照（`build/lobe-classic-final-matrix.log`、`build/narrow-shots-_332jisa`）。每组检查 Changes 默认入口、双版本文件身份、草稿保持、比较基准、固定提交／选区动作边界及完整 Git 指纹。已查看六张代表图：窄窗中文浅色大字号选区、英文深色大字号已暂存及溢出历史标签、宽窗英文浅色大字号启动、中文分支管理和宽窗深色长摘要。活动标签与关闭、提交和选区操作可见；非活动前置标签在横向视口边缘裁剪。不声称逐张人工检查了全部图片。原生三分栏拖动／重启、Files 双击复位／重启、Changes 拖动／草稿／持久化三组通过（`build/lobe-classic-final-splitters.log`），changes-result.json 为 514→578→578，恢复截图已查看。布局／夹紧／状态专项通过（`build/lobe-classic-layout-focused.log`，0.956s）。本轮仅验收与文档更新，产品源码沿用上轮完整 tests／race／vet 通过版本；macOS 证据不替代 Windows／Linux 原生或 OS 焦点验收。
+
+主界面控件增量：标题栏进行中操作入口、刷新失败横幅及列表错误重试迁移到共享普通按钮，空页面选择仓库使用主操作按钮；保留警告文字、导航、加载／忙碌禁用与横幅独占重试逻辑。既有读取／重试／操作／标题栏／空页面／按钮回归通过（`build/lobe-main-controls-focused-final.log`，6.449s）。原生菜单／读取恢复通过（`build/lobe-main-controls-native.log`），已查看 `build/lobe-menu-access-pc6w_arl/read-failure.png`，980×640 英文浅色下 stale 说明与 Retry 完整可见。操作首轮在外部 Git 变更后、刷新仍禁用时立即定位而失败；已保存失败证据，并让探针等待最多 25 秒后只激活一次，未改变生产加载守卫。重跑全部十一组 cherry-pick／rebase／merge／revert 取消／确认／继续通过，核对准确 HEAD／Index／工作字节及完整提交说明（`build/lobe-main-controls-operation-native-retry.log`，已读取）。已查看最终干净 Changes 与完成 Toast 图；该图不表示进行中标题栏的视觉矩阵已完成。完整 tests／race／vet 与差异格式检查通过（`build/lobe-main-controls-check.log`，已读取；lobedesk tests 60.836s、race 302.428s）。系统目录选择器实际交互和完整视觉矩阵仍待验收。
+
+历史引用筛选／Blame 控件增量：引用触发器、重试、Blame 关闭／重试迁移到共享样式；忽略空白提供明确 toggleButton／Checked 状态。真实仓库鼠标／空格回归先复现旧控件缺少状态，再通过并保留原始文件、版本和内容；相关专项回归通过（`build/lobe-picker-blame-controls-focused.log`，1.936s）。原生首轮因解析器只接受有名称控件而漏掉 placeholder-only 搜索框；轨迹确认界面存在，修正解析器后重跑通过（`build/lobe-picker-blame-controls-native-retry.log`，已读取）。`build/lobe-menu-access-i0qv36lu/results.json` 确认引用搜索／Enter、Blame 鼠标／空格、菜单遍历／取消、过滤／读取恢复及 Git 状态保持。已查看两张引用弹层和 blame-selected.png：英文／浅色／标准字号 980×640 下引用弹层与开关清晰，但 Blame 内容面板底部超出窗口，此项视觉验收未通过，待修复。控件迁移源码的完整 tests／race／vet 与差异格式检查已通过（`build/lobe-picker-blame-controls-check.log`，已读取；lobedesk tests 59.805s、race 302.904s）。随后四组中英／标准与大字号边界回归复现 Blame 源码视口底部达 643pt；原因是 SDK Modal 内边距叠加固定 620pt 子面板。已移除重复内边距，并将子面板限制到窗口尺寸减 40pt，保留默认关闭与阴影。新边界及相关 Blame／引用／按钮回归通过（`build/lobe-blame-layout-focused.log`，2.149s）。最终源码原生边界、引用／Blame／菜单／过滤／恢复及 Git 状态检查通过（`build/lobe-blame-layout-native.log`、`build/lobe-menu-access-y4ftbn6l/results.json`，已读取）。已查看新的 blame-selected.png，英文／浅色／标准字号 980×640 下底部圆角和窗口留白完整，选中与聚焦开关、关闭、源码均可见；该截图不代表完整语言／主题／目标平台矩阵。最终源码完整 tests／race／vet 和差异格式检查通过（`build/lobe-blame-layout-check.log`，已读取；lobedesk tests 60.443s、race 302.194s）。引用／Blame 控件迁移及已复现的最小窗口溢出修复在上述覆盖范围内验收完成，完整视觉矩阵仍开放。
+
+操作与错误恢复控件增量：继续／跳过、工作区补丁／概览／提交说明重试及 Mark resolved 迁移到共享普通按钮，Abort 使用危险角色。原专项测试发现概览错误区虚拟高度仍按旧 24pt Retry 估算，在中英／标准与大字号／220 与 500 宽度下产生滚动范围差异；改为与按钮渲染共用 workbenchButtonBaseHeight 后，千节普通布局与虚拟布局对照及操作／冲突／概览回归通过（`build/lobe-operation-controls-focused-final.log`，5.977s）。原生 cherry-pick／rebase／merge／revert 流程、三组同类同 HEAD 旧操作拒绝和 detail-tabs 十组均通过（`build/lobe-operation-controls-native.log`，已读取）；包含局部补丁失败／重试、2405 提交及 2403 文件历史导航。已查看 `build/lobe-operation-stale-5868n445/continue/refused.png`，操作按钮完整可见、Abort 危险色与替换操作拒绝提示清晰。changes-staged 图在加载期间捕获，不代表最终启用态。完整 tests／race／vet 与差异格式检查通过（`build/lobe-operation-controls-check.log`，已读取；lobedesk tests 61.020s、race 300.826s）。完整语言／主题／最小宽度视觉验收仍开放。
+
+输入弹窗／Reset 控件增量：通用输入弹窗取消／提交迁移到共享普通／主操作按钮，Reset soft／mixed 使用普通角色、hard 使用危险角色，Cancel 保留默认焦点与 Hard Reset 二次确认。相关回归通过（`build/lobe-dialog-controls-focused.log`，7.277s）。原生 soft／mixed／hard／undo 取消及精确状态验证、对应四组 stale 拒绝全部通过（`build/lobe-reset-f_w6893o/results.json`、`build/lobe-reset-rwu33lbt/results.json`，已读取）；双窗口确认归属／冲突请求／取消通过（`build/lobe-window-dialog-x9pqjpcn`），不包含 OS 焦点验证。已查看 hard-confirmation.png 和 main-confirmation.png，危险操作文字完整、Hard Reset 取消按钮有清晰焦点环。迁移后的输入弹窗另经 Stash 保存及六组操作流程通过（`build/lobe-dialog-controls-prompt-native.log`）。完整 tests／race／vet 与差异格式检查通过（`build/lobe-dialog-controls-check.log`，已读取；lobedesk tests 60.837s、race 300.798s）。原生视觉范围为英文／浅色／标准字号／1320×640，完整视觉矩阵仍开放。
+
+历史恢复控件增量：历史／文件历史取消与重试、提交文件列表／补丁重试共六处迁移到共享 29pt 缩放实底按钮，保留加载禁用条件及原处理函数。既有历史与共享按钮回归通过（`build/lobe-history-controls-focused.log`，2.698s）。原生 32002 提交／32 分支三轮通过加载中输入、取消、重试、根导航与夹具状态保持，完成后仅构建 31 个历史行控件（`build/lobe-wide-history-oe_g_tt0/results.json`，已读取）；已查看 reading-1.png，滚动区外 Cancel 完整可见。原生视觉范围为英文／浅色／标准字号／1320×640。完整 tests／race／vet 与差异格式检查通过（`build/lobe-history-controls-check.log`，已读取；lobedesk tests 63.536s、race 299.775s）。本控件增量在上述范围内完成验收。
+
+当前 Toast 组件覆盖核对：提示归属／寿命、长错误详情、设置失败提示的既有回归已从旧 SDK ToastHost 迁移到 app.toastHost，补充两窗口保存失败后超过 30 秒仍可见、点击当前 Close 后消失的验证。定向回归通过（`build/lobe-notice-host-coverage-focused.log`）。同步修正中英外观帮助中的旧说明：文件／提交行随字号调整，Diff 行距固定。最小设置窗口八组矩阵通过（`build/lobe-settings-layout-kvy53dh3/`），已查看英文深色和中文浅色大字号完整帮助文案。完整 tests／race／vet 与差异格式检查通过（`build/lobe-notice-host-coverage-check.log`，已读取；lobedesk tests 60.424s、race 299.427s）。当前组件回归覆盖和帮助文案同步已完成。焦点调查的原生失败／恢复／重置数据检查通过，但 warning／reset visual flags 均仍为 false（`build/lobe-settings-layout-ck9hsdul/results.json`）；通过现有设置入口重新聚焦的尝试也未获得 OS 焦点（`build/lobe-settings-layout-tbomzk0l/results.json`），未把这些结果计为视觉验收，未放松生产焦点或消息归属守卫。
+
+跨平台构建探测：在 macOS arm64 主机上，以 `GOOS=linux|windows GOARCH=amd64 CGO_ENABLED=0` 分别成功构建 Lobe GUI 和 Git 后端测试二进制。`file` 确认 GUI 为 Linux x86-64 ELF／Windows PE32+；Linux GUI 仍有 `/lib64/ld-linux-x86-64.so.2` 动态加载器依赖，不是独立静态分发物。本机未运行这些目标产物，未运行目标平台测试。源码核对发现 `menu.go` 的外部打开仍直接执行 macOS `open`，因此可编译不代表跨平台日常操作已适配，Windows／Linux 原生验收继续开放。
+
+跨平台外部打开适配增量：新增 `external_open.go` 命令构造，macOS 保留 `open`／Finder／Terminal，Windows 使用 Explorer 与 ShellExecuteW 启动独立 cmd，Linux 使用 `xdg-open` 和已安装的 GNOME／Konsole／Xfce／系统终端／xterm。文件定位在 Linux 打开所在目录，不声称选择文件；相应中英文文案按平台映射。Unicode、空格和 shell 元字符路径作为独立参数传递，终端目录通过参数或 cwd 设置，不拼进 shell 源码。命令回归从旧 macOS-only 实现 RED→GREEN，现有选中文件 Enter 实际子进程回归通过。产品小范围只读审查另指出启动失败 stderr 丢失，真实失败脚本先复现仅有退出码；现保留最多 16 KiB 诊断并通过回归。Linux 终端宿主探测测试在 Windows 明确跳过 POSIX fixture，不把该跳过算作 Windows 终端运行验证。macOS 原生两组窄窗／26 张截图与 detail-tabs 全十组通过（`build/narrow-shots-6w513u1r/`、`build/lobe-platform-open-native.log`），已查看英文深色大字号 Changes 启动图；这些原生流程验证工作台未回退，不等于外部应用启动已在所有平台验收。完整 tests／race／vet、Linux／Windows amd64 GUI 交叉编译、Windows lobedesk 测试二进制编译及差异格式检查均通过（`build/lobe-platform-open-check.log`）；目标二进制格式已确认。额外 `SUPERGIT_SHOT_EXTERNAL_OPEN=1` 原生探针仅在隔离子进程 PATH 内放置临时 open 启动器，接收 Unicode／空格／shell 元字符文件名，不实际启动外部应用。首轮两组未收到请求（`build/narrow-shots-61bn64ns/`）：失败树确认焦点在历史文件，而 `canOpenSelectedFile` 的 Enter 仅对工作区启用，属于探针使用了错误入口。第二轮尝试历史文件 Shift+F10 →“用默认应用打开”时菜单未提供该项（`build/narrow-shots-051oolfw/`）；完整失败树确认仅有复制／Finder 定位／文件历史／Blame。据实际菜单改为“在 Finder 中显示”后，第三轮确实收到了 `-R` 和含完整文件名的参数（`build/narrow-shots-jhi3sxel/`），但预期的 `/var/...` 与 Git 返回的规范仓库根 `/private/var/...` 不同而失败。已核对 `gitrepo.Open` 使用 `rev-parse --show-toplevel`，据同一 Git 根构造预期并继续逐字节比较相对文件名后，中英文两组／24 张截图完整通过（`build/narrow-shots-52haodyd/`、`build/lobe-platform-open-canonical-reveal-native.log`）。两份 `*-external-open.json` 已读取，确认实际界面 Reveal 动作收到 `-R` 和完整原始文件名两个参数；生产守卫和菜单不变。默认应用打开由已通过的实际子进程回归覆盖。Windows ShellExecute／Explorer 参数解析、控制台 cwd 与 Linux 终端实际行为仍待目标平台验收。
+
 ## 本地自动检测的隔离验证
 
 ```sh
@@ -55,6 +109,8 @@ python3 -I scripts/native-lobe-sync-smoke.py
 
 ## Lobe 引用详情动作的隔离验证
 
+2026-11-17 分支／Worktree 控件增量：新建分支、行内切换、详情操作区、Worktree 新建及表单按钮迁移到共享 29pt 缩放样式；危险操作用危险角色，创建用主操作角色，保留禁用说明、就绪判断、确认与仓库身份校验。相关回归通过（`build/lobe-reference-worktree-controls-focused.log`，7.965s）。原生引用流程与 35 长分支／双远端搜索／聚焦 Enter 全部通过（`build/lobe-reference-controls-ready-native.log`）；Worktree 创建、切换、锁定／新锁定拒绝、取消／脏目录／ignored 二进制保护、干净移除及原分支删除均通过（`build/lobe-worktree-controls-native.log`）。前三次引用探针失败分别暴露成功提示早于刷新就绪、文本等待匹配输入值、列表已出现但操作仍禁用；快照／轨迹保留于 `build/lobe-reference-controls-failed-*`。探针现限时等待真实目标行与启用状态，不重发 Enter，不放松生产守卫。已查看引用最终图和 Worktree ignored 拒绝图；原生视觉范围为英文／浅色／标准字号／1320×640，表单焦点及完整视觉矩阵仍开放。完整 tests／race／vet 与差异格式检查通过（`build/lobe-reference-worktree-controls-check.log`，已读取；lobedesk tests 59.812s、race 304.900s）；最终探针修改另通过 AST 语法与差异格式检查。
+
 ```sh
 make lobe-e2e-build
 python3 -I scripts/native-lobe-reference-smoke.py
@@ -69,6 +125,8 @@ python3 -I scripts/native-lobe-reference-smoke.py
 同日扩展并通过无冲突 Merge / Rebase 的 UI 发起：创建双方分叉后从详情 footer 取消 / 确认 Merge，核对两个父提交和两组文件；另建分叉 source / onto 后取消 / 确认 Rebase，核对新父提交、完整源说明与双方文件，保持 main 和干净状态。完整引用脚本重跑通过，最终截图已查看。冲突编辑及 Revert 发起不包含在这两个无冲突场景内。
 
 ## Lobe Stash 的隔离验证
+
+2026-11-17 控件样式增量已验证：Save／Apply／Pop／Retry 使用共享 29pt 缩放实底按钮，Drop 使用危险角色；保存触发器保留 menuButton 语义和展开选中态。既有 Stash／共享按钮回归通过，原生保存、Apply、Pop、Drop 取消／确认、重叠拒绝及两组三方冲突全部通过（`build/lobe-stash-controls-native.log`，已读取），已查看 `build/lobe-stash-smoke/compact-error.png` 中的操作按钮与错误恢复入口。完整 tests／race／vet 与差异格式检查通过（`build/lobe-stash-controls-check.log`，已读取；lobedesk tests 59.341s、race 299.191s）。本次原生范围为英文／浅色／标准字号／1320×640，不扩充为其他语言、主题或最小宽度的视觉验收。
 
 ```sh
 make lobe-e2e-build
@@ -121,6 +179,12 @@ python3 -I scripts/native-lobe-operation-smoke.py
 通用确认框窗口 / root 归属修复后，2026-11-16 重新执行全部 Go 测试 / race / vet、两种构建及本操作卡和完整 detail-tabs 原生脚本，全部通过。跨窗口渲染与后来确认不覆盖原对象另由 UI Tester 回归覆盖；本原生脚本没有新增双窗口焦点切换场景。
 
 ## Lobe 设置页的布局矩阵
+
+2026-11-17 分类布局接入后，设置使用外观／历史／Git／快捷键／关于五类导航，右侧独立滚动并保留各分类位置。`native-lobe-settings-layout-smoke.py` 现按原生 `tab` 角色逐类点击，检查各页控件边界，再从关于页打开恢复默认确认。`native-detail-tabs-smoke.py` 从历史分类修改详情显示，双窗口确认脚本从关于分类打开重置。旧的“所有控件同页”假设不再适用。
+
+可用 `SUPERGIT_SETTINGS_PALETTE=supergit` 指定隔离 fixture 的新配色，不修改用户设置；工作台截图脚本对应 `SUPERGIT_SHOT_PALETTE=supergit`。分类版原生最小窗口八组通过，证据 `build/lobe-settings-layout-e08nqnop`；中英文保存失败／恢复／实际重置通过，证据 `build/lobe-settings-layout-z9p2a68c`；双窗口确认归属与取消通过，证据 `build/lobe-window-dialog-a22vbfmu`。已查看英文深色大字号外观／Git 页面，换行分段不越界。写失败／重置通知的 OS 聚焦限制仍按脚本结果记录，不把“未泄漏到主窗口”等同“设置窗口提示已可见”。这些证据只覆盖 macOS 原生会话。
+
+以下记录保留分类迁移前的历史验收范围：
 
 `python3 -I scripts/native-lobe-settings-layout-smoke.py` 使用中英文 × 浅深色 × 标准 / 1.15 字号共 8 个独立仓库 / HOME，打开默认 820×720 设置窗口，核对所有已构建交互控件的横向边界，滚到底部后坐标打开重置确认并坐标取消；Git 指纹和 settings.json 精确不变。每组保存外观 / 底部 / 确认三张截图。结果 `build/lobe-settings-layout-40ndm5ll/results.json`，日志 `build/lobe-settings-native-layout.log`，代表大字号截图已查看。
 
@@ -317,6 +381,8 @@ python3 -I scripts/native-lobe-wide-history-baseline.py --input-pressure
 
 `python3 -I scripts/native-lobe-menu-access-smoke.py` 在独立 35 长分支 / 双本地远端仓库、980×640 窗口下核对历史菜单全部 18 项 bounds 和 Down 焦点遍历，并实际坐标打开分支 picker / 底部 Reset、用 Enter 打开 Reset，关闭后核对 Git 状态未变。结果保存在每次独立的 `build/lobe-menu-access-*`；最新完整结果 `build/lobe-menu-access-sfbuiw3v/results.json`，日志 `build/lobe-menu-access-recovery.log`。后续覆盖四种坐标过滤、正确查询与匹配 / 排除记录、搜索 Enter 保持 checkout，以及无结果与读取失败区分：仅移开自建 fixture `.git`，Refresh 显示旧内容提示，finally 恢复后坐标 Retry 成功重读。picker 用 Escape 关闭，Reset 用 Cancel。最新 `build/lobe-menu-access-vmz51dcg/results.json`、`build/lobe-menu-access-dialogs.log` 进一步通过全部 11 个表单 / 确认入口的坐标打开与取消，加四种过滤共 15 项鼠标激活。该脚本不执行确认后的 Git 写操作；三项复制命令只验证 bounds / 键盘焦点，未实际点击以免覆盖当前系统剪贴板。
 
+父提交导航补充验收：`native-lobe-menu-access-smoke.py` 先将父 SHA 按钮 `scrollIntoView`，确认可见后按实际 bounds 坐标点击，核对原父提交选中、返回源提交及完整 Git fingerprint。该鼠标路径曾稳定暴露后续 Blame 首次 Escape 被背景摘要引用 Tooltip 消耗的问题；`TestBlameEscapeWithHoveredBackgroundRef` 已复现并验证修复，摘要提示在主窗口弹窗期间暂停，保留无障碍说明。`build/lobe-blame-background-tooltip-native.log` 和 `build/lobe-menu-access-i9jx512g/results.json` 已通过该完整流程，修复后的 Blame 截图已检查。旧 `build/lobe-menu-access-jiqbt71o/blame-dismiss-diagnostics.json` 中 `open_after_close_click=false` 不能作为 Close 点击证据：移开指针后第二次 Escape 已关闭，条件分支没有执行 Close。最终探针要求第一次 Escape 成功，失败即保存截图并报错，不移开指针重试。最终严格版本再次通过（`build/lobe-blame-background-tooltip-native-final.log`），`build/lobe-menu-access-ysc9hq_4/results.json` 明确记录 `visible_parent_coordinate_navigation=true` 与 `blame_first_escape=true`。该源码的完整 `make check` 也通过：常规测试、race、vet 和 diff 格式检查，日志为 `build/lobe-blame-background-tooltip-check.log`；lobedesk 测试分别用时 60.537s / 302.550s。
+
 ## 滚动
 
 - `wheel` 一次只移动约一两行，滚到内容底部很慢；验证滚动相关行为时优先拖滚动条（按下、移动、松开三步），并断言滚动后的内容与选中态。
@@ -330,6 +396,8 @@ python3 -I scripts/native-lobe-wide-history-baseline.py --input-pressure
 - 验证写操作后回到 shell 用 Git 核对（`git status`、`git diff --cached`、`git config --get` 等），不只信截图。
 
 ## Lobe 工作台验收脚本
+
+2026-11-17 最终集成验收：`build/lobe-integrated-final-matrix.log` 的 16 组 SuperGit 组合全部通过，208 张截图位于 `build/narrow-shots-_xcp22dz`；已抽查窄窗口中英大字号的选区/标签、宽屏启动 Changes 和长摘要。随后详情流程首次在第七组 Cmd+Enter 等待 hook 时失败，按键响应显示仓库重读，草稿与暂存文件保留；完整证据已复制到 `build/lobe-integrated-final-detail-tabs-failed-1`。未修改脚本复跑全部十组通过（`build/lobe-integrated-final-detail-tabs-reproduce.log`），含 hook 拒绝保留草稿、Index-only 提交、Amend 作者保留及 2405/2403 条历史遍历。保留首次时序失败，不能把复跑通过解释为已修复其触发条件；提交按钮就绪快照与后续快捷键投递并非原子操作。
 
 先运行 `make lobe-e2e-build`；以下脚本在 macOS 图形会话中串行运行，使用临时仓库和独立 HOME，不更新已安装应用。
 

@@ -5,6 +5,9 @@ const sidebarPaneMin float32 = 160
 // Leave room for both inner dividers as well as the History/Files/patch panes.
 // Only the effective share is clamped: saved shares survive a narrow window.
 func (a *app) workbenchContentMin() float32 {
+	if a.page == "changes" {
+		return changesFilesPaneMin + splitterWidth + historyDiffPaneMin
+	}
 	if a.page != "history" && a.page != "" {
 		return 480
 	}

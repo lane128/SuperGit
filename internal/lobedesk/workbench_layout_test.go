@@ -119,6 +119,43 @@ func TestWorkbenchFilesDividerRespondsToPointerDrag(t *testing.T) {
 	}
 }
 
+func TestChangesDividerDragSurvivesRestartAndNarrowing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := &app{page: "changes", worktreeSelected: true, themeMode: "light", locale: localeEnglish, commitText: "retained draft"}
+	tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); a.changesPage(c) }, 1000, 600)
+	tt.Frame()
+	before := a.historyFilesWidth()
+	x := before + splitterWidth/2
+	tt.Press(x, 150)
+	tt.Move(x+80, 150)
+	tt.Release(x+80, 150)
+	preferred := a.historyFilesWidth()
+	if preferred < before+60 {
+		t.Fatalf("Changes divider did not resize: %v → %v", before, preferred)
+	}
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &app{page: "changes"}
+	b.applySettings(readSettings(path))
+	b.filesSplit.rowWidth = 1000
+	if math.Abs(float64(b.historyFilesWidth()-preferred)) > 1 {
+		t.Fatal("Changes Files preference did not survive restart")
+	}
+	share := b.filesSplit.share
+	b.filesSplit.rowWidth = changesFilesPaneMin + splitterWidth + historyDiffPaneMin
+	files := b.historyFilesWidth()
+	patch := b.filesSplit.rowWidth - splitterWidth - files
+	if files < changesFilesPaneMin-0.01 || patch < historyDiffPaneMin-0.01 {
+		t.Fatalf("narrow Changes lost minimum panes: %v/%v", files, patch)
+	}
+	b.filesSplit.rowWidth = 1000
+	if b.filesSplit.share != share || math.Abs(float64(b.historyFilesWidth()-preferred)) > 1 || a.commitText != "retained draft" {
+		t.Fatal("narrowing lost preferred width or draft")
+	}
+}
+
 func TestWorkbenchDividerResetKeepsOtherPreferences(t *testing.T) {
 	a := &app{themeMode: "dark", locale: localeEnglish, commitText: "retained draft"}
 	a.sidebarSplit.share = 0.3

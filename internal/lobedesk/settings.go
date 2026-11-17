@@ -474,7 +474,9 @@ func (a *app) saveSettingsFor(owner toastOwner) bool {
 		err = writeSettings(path, settings)
 	}
 	if err != nil {
-		a.queueFor(owner, "warning", a.t("settingsSaveFailed"), err.Error())
+		// The in-memory choice has changed even though persistence failed.
+		// Keep that distinction visible until the user dismisses the warning.
+		a.pushNotice(owner, &toastNotice{kind: "warning", title: a.t("settingsSaveFailed"), description: err.Error(), timeout: -1})
 		a.invalidate()
 		return false
 	}

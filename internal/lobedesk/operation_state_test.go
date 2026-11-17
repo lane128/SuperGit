@@ -37,7 +37,7 @@ func TestTheTitleBarNamesAnOperationLeftRunning(t *testing.T) {
 		t.Fatalf("the operation tag is not a button, so it cannot lead to its actions")
 	}
 	tt.ClickAt(tag.Bounds.X+tag.Bounds.W/2, tag.Bounds.Y+tag.Bounds.H/2)
-	if a.page != "history" || !a.worktreeSelected {
-		t.Errorf("clicking the operation tag opened %q, worktree=%t; want history's working tree", a.page, a.worktreeSelected)
+	if a.page != "changes" || !a.worktreeSelected {
+		t.Errorf("clicking the operation tag opened %q, worktree=%t; want Changes", a.page, a.worktreeSelected)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
@@ -92,17 +91,17 @@ func (a *app) noticeDetailsDialog(c *ui.Context, owner toastOwner) {
 	text := noticeDetailText(n)
 	tk := theme.TokensOf(c)
 	ui.Modal(c, &state.open, func() {
-		ui.Column(c).Width(600).MaxWidthPercent(90).Height(420).MaxHeightPercent(90).Padding(16).Gap(12).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
+		ui.Column(c).Width(600).MaxWidthPercent(90).Height(420).MaxHeightPercent(90).Padding(20).Gap(12).
+			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).Children(func() {
 			display.Text(c, title, display.TextProps{Strong: true, FontSize: scaledFont(14), Rows: 2}).FillWidth().Shrink(0)
 			layout.ScrollArea(c, layout.ScrollAreaProps{State: &state.scroll}, func() {
 				display.Text(c, text, display.TextProps{FontSize: scaledFont(12)}).FillWidth().MinWidth(0)
 			}).Grow(1).Basis(0).MinHeight(0)
 			ui.Row(c).FillWidth().Gap(8).Justify(ui.End).Shrink(0).Children(func() {
-				if action.Button(c, a.t("copyErrorDetails"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+				if workbenchButton(c, a.t("copyErrorDetails"), buttonNormal, false).Clicked() {
 					a.copyText(text)
 				}
-				if action.Button(c, a.t("close"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+				if workbenchButton(c, a.t("close"), buttonNormal, false).Clicked() {
 					state.open = false
 				}
 			})

@@ -58,7 +58,7 @@ func (a *app) remoteActions(c *ui.Context) {
 func (a *app) remoteActionButton(c *ui.Context, icon *ui.SVG, title string, disabled bool, hint string, onClick func()) ui.Element {
 	var button ui.Element
 	draw := func() {
-		button = action.ActionIcon(c, icon, action.ActionIconProps{Size: theme.Small, Title: title}).Disabled(disabled)
+		button = workbenchIconButton(c, icon, title, buttonNormal, disabled)
 		if hint != "" {
 			// The wrapper explains why on hover; the button carries the same
 			// reason to assistive technology, which a disabled element's own
@@ -136,11 +136,11 @@ func (a *app) branchSelector(c *ui.Context) {
 		})
 	}
 	chosen := overlay.DropdownMenu(c, open, overlay.DropdownMenuProps{Items: items}, func(trigger ui.Element) {
-		action.StyleButton(c, trigger, "", action.ButtonProps{Variant: action.Default, Size: theme.Small})
+		styleWorkbenchButton(c, trigger, buttonNormal, false, *open)
 		// The trigger shows only the branch name and an icon; without a name
 		// of its own a reader hears just the branch and cannot tell it is the
 		// branch switch.
-		trigger.Role(ui.RoleButton).Label(a.t("branches")).Description(branch).Tooltip(branch).MaxWidth(220)
+		trigger.Role(ui.RoleButton).Label(a.t("branches")).Description(branch).Tooltip(branch).FillWidth().MinWidth(0).MaxWidth(220)
 		trigger.Gap(6).Children(func() {
 			ui.Icon(c, lucide.GitBranch()).FontSize(scaledFont(13)).TextColor(tk.TextSecondary)
 			ui.Text(c, elideMiddle(branch, 24)).FontSize(scaledFont(12)).SingleLine().MinWidth(0).Shrink(1)
@@ -225,8 +225,8 @@ func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.En
 			if reason != "" {
 				hint += "\n" + reason
 			}
-			if action.Button(c.Key("unstage-group"), a.t("unstageAll"), action.ButtonProps{Size: theme.Small}).
-				FillWidth().Disabled(reason != "").Description(hint).Tooltip(hint).Clicked() {
+			if workbenchButton(c.Key("unstage-group"), a.t("unstageAll"), buttonNormal, reason != "").
+				FillWidth().Description(hint).Tooltip(hint).Clicked() {
 				a.unstageAll()
 			}
 		}
@@ -349,7 +349,7 @@ func (a *app) expandFilesSection(key string) {
 func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Element {
 	tk := theme.TokensOf(c)
 	selected := a.selectedPath == entry.Path && a.selectedStaged == staged
-	if a.page == "history" {
+	if a.page == "history" || a.page == "changes" {
 		selected = selected && a.worktreeSelected && a.detailTabShown() == detailTabFile
 	}
 	row := fileRowShell(c, tk, entry.Path, selected)
@@ -390,21 +390,30 @@ func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Elemen
 		if entry.Conflict {
 			a.statusTag(c, "!", display.TagProps{Variant: display.TagFilled, Color: display.TagError, Size: theme.Small, Round: true})
 		} else {
-			icon := lucide.Plus()
-			title := a.t("stageFile")
+			icon, state := lucide.Square(), "unstaged"
+			if entry.Staged() {
+				icon, state = lucide.SquareCheck(), "staged"
+				if entry.Unstaged() {
+					icon, state = lucide.SquareMinus(), "partiallyStaged"
+				}
+			}
+			title, version := a.t("stageFile"), a.t("unstaged")
 			if staged {
-				icon = lucide.Minus()
-				title = a.t("unstageFile")
+				title, version = a.t("unstageFile"), a.t("staged")
+			}
+			// State describes the whole path; the action still targets this
+			// row's exact Index/worktree version, including either partial row.
+			hint := a.t(state) + " · " + version + " · " + title
+			if entry.IsSubmodule() {
+				hint += "\n" + a.t("fileActionsProtected")
 			}
 			// The icon sits inside a 26-point row, so it stops short of the
-			// row's edges rather than filling them.
+			// row's edges rather than filling them. ActionIcon's Title owns
+			// the Lobe tooltip relation; keep the short action name as Label.
 			_, ready := a.fileActionTarget(entry, staged)
 			button := action.ActionIcon(c, icon, action.ActionIconProps{
-				BlockSize: 22, GlyphSize: 12, Title: title,
-			}).Disabled(!ready)
-			if entry.IsSubmodule() {
-				button.Description(a.t("fileActionsProtected")).Tooltip(a.t("fileActionsProtected"))
-			}
+				BlockSize: 22, GlyphSize: 12, Title: hint,
+			}).Label(title).Disabled(!ready)
 			if button.Clicked() {
 				a.toggleStage(entry, staged)
 				return
@@ -446,7 +455,7 @@ func (a *app) diffBody(c *ui.Context) {
 			ui.Icon(c, lucide.AlertTriangle()).FontSize(scaledFont(22)).TextColor(tk.TextTertiary)
 			display.Text(c, a.tf("diffFailed", a.diffErr), display.TextProps{Type: display.TextDanger, FontSize: scaledFont(12), Rows: 4}).
 				MaxWidth(520).TextAlign(ui.Center)
-			if action.Button(c, a.t("retry"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+			if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
 				a.loadDiff()
 			}
 		})
@@ -649,6 +658,7 @@ func (a *app) diffLineFor(c *ui.Context, line gitrepo.DiffLine, width float32, i
 				ui.Text(c, lineNumber(line.New)).Font("Menlo").FontSize(scaledFont(10)).Width(34).Shrink(0).
 					TextAlign(ui.End).TextColor(gutter)
 			})
+			markDiffGutter(numbers, change && a.lineSelected(index), gutter)
 			ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(scaledFont(diffCodeSize)).
 				SingleLine().TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
 		})
@@ -904,21 +914,19 @@ func (a *app) operationCard(c *ui.Context) {
 			// carries the message typed there; the other operations
 			// continue through git's own command.
 			if kind != "merge" {
-				cont := action.Button(c, a.t("continueOperation"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-					Disabled(a.busy || a.loading || a.operationConflicts())
+				cont := workbenchButton(c, a.t("continueOperation"), buttonNormal,
+					a.busy || a.loading || a.operationConflicts())
 				if a.operationConflicts() {
 					cont.Tooltip(a.t("operationConflicts"))
 				}
 				if cont.Clicked() {
 					a.continueOperation(kind)
 				}
-				if action.Button(c, a.t("skipOperation"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-					Disabled(a.busy || a.loading).Clicked() {
+				if workbenchButton(c, a.t("skipOperation"), buttonNormal, a.busy || a.loading).Clicked() {
 					a.confirmSkipOperation(kind)
 				}
 			}
-			if action.Button(c, a.t("abortOperation"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-				Disabled(a.busy || a.loading).Clicked() {
+			if workbenchButton(c, a.t("abortOperation"), buttonDanger, a.busy || a.loading).Clicked() {
 				a.confirmAbortOperation(kind)
 			}
 		})
@@ -942,59 +950,80 @@ func (a *app) commitForm(c *ui.Context) {
 		display.Text(c, a.tf("commitTo", branch), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
 		a.commitMessageFields(c)
 		display.Text(c, a.t("commitHelp"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10), Rows: 2})
-		wasAmend := a.amend
-		if a.headMessage != "" {
-			choice.Checkbox(c, &a.amend, a.t("amendLast"), choice.CheckboxProps{Size: 14})
-		}
-		if a.amend != wasAmend {
-			// Amend rewrites HEAD, so its prefill is HEAD's complete message even while
-			// the list is scoped to another branch.
-			latest := a.headMessage
-			switch {
-			case a.amend && strings.TrimSpace(a.commitText) == "":
-				a.commitText = latest
-			case !a.amend && latest != "" && a.commitText == latest:
-				a.commitText = ""
-			}
-		}
+		a.commitAmendControl(c)
 		a.commitIdentityView(c)
-		label := a.t("commit")
-		if a.amend {
-			label = a.t("amend")
-		}
-		ready := a.canCommit()
-		variant := action.Primary
-		if !ready {
-			variant = action.Filled
-		}
-		button := action.Button(c, label, action.ButtonProps{Variant: variant, Size: theme.Large}).
-			FillWidth().Disabled(!ready).KeyShortcuts(ui.Cmd, ui.KeyEnter).
-			Description(a.commitDisabledReason()).Tooltip(a.commitDisabledReason())
-		if button.Clicked() {
-			a.commit()
-		}
-		switch {
-		case a.operation.Kind != "" && !commitOperation(a.operation.Kind):
-			// A rebase continues through its own button, not this box.
-			style := display.TextSecondary
-			if a.operationConflicts() {
-				style = display.TextWarning
-			}
-			display.Text(c, a.tf("operationContinuePrompt", a.operation.Kind), display.TextProps{
-				Type: style, FontSize: scaledFont(10),
-			})
-		case commitOperation(a.operation.Kind) && a.operationConflicts():
-			// The commit finishes the operation, but only once every
-			// conflicted file is resolved.
-			display.Text(c, a.tf("commitOperationConflictPrompt", a.operation.Kind), display.TextProps{
-				Type: display.TextWarning, FontSize: scaledFont(10),
-			})
-		case staged == 0 && !a.amend:
-			prompt := a.t("stagePrompt")
-			if commitOperation(a.operation.Kind) {
-				prompt = a.tf("commitOperationPrompt", a.operation.Kind)
-			}
-			display.Text(c, prompt, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)})
-		}
+		a.commitAction(c, false)
 	})
+}
+
+func (a *app) commitAmendControl(c *ui.Context) {
+	wasAmend := a.amend
+	if a.headMessage != "" {
+		choice.Checkbox(c, &a.amend, a.t("amendLast"), choice.CheckboxProps{Size: 14})
+	}
+	if a.amend != wasAmend {
+		// Always prefill HEAD, even when browsing another branch.
+		latest := a.headMessage
+		switch {
+		case a.amend && strings.TrimSpace(a.commitText) == "":
+			a.commitText = latest
+		case !a.amend && latest != "" && a.commitText == latest:
+			a.commitText = ""
+		}
+	}
+}
+
+// Both layouts share the same readiness and operation guards. Changes keeps
+// this footer outside its scrolling editor so a long message cannot hide it.
+func (a *app) commitAction(c *ui.Context, showCount bool) {
+	staged := len(a.stagedEntries())
+	label := a.t("commit")
+	if a.amend {
+		label = a.t("amend")
+	}
+	visibleLabel := label
+	if showCount {
+		visibleLabel += " · " + a.stagedLabel(staged)
+	}
+	ready := a.canCommit()
+	reason := a.commitDisabledReason()
+	description := reason
+	if showCount {
+		description = a.stagedLabel(staged) + ". " + reason
+	}
+	button := workbenchButton(c, visibleLabel, buttonPrimary, !ready).
+		Label(label).FillWidth().KeyShortcuts(ui.Cmd, ui.KeyEnter).
+		Description(description).Tooltip(reason)
+	if button.Clicked() {
+		a.commit()
+	}
+	if showCount {
+		if reason != "" {
+			display.Text(c, reason, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10), Rows: 2}).FillWidth()
+		}
+		return
+	}
+	switch {
+	case a.operation.Kind != "" && !commitOperation(a.operation.Kind):
+		// A rebase continues through its own button, not this box.
+		style := display.TextSecondary
+		if a.operationConflicts() {
+			style = display.TextWarning
+		}
+		display.Text(c, a.tf("operationContinuePrompt", a.operation.Kind), display.TextProps{
+			Type: style, FontSize: scaledFont(10),
+		})
+	case commitOperation(a.operation.Kind) && a.operationConflicts():
+		// The commit finishes the operation, but only once every
+		// conflicted file is resolved.
+		display.Text(c, a.tf("commitOperationConflictPrompt", a.operation.Kind), display.TextProps{
+			Type: display.TextWarning, FontSize: scaledFont(10),
+		})
+	case staged == 0 && !a.amend:
+		prompt := a.t("stagePrompt")
+		if commitOperation(a.operation.Kind) {
+			prompt = a.tf("commitOperationPrompt", a.operation.Kind)
+		}
+		display.Text(c, prompt, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)})
+	}
 }

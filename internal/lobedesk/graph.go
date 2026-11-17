@@ -178,6 +178,7 @@ type commitGraphRow struct {
 	Lane     int
 	Color    int
 	Boundary bool
+	Fork     bool // More than one distinct child in the loaded DAG.
 }
 
 // commitGraph is the layout for one rendered commit list. Spans are expanded
@@ -236,6 +237,16 @@ func newCommitGraph(commits []gitrepo.Commit, palette []ui.Color) *commitGraph {
 	for i, commit := range commits {
 		positions[commit.SHA] = i
 	}
+	children := make([]int, len(commits))
+	lastChild := make(map[string]int)
+	for child, commit := range commits {
+		for _, parent := range commit.Parents {
+			if row, ok := positions[parent]; ok && row > child && lastChild[parent] != child+1 {
+				children[row]++
+				lastChild[parent] = child + 1
+			}
+		}
+	}
 	graph.Rows = make([]commitGraphRow, len(commits))
 	var lanes []string
 	var colors []int
@@ -289,7 +300,7 @@ func newCommitGraph(commits []gitrepo.Commit, palette []ui.Color) *commitGraph {
 		if lane < 0 {
 			lane = allocate(commit.SHA, laneSeed(commit))
 		}
-		row := commitGraphRow{Lane: lane, Color: colors[lane]}
+		row := commitGraphRow{Lane: lane, Color: colors[lane], Fork: children[i] > 1}
 		for j, value := range lanes {
 			if value == commit.SHA {
 				lanes[j] = ""
@@ -386,7 +397,7 @@ const (
 	graphNodeLarge    float32 = 1.3
 
 	// graphDotRadius is the radius of a plain commit dot at the standard node
-	// preset, and graphMergeHalf the half-side of a merge's square. Both scale
+	// preset, and graphMergeHalf the radius of a merge/HEAD ring. Both scale
 	// with the preset and are floored against a thick line (see graphNodeDot).
 	graphDotRadius = 4
 	graphMergeHalf = 5
@@ -458,10 +469,8 @@ func graphNodeDot(node, line float32) float32 {
 	return max(graphDotRadius*node, line+1)
 }
 
-// graphNodeMerge is the half-side of a merge commit's square. It grows with
-// the dot rather than sharing the dot's own floor: a small node preset with a
-// thick line used to leave the square the same 8 points as a plain dot, with a
-// 2-point outline that read lighter than the 3-point lane it sits on.
+// graphNodeMerge is the radius of a merge/HEAD ring or the half-diagonal
+// of a fork diamond. It stays wider than a plain dot at every line preset.
 func graphNodeMerge(node, line float32) float32 {
 	return max(graphMergeHalf*node, graphNodeDot(node, line)+1)
 }
@@ -471,8 +480,9 @@ func graphNodeMerge(node, line float32) float32 {
 // floor grows the dot, the ring grows with it, so the two never merge into one
 // fat disc. The halo stays two DIPs beyond the ring.
 func graphNodeRing(node, line float32) (inner, ring float32) {
-	dot := graphNodeDot(node, line)
-	inner = max(7*node, dot+2.5)
+	// Stroke is inside its bounds. Leave a 1.5-DIP surface gap between
+	// its 2-DIP ink and the largest identity mark, including merge rings.
+	inner = max(7*node, graphNodeMerge(node, line)+3.5)
 	ring = max(9*node, inner+2)
 	return inner, ring
 }

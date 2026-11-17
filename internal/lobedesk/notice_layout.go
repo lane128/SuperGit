@@ -2,7 +2,6 @@ package lobedesk
 
 import (
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/feedback"
 )
 
 // The main window reserves the measured branch-action footer beneath toasts.
@@ -12,5 +11,5 @@ func (a *app) toastHost(c *ui.Context, owner toastOwner) {
 	if owner == toastMain {
 		inset = a.mainToastBottomInset
 	}
-	feedback.ToastHost(c, feedback.ToastHostProps{}).Padding(16, 16, 16+inset, 16)
+	a.noticeViewport(c).Padding(16, 16, 16+inset, 16)
 }

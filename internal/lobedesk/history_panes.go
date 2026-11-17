@@ -2,7 +2,6 @@ package lobedesk
 
 import (
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
@@ -40,7 +39,11 @@ func (a *app) historyFilesWidth() float32 {
 	state := a.filesSplit
 	state.rowWidth = row
 	def := historyFilesPaneWidth / (row - splitterWidth)
-	return max(historyFilesPaneMin, (row-splitterWidth)*state.fraction(def, historyFilesPaneMin, historyDiffPaneMin))
+	minimum := historyFilesPaneMin
+	if a.page == "changes" {
+		minimum = changesFilesPaneMin
+	}
+	return max(minimum, (row-splitterWidth)*state.fraction(def, minimum, historyDiffPaneMin))
 }
 
 const (
@@ -90,6 +93,7 @@ func (a *app) detailSummaryLabel() string {
 
 func (a *app) saveDetailScroll() {
 	tabs := a.detailTabs()
+	tabs.FilesScroll = detailScrollPosition{X: a.commitFilesScroll.X, Y: a.commitFilesScroll.Y}
 	if tabs.Scroll == nil {
 		tabs.Scroll = make(map[detailTabKey]detailScrollPosition)
 	}
@@ -217,7 +221,7 @@ func (a *app) detailFileShown() bool {
 // when its row is selected, otherwise the commit's. Sublime Merge puts this
 // list in its own column between the commits and the patch.
 func (a *app) historyFilesPane(c *ui.Context) {
-	if a.detailsChangesHidden {
+	if a.detailsChangesHidden && a.page != "changes" {
 		return
 	}
 	tk := theme.TokensOf(c)
@@ -252,6 +256,9 @@ func (a *app) historyFilesPane(c *ui.Context) {
 				})
 			}).Grow(1).Basis(0).MinHeight(0)
 			a.commitFilesViewport = filesScroll.Bounds()
+			if a.page == "changes" {
+				a.changesCommitPane(c)
+			}
 		})
 }
 
@@ -272,7 +279,7 @@ func (a *app) historyDiffPane(c *ui.Context) {
 			// bottom border here would cut that join.
 			strip := layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Horizontal, State: &a.detailTabStrip}, func() {
 				ui.Row(c).Height(38).Gap(2).Padding(0, 8).AlignItems(ui.Center).
-					Background(tk.FillTertiary).Role(ui.RoleTabList).FocusGroup(ui.Horizontal).Children(func() {
+					Background(tk.FillTertiary).Role(ui.RoleTabList).Label(a.t("detailTabs")).FocusGroup(ui.Horizontal).Children(func() {
 					a.detailTabButton(c, tk, detailTabKey{Summary: true}, a.detailSummaryLabel(), "")
 					if a.detailFileShown() {
 						// A close click mutates OpenFiles during this render pass.
@@ -300,6 +307,7 @@ func (a *app) historyDiffPane(c *ui.Context) {
 				a.invalidate()
 			}
 			*previousWidth = width
+			a.worktreeSelectionBar(c)
 			a.historyDiffBody(c, tk)
 		})
 }
@@ -378,21 +386,23 @@ func (a *app) detailPlaceholder(c *ui.Context) {
 	})
 }
 
-// worktreeDiffHeader keeps the stage action and the file menu beside the
-// patch they act on, as the workspace's diff pane did. The tab above already
-// names the file, so the header adds its folder rather than repeating the
-// name; a header would otherwise cost a row of height to say nothing new.
+// The header names the original path and the actual comparison alongside its
+// guarded file actions, independently of a truncated or scrolled file tab.
 func (a *app) worktreeDiffHeader(c *ui.Context, tk *theme.Tokens) {
-	header := ui.Row(c).Height(34).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
+	header := ui.Row(c).Height(scaledFont(48)).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
 	header.Children(func() {
-		if _, dir := splitRepoPath(a.selectedPath); dir != "" {
-			display.Text(c, dir, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).SingleLine().MaxWidth(260).Tooltip(dir)
-		}
+		baseline := a.t("indexToWorktree")
 		if a.selectedStaged {
-			a.statusTag(c, a.t("staged"), display.TagProps{Variant: display.TagFilled, Color: display.TagSuccess, Size: theme.Small, Round: true})
+			baseline = a.t("headToIndex")
 		}
-		ui.Row(c).Grow(1).Basis(0)
+		if entry, ok := a.selectedEntry(); ok && entry.Conflict {
+			baseline = a.t("conflict")
+		}
+		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(2).Children(func() {
+			display.Text(c, a.selectedPath, display.TextProps{FontSize: scaledFont(11)}).FillWidth().SingleLine().Tooltip(a.selectedPath)
+			display.Text(c, baseline, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).FillWidth().SingleLine().Tooltip(baseline)
+		})
 		entry, ok := a.selectedEntry()
 		if !ok {
 			return
@@ -401,8 +411,7 @@ func (a *app) worktreeDiffHeader(c *ui.Context, tk *theme.Tokens) {
 			a.statusTag(c, a.t("conflict"), display.TagProps{
 				Variant: display.TagFilled, Color: display.TagError, Size: theme.Small, Round: true,
 			})
-			button := action.Button(c, a.t("markResolved"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-				Disabled(a.busy || a.loading)
+			button := workbenchButton(c, a.t("markResolved"), buttonNormal, a.busy || a.loading)
 			if button.Clicked() {
 				a.resolveConflict(entry.Path)
 			}

@@ -74,9 +74,9 @@ with tempfile.TemporaryDirectory(prefix="supergit-menu-access.") as directory:
         def entries(text, role):
             result = []
             for line in text.splitlines():
-                match = re.match(r'\s*(@e\d+) \[' + role + r'\] ("(?:[^"\\]|\\.)*")(.*)', line)
+                match = re.match(r'\s*(@e\d+) \[' + role + r'\](?: ("(?:[^"\\]|\\.)*"))?(.*)', line)
                 if match:
-                    result.append((match[1], json.loads(match[2]), match[3]))
+                    result.append((match[1], json.loads(match[2]) if match[2] else "", match[3]))
             return result
 
         def history_row():
@@ -98,6 +98,8 @@ with tempfile.TemporaryDirectory(prefix="supergit-menu-access.") as directory:
                     raise RuntimeError("native automation unavailable")
                 time.sleep(0.05)
             auto("open", "--socket", str(socket))
+            auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+            auto("key", "cmd+1", "--settle")
             auto("wait", "--text", "Menu access fixture", "--timeout", "20s", "--settle")
             auto("press", history_row(), "--settle")
             auto("wait", "--text", "Complete menu source body", "--timeout", "20s", "--settle")
@@ -217,7 +219,79 @@ with tempfile.TemporaryDirectory(prefix="supergit-menu-access.") as directory:
             auto("wait", "--text", "Earlier filter exclusion", "--timeout", "20s", "--settle")
             assert state() == before, "Read failure/retry mutated fixture"
             (artifacts / "recovered.snapshot.txt").write_text(snapshot())
-            (artifacts / "results.json").write_text(json.dumps({"all_bounds_visible": True, "keyboard_entries": sorted(reached), "coordinate_picker_and_reset": True, "coordinate_dialogs": [label for label, _ in coordinate_dialogs], "keyboard_reset_activation": True, "coordinate_filters": filter_queries, "filter_enter_preserved_checkout": True, "empty_search_distinct_from_read_failure": True, "coordinate_retry_recovered": True, "git_state_preserved": True}, indent=2) + "\n")
+
+            def wait_control(role, label, ready=False):
+                deadline = time.monotonic() + 25
+                while True:
+                    text = snapshot()
+                    matches = [e for e in entries(text, role) if e[1] == label and "disabled" not in e[2]]
+                    is_ready = any(e[1] == "Refresh" and "disabled" not in e[2] for e in entries(text, "button"))
+                    if matches and (not ready or is_ready):
+                        return matches[-1]
+                    if app.poll() is not None or time.monotonic() > deadline:
+                        raise AssertionError(("Missing ready control", role, label, text))
+                    time.sleep(0.05)
+
+            parent_sha = git("rev-parse", "HEAD^").decode().strip()
+            parent_control = wait_control("button", parent_sha[:8], ready=True)
+            auto("act", parent_control[0], "scrollIntoView", "--settle")
+            parent_control = wait_control("button", parent_sha[:8], ready=True)
+            assert "offscreen" not in parent_control[2], parent_control
+            auto("screenshot", str(artifacts / "parent-navigation.png"))
+            coordinate_click("button", parent_sha[:8])
+            deadline = time.monotonic() + 25
+            while not any(e[1] == "Earlier filter exclusion" and "checked" in e[2]
+                          for e in entries(snapshot(), "listItem")):
+                if app.poll() is not None or time.monotonic() > deadline:
+                    raise AssertionError("Parent navigation did not select the original parent SHA")
+                time.sleep(0.05)
+            assert state() == before, "Parent navigation changed checkout or Git state"
+            auto("press", wait_control("listItem", "Menu access fixture", ready=True)[0], "--settle")
+            auto("wait", "--text", "Complete menu source body", "--timeout", "25s", "--settle")
+            print("PASS native parent-SHA navigation; no Git mutation", flush=True)
+
+            for current_ref, query, next_ref in (("All refs", "main", "main"), ("main", "All refs", "All refs")):
+                auto("press", wait_control("button", current_ref, ready=True)[0], "--settle")
+                fields = [e for e in entries(snapshot(), "textField") if 'placeholder="Search branches or tags"' in e[2]]
+                assert len(fields) == 1, fields
+                auto("fill", fields[0][0], query, "--settle")
+                wait_control("listItem", next_ref)
+                auto("screenshot", str(artifacts / ("ref-picker-main.png" if query == "main" else "ref-picker-all.png")))
+                auto("key", "Enter", "--settle")
+                wait_control("button", next_ref, ready=True)
+                assert state() == before, "Ref picker changed checkout or Git state"
+
+            auto("press", history_row(), "--settle")
+            file_row = wait_control("listItem", "fixture.txt", ready=True)
+            auto("focus", file_row[0], "--settle")
+            auto("key", "Shift+F10", "--settle")
+            blame_item = wait_control("menuItem", "Blame…")
+            auto("press", blame_item[0], "--settle")
+            toggle = wait_control("toggleButton", "Ignore whitespace")
+            assert "checked" not in toggle[2], toggle
+            auto("press", toggle[0], "--settle")
+            toggle = wait_control("toggleButton", "Ignore whitespace")
+            assert "checked" in toggle[2], toggle
+            auto("wait", "--text", "Loading diff…", "--gone", "--timeout", "25s", "--settle")
+            blame_state = snapshot()
+            viewports = entries(blame_state, "scroll")
+            assert viewports, blame_state
+            for _, label, details in viewports:
+                bounds = re.search(r"bounds=([-0-9.]+),([-0-9.]+),([0-9.]+)x([0-9.]+)", details)
+                assert bounds, (label, details)
+                x, y, w, h = map(float, bounds.groups())
+                assert x >= 20 and y >= 20 and x + w <= 960.1 and y + h <= 620.1, (label, details)
+            auto("screenshot", str(artifacts / "blame-selected.png"))
+            auto("key", "Space", "--settle")
+            toggle = wait_control("toggleButton", "Ignore whitespace")
+            assert "checked" not in toggle[2], toggle
+            auto("key", "Escape", "--settle")
+            if entries(snapshot(), "toggleButton"):
+                auto("screenshot", str(artifacts / "blame-escape-failure.png"))
+                raise AssertionError("Blame did not close on first Escape")
+            assert state() == before, "Blame whitespace toggle or close changed Git state"
+            print("PASS native ref picker search/Enter and Blame pointer/Space toggle; no Git mutation", flush=True)
+            (artifacts / "results.json").write_text(json.dumps({"visible_parent_coordinate_navigation": True, "blame_first_escape": True, "ref_picker_search_enter": True, "blame_toggle_pointer_space": True,"all_bounds_visible": True, "keyboard_entries": sorted(reached), "coordinate_picker_and_reset": True, "coordinate_dialogs": [label for label, _ in coordinate_dialogs], "keyboard_reset_activation": True, "coordinate_filters": filter_queries, "filter_enter_preserved_checkout": True, "empty_search_distinct_from_read_failure": True, "coordinate_retry_recovered": True, "git_state_preserved": True}, indent=2) + "\n")
             print("PASS menu bounds and Down traversal; no Git mutation", flush=True)
         except BaseException:
             (artifacts / "failure.snapshot.txt").write_text(snapshot())

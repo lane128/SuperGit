@@ -7,7 +7,6 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/feedback"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 	"supergit/internal/gitrepo"
 )
@@ -40,6 +39,21 @@ func TestUnbrokenErrorDetailsFitLargeFontAtMinimumWindow(t *testing.T) {
 	}
 }
 
+func TestErrorDetailsActionsUseSharedButtonMetrics(t *testing.T) {
+	before := uiFontScaleValue()
+	setUIFontScale(fontScaleStandard)
+	t.Cleanup(func() { setUIFontScale(before) })
+	a := &app{locale: localeEnglish}
+	a.noticeDetails[toastMain] = noticeDetailsState{open: true, notice: &toastNotice{title: "Failure", description: "Original output"}}
+	tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); a.noticeDetailsDialog(c, toastMain) }, 560, 480)
+	for _, label := range []string{"Copy details", "Close"} {
+		button, ok := tt.AccessByRole(ui.RoleButton, label)
+		if !ok || button.Bounds.H != 29 {
+			t.Errorf("%s height=%v; want shared 29 pt button", label, button.Bounds.H)
+		}
+	}
+}
+
 func TestClosingSettingsDiscardsItsErrorDetails(t *testing.T) {
 	a := &app{}
 	a.settingsWin.Store(&mygo.Window{})
@@ -62,7 +76,7 @@ func TestLongErrorTitleKeepsOriginalInDetails(t *testing.T) {
 	a.queue("error", raw, "")
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
-		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.toastHost(c, toastMain)
 		a.flushNotice(c, toastMain)
 		a.noticeDetailsDialog(c, toastMain)
 	}, 980, 640)
@@ -127,7 +141,7 @@ func TestLongErrorNoticeStaysCompactWithDetailsAction(t *testing.T) {
 	a.queue("error", "Operation failed", raw)
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
-		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.toastHost(c, toastMain)
 		a.flushNotice(c, toastMain)
 		a.noticeDetailsDialog(c, toastMain)
 	}, 980, 640)

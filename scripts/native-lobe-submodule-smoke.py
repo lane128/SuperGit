@@ -140,6 +140,8 @@ def run():
                         raise TimeoutError("Native automation socket unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
+                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("key", "cmd+1", "--settle")
                 wait("Parent fixture target")
                 auto("key", "cmd+4", "--settle")
                 wait("Not initialized")

@@ -16,6 +16,10 @@ import (
 // commitInfoContent is the Summary tab's text: subject, body, refs, the hash
 // and the commit's metadata.
 func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.Tokens) {
+	// MyGo tooltips register their own Escape overlay. A lingering background
+	// tip can consume the modal's first Escape, so only build summary tips
+	// while the main window has no modal. Keep accessible descriptions below.
+	showTips := !a.hasPendingDialog(toastMain)
 	// The whole block is one selectable scope. MyGo only lets a paragraph be
 	// selected when a Selectable box sits between it and any control the pane
 	// lives under, and the scroll area around this column is not a scope of its
@@ -46,7 +50,10 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 					}
 					pill := refPill(c, refCapsuleColors(color, tk.BgContainer), badge.Icon,
 						elideMiddle(badge.Label, refCapsuleDetailRunes)).
-						MaxWidth(refCapsuleWidth(refCapsuleDetailWidth)).Tooltip(badge.Label)
+						MaxWidth(refCapsuleWidth(refCapsuleDetailWidth)).Description(badge.Label)
+					if showTips {
+						pill.Tooltip(badge.Label)
+					}
 					// The same menu the list row's badge has: the details
 					// pane shows the same ref, so it should offer the same
 					// actions where the reader is looking.
@@ -56,7 +63,7 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 		}
 		if a.commitMessageErr != "" {
 			display.Text(c, a.commitMessageErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(12), Rows: 4})
-			if action.Button(c, a.t("retryCommitMessage"), action.ButtonProps{Size: theme.Small}).Disabled(a.commitDiffLoading).Clicked() {
+			if workbenchButton(c, a.t("retryCommitMessage"), buttonNormal, a.commitDiffLoading).Clicked() {
 				a.loadCommitDetail(true)
 			}
 		}
@@ -90,7 +97,10 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 			// The name gives way to the date when the pane is narrow, so the
 			// tooltip is where the whole name is read. It stays on truncated
 			// text only: a tooltip repeating a name that already fits is noise.
-			author.Tooltip(commit.Author)
+			author.Description(commit.Author)
+			if showTips {
+				author.Tooltip(commit.Author)
+			}
 			display.Text(c, formatDateTime(commit.Date), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).
 				Shrink(0).SingleLine()
 		})
@@ -109,16 +119,19 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 				if sig.Signer != "" {
 					signer := display.Text(c, sig.Signer, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).
 						Grow(1).Basis(0).MinWidth(0).SingleLine()
-					signer.Tooltip(sig.Signer)
+					signer.Description(sig.Signer)
+					if showTips {
+						signer.Tooltip(sig.Signer)
+					}
 				}
 			})
 		}
 		if len(commit.Parents) > 0 {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).FillWidth().Gap(8).Wrap().AlignItems(ui.Center).Children(func() {
 				display.Text(c, a.t("parent"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).Width(54)
 				for _, parent := range commit.Parents {
 					sha := parent
-					button := action.Button(c, shortSHA(sha), action.ButtonProps{Variant: action.Text, Size: theme.Small})
+					button := workbenchButton(c, shortSHA(sha), buttonNormal, false).Shrink(0)
 					if button.Clicked() {
 						a.jumpToCommit(sha)
 					}

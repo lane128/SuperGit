@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/field"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
@@ -45,8 +44,8 @@ func (a *app) branchesPage(c *ui.Context) {
 				},
 			})
 		})
-		button := action.Button(c, a.t("newBranchAction"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-			Disabled(a.busy || a.loading || a.repo == nil || a.status.Head == "")
+		button := workbenchButton(c, a.t("newBranchAction"), buttonNormal,
+			a.busy || a.loading || a.repo == nil || a.status.Head == "")
 		if button.Clicked() {
 			a.promptNewBranch(a.status.Head)
 		}
@@ -653,8 +652,7 @@ func (a *app) branchRow(c *ui.Context, branch gitrepo.Branch, pos, size int) {
 		})
 		display.Text(c, shortSHA(branch.SHA), display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Shrink(0)
 		if !branch.Current {
-			button := action.Button(c, a.t("switch"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-				Disabled(a.busy || a.loading)
+			button := workbenchButton(c, a.t("switch"), buttonNormal, a.busy || a.loading)
 			if button.Clicked() {
 				a.switchBranch(branch.Name)
 			}

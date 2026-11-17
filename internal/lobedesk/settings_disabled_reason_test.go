@@ -27,6 +27,7 @@ func TestDetailsKeepsOneBlockWithAReason(t *testing.T) {
 		detailsInfoHidden:    false,
 		detailsChangesHidden: true,
 		detailsDiffHidden:    true,
+		settingsSection:      "history",
 	}
 	tt := tallSettingsTester(a)
 	info, ok := tt.Access(a.t("detailsInfo"))
@@ -49,7 +50,7 @@ func TestDetailsKeepsOneBlockWithAReason(t *testing.T) {
 }
 
 func TestPruningSaysItNeedsAutomaticFetch(t *testing.T) {
-	a := &app{locale: localeChinese, autoFetch: false}
+	a := &app{locale: localeChinese, autoFetch: false, settingsSection: "git"}
 	tt := tallSettingsTester(a)
 	prune, ok := tt.Access(a.t("autoFetchPrune"))
 	if !ok {

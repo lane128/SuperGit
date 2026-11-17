@@ -86,6 +86,8 @@ def run():
                         raise TimeoutError("native automation socket unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
+                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("key", "cmd+1", "--settle")
                 wait("Watch baseline")
                 row = next(e for e in controls() if e[1] == "listItem" and (e[2].endswith(" change") or e[2].endswith(" changes")))
                 auto("press", row[0], "--settle")

@@ -197,6 +197,7 @@ type app struct {
 	// drag holds near its edge.
 	commitInfoScroll    ui.ScrollState
 	commitFilesScroll   ui.ScrollState
+	changesCommitScroll ui.ScrollState
 	commitFilesViewport ui.Rect
 	commitDiffScroll    ui.ScrollState
 	commitDiffViewport  ui.Rect
@@ -269,6 +270,8 @@ type app struct {
 	stashesScroll      ui.ScrollState
 	workspacesScroll   ui.ScrollState
 	settingsScroll     ui.ScrollState
+	settingsSection    string
+	settingsPositions  map[string]detailScrollPosition
 	// sidebarScroll keeps the Locations list where the reader left it, and
 	// sidebarOpen the groups they folded. A group never touched keeps its
 	// default: branches open, the rest folded.
@@ -433,7 +436,7 @@ type app struct {
 func Run(initialPath string) error {
 	defaults := defaultSettings()
 	a := &app{
-		page:             "history",
+		page:             "changes",
 		locale:           locale(defaults.Language),
 		themeMode:        defaults.Theme,
 		palette:          defaults.Palette,
@@ -556,6 +559,11 @@ func (a *app) flushNotice(c *ui.Context, owner toastOwner) {
 	timeout := n.timeout
 	if timeout == 0 {
 		timeout = 5 * time.Second
+	}
+	// Keep actionable failures available until the user dismisses them or
+	// follows the recovery/details action. Ordinary and undo timers stay intact.
+	if n.kind == "error" && (needsNoticeDetails(n) || n.onAction != nil) {
+		timeout = -1
 	}
 	title, description, actionName := n.title, n.description, n.action
 	onAction := n.onAction
@@ -809,7 +817,7 @@ func (a *app) openRepository(path string, reset bool) {
 				a.window.SetTitle("SuperGit · " + filepath.Base(repo.Root))
 			}
 			if reset {
-				a.worktreeSelected = false
+				a.worktreeSelected = a.page == "changes"
 				a.detailContexts = detailContextsState{}
 				a.detailTabStrip = ui.ScrollState{}
 				a.selectedPath = ""

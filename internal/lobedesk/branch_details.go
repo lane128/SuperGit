@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
@@ -323,10 +322,11 @@ func (a *app) branchDetailParagraph(c *ui.Context, label, value string, rows int
 // reason on screen.
 func (a *app) detailAction(c *ui.Context, label, hint string, disabled, danger bool, onClick func()) {
 	build := func() {
-		button := action.Button(c, label, action.ButtonProps{Variant: action.Default, Size: theme.Small}).Disabled(disabled)
+		role := buttonNormal
 		if danger {
-			button.TextColor(theme.TokensOf(c).Error)
+			role = buttonDanger
 		}
+		button := workbenchButton(c, label, role, disabled)
 		if !disabled && button.Clicked() {
 			onClick()
 		}

@@ -100,8 +100,17 @@ def run():
                 auto("wait", "--text", text, "--timeout", "25s", "--settle")
 
             def button(label, coordinate=False):
-                entries = [e for e in controls() if e[1] == "button" and e[2] == label and "disabled" not in e[3]]
-                assert entries, f"Missing enabled button {label}"
+                # Completion notices can precede the repository reload. Wait
+                # for the real action guard to clear before taking the next step.
+                deadline = time.monotonic() + 25
+                while True:
+                    state = controls()
+                    entries = [e for e in state if e[1] == "button" and e[2] == label and "disabled" not in e[3]]
+                    if entries:
+                        break
+                    if app.poll() is not None or time.monotonic() > deadline:
+                        raise AssertionError(f"Missing enabled button {label}: {state}")
+                    time.sleep(0.05)
                 entry = entries[-1]
                 if coordinate:
                     assert "offscreen" not in entry[3], f"Offscreen footer: {entry}"
@@ -140,6 +149,8 @@ def run():
                         raise RuntimeError("Native reference automation unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
+                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("key", "cmd+1", "--settle")
                 wait("Reference fixture base")
                 auto("key", "cmd+2", "--settle")
                 select("topic")
@@ -293,15 +304,31 @@ def run():
                 wait("No branches or tags match this search.")
                 auto("key", "Enter", "--settle")
                 assert git("symbolic-ref", "--short", "HEAD") == "main" and git("rev-parse", "HEAD") == stress_head
+                def wait_reference_row(label=None, description=None):
+                    # A text wait also matches the search field's own value.
+                    # Require the resulting list row and the shared busy/loading
+                    # guard to clear; Enter deliberately does nothing while loading.
+                    deadline = time.monotonic() + 25
+                    while True:
+                        state = controls()
+                        rows = [e for e in state if e[1] == "listItem"
+                                and (label is None or e[2] == label)
+                                and (description is None or f'description={json.dumps(description)}' in e[3])]
+                        ready = any(e[1] == "button" and e[2] == "Refresh" and "disabled" not in e[3] for e in state)
+                        if len(rows) == 1 and ready:
+                            return rows
+                        if app.poll() is not None or time.monotonic() > deadline:
+                            raise AssertionError(f"Missing unique reference row {label or description}: {state}")
+                        time.sleep(0.05)
+
                 search(names[-1])
-                wait(names[-1])
-                rows = [e for e in controls() if e[1] == "listItem" and e[2] == names[-1]]
-                assert len(rows) == 1, f"Missing long reference: {rows}"
+                rows = wait_reference_row(label=names[-1])
                 match = re.search(r"bounds=([-0-9.]+),([-0-9.]+),([0-9.]+)x([0-9.]+)", rows[0][3])
                 assert match
                 x, y, width, height = map(float, match.groups())
                 auto("click", str(x + min(width / 2, 100)), str(y + height / 2), "--settle")
                 assert git("symbolic-ref", "--short", "HEAD") == "main", "Selecting a long row checked it out"
+                wait_reference_row(label=names[-1])
                 auto("key", "Enter", "--settle")
                 deadline = time.monotonic() + 25
                 while git("symbolic-ref", "--short", "HEAD") != names[-1]:
@@ -311,11 +338,9 @@ def run():
                 assert git("rev-parse", "HEAD") == stress_head and git("ls-files", "--stage") == stress_index
                 assert not git("status", "--porcelain")
                 search("origin/topic")
-                wait("origin/topic")
-                assert any(e[1] == "listItem" and 'description="origin/topic"' in e[3] for e in controls())
+                wait_reference_row(description="origin/topic")
                 search("backup/topic")
-                wait("backup/topic")
-                assert any(e[1] == "listItem" and 'description="backup/topic"' in e[3] for e in controls())
+                wait_reference_row(description="backup/topic")
                 assert git("symbolic-ref", "--short", "HEAD") == names[-1], "Remote search changed checkout"
                 print("PASS native 35 long branches and two remotes: search isolation, mouse selection, focused Enter checkout", flush=True)
                 snapshot = auto("snapshot", "--full")

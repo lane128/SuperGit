@@ -3,15 +3,14 @@ package lobedesk
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/field"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
@@ -116,12 +115,11 @@ func (a *app) promptDialogFor(c *ui.Context, owner toastOwner) {
 					a.prompt.open = false
 				}
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.End).Children(func() {
-					if action.Button(c, a.t("cancel"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+					if workbenchButton(c, a.t("cancel"), buttonNormal, false).Clicked() {
 						a.prompt.open = false
 					}
 					ready := strings.TrimSpace(a.prompt.value) != ""
-					button := action.Button(c, a.prompt.actionName, action.ButtonProps{Variant: action.Primary, Size: theme.Small}).
-						Disabled(!ready)
+					button := workbenchButton(c, a.prompt.actionName, buttonPrimary, !ready)
 					if ready && button.Clicked() {
 						confirmed = true
 						a.prompt.open = false
@@ -223,21 +221,22 @@ func (a *app) confirmDialogFor(c *ui.Context, owner toastOwner) {
 	blocked := a.confirm.root != "" && (a.repo == nil || a.loading || a.busy)
 	confirmed := false
 	ui.Modal(c, &a.confirm.open, func() {
-		ui.Column(c).Width(430).Padding(18).Gap(10).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).
+		ui.Column(c).Width(430).Padding(20).Gap(10).
+			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).
 			Children(func() {
 				display.Text(c, a.confirm.title, display.TextProps{Strong: true, FontSize: scaledFont(14)})
 				display.Text(c, a.confirm.message, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12), Rows: 5})
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.End).Margin(8, 0, 0, 0).
 					Children(func() {
-						if action.Button(c, a.t("cancel"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+						if workbenchButton(c, a.t("cancel"), buttonNormal, false).Clicked() {
 							a.confirm.open = false
 						}
 						label := a.confirm.actionName
-						button := action.Button(c, label, action.ButtonProps{Variant: action.Default, Size: theme.Small}).Disabled(blocked)
+						role := buttonNormal
 						if a.confirm.danger {
-							button.TextColor(tk.Error)
+							role = buttonDanger
 						}
+						button := workbenchButton(c, label, role, blocked)
 						if !blocked && button.Clicked() {
 							confirmed = true
 							a.confirm.open = false
@@ -280,8 +279,8 @@ func (a *app) absolutePath(path string) string {
 	return filepath.Join(a.repo.Root, filepath.FromSlash(path))
 }
 
-// openFile hands a repository path to macOS: reveal selects it in Finder,
-// default opens it with the app the system associates with it.
+// openFile hands a repository path to the desktop's file manager or default
+// application, keeping the original repository-relative path intact.
 func (a *app) openFile(path, kind string) {
 	a.openPath(a.absolutePath(path), kind)
 }
@@ -290,16 +289,11 @@ func (a *app) openFile(path, kind string) {
 // worktree root that lives outside the repository.
 func (a *app) openPath(full, kind string) {
 	go func() {
-		args := []string{full}
-		switch kind {
-		case "reveal":
-			args = []string{"-R", full}
-		case "terminal":
-			// Terminal is macOS's own and always present; other terminals are
-			// the user's choice through their default app handler.
-			args = []string{"-a", "Terminal", full}
+		cmd, err := externalOpenCommand(runtime.GOOS, full, kind)
+		if err == nil {
+			err = runExternalOpen(cmd)
 		}
-		if err := exec.Command("open", args...).Run(); err != nil {
+		if err != nil {
 			mygo.RunOnMain(func() {
 				a.queue("error", a.tf("openFailedHint", err.Error()), "")
 				a.invalidate()

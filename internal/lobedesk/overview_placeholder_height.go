@@ -30,8 +30,8 @@ func (a *app) overviewSectionHeightFor(c *ui.Context, entry worktreeOverviewEntr
 	if errorBody {
 		_, line := c.MeasureText(0, ui.Span{Text: "Mg"})
 		height = min(height, 4*line)
-		// Error body: four-line text, six-DIP gap and existing Small Retry.
-		height += 6 + 24
+		// Error body: four-line text, six-DIP gap and shared Retry height.
+		height += 6 + scaledFont(workbenchButtonBaseHeight)
 	}
 	c.SetTheme(previous)
 	return 35 + 24 + height, true

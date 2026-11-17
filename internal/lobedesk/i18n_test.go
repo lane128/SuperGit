@@ -72,11 +72,9 @@ func TestChineseHasNoEnglishGitTerms(t *testing.T) {
 	}
 }
 
-// The appearance card's help has to admit what text size does and does not
-// do. The scale multiplies every label's size; commit rows and diff lines keep
-// their heights, while file rows grow with the text, so a reader who expects
-// everything to grow, or nothing to, would think the setting is broken.
-func TestAppearanceHelpNamesTheFixedSpacing(t *testing.T) {
+// Explain which list rows adjust with the text preset and which patch spacing
+// remains fixed, so the settings help matches the actual density behavior.
+func TestAppearanceHelpNamesRowScalingAndFixedDiffSpacing(t *testing.T) {
 	zh := messages[localeChinese]["appearanceHelp"]
 	for _, want := range []string{"字号", "行高", "文件列表"} {
 		if !strings.Contains(zh, want) {

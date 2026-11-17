@@ -56,6 +56,30 @@ func TestASidebarRowOpensItsPage(t *testing.T) {
 	}
 }
 
+func TestSidebarOffersBranchManagementWithoutChangingRef(t *testing.T) {
+	for _, language := range []locale{localeEnglish, localeChinese} {
+		t.Run(string(language), func(t *testing.T) {
+			a := &app{locale: language, page: "changes", repo: &gitrepo.Repository{Root: t.TempDir()}, historyRef: historyRef{Kind: historyRefLocal, Name: "main"}}
+			tt := sidebarTester(a)
+			label := "Manage branches"
+			if language == localeChinese {
+				label = "管理分支"
+			}
+			row, ok := tt.AccessByRole(ui.RoleButton, label)
+			if !ok {
+				t.Fatal("branch management has no named mouse entry")
+			}
+			if row.Bounds.W <= 0 || row.Bounds.Y+row.Bounds.H > 620 {
+				t.Fatalf("branch management entry is unreachable: %+v", row.Bounds)
+			}
+			tt.ClickAt(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2)
+			if a.page != "branches" || a.historyRef.Name != "main" {
+				t.Fatalf("management entry did not preserve reference scope: page=%s ref=%+v", a.page, a.historyRef)
+			}
+		})
+	}
+}
+
 // Without a repository there is nothing on the other pages to show: the
 // history row reads unavailable, and a group heading opens nothing.
 func TestWithoutARepositoryTheSidebarOpensNoPage(t *testing.T) {

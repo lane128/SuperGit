@@ -18,10 +18,11 @@ type detailTabKey struct {
 }
 
 type detailTabsState struct {
-	OpenFiles []detailFileKey
-	Active    detailTabKey
-	Scroll    map[detailTabKey]detailScrollPosition
-	Collapsed map[detailFileKey]bool
+	OpenFiles   []detailFileKey
+	Active      detailTabKey
+	Scroll      map[detailTabKey]detailScrollPosition
+	Collapsed   map[detailFileKey]bool
+	FilesScroll detailScrollPosition
 }
 
 type detailScrollPosition struct{ X, Y float32 }

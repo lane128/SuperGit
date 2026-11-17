@@ -133,6 +133,8 @@ with tempfile.TemporaryDirectory(prefix="supergit-wide-history.") as directory:
                         raise AssertionError("Native app did not open automation socket")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
+                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("key", "cmd+1", "--settle")
                 wait("Wide merge tip")
                 sampler.phase("history_traversal_and_input")
                 measurement = {"run": number, "launch_to_first_history_seconds": time.monotonic() - started}

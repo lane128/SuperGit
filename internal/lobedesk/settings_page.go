@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/choice"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
@@ -25,47 +24,45 @@ const settingsMaxWidth = 760
 // describes out of the eye's way.
 const settingsHelpWidth = 520
 
-// settingsHelp is the line under a card's controls that says what they do.
-// Three rows is the cap: a longer wording stops with an ellipsis rather than
-// pushing the next card down the page.
+// settingsHelp explains the controls without truncating localized wording.
+// The settings content scrolls, so narrow windows can show the complete text.
 func settingsHelp(c *ui.Context, text string) {
 	display.Text(c, text, display.TextProps{
-		Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 3,
+		Type: display.TextSecondary, FontSize: scaledFont(11),
 	}).MaxWidth(settingsHelpWidth)
 }
 
 func (a *app) settingsPage(c *ui.Context) {
-	a.pageHeader(c, a.t("settings"), a.t("settingsSubtitle"), nil)
-	// The scroll area keeps the window's full width, so its scrollbar stays at
-	// the window edge, while the cards centre themselves inside it.
-	layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.settingsScroll}, func() {
-		ui.Row(c).FillWidth().Justify(ui.Center).Children(func() {
-			// Grow with a cap: a narrow window narrows the cards instead of
-			// clipping them, and a wide one stops at the readable measure.
-			ui.Column(c).Grow(1).Basis(0).MaxWidth(settingsMaxWidth).Padding(20).Gap(14).Children(func() {
-				// Appearance first, then the history page's controls in page
-				// order (list, graph, details), then what the app runs against
-				// Git, and About last.
-				a.appearanceCard(c)
-				a.historyColumnsCard(c)
-				a.graphCard(c)
-				a.detailsCard(c)
-				a.gitCard(c)
-				a.shortcutsCard(c)
-				a.aboutCard(c)
-				// The reset lives outside the cards: it applies to all of them
-				// at once, so it reads as a page-level action rather than as
-				// part of the About text above.
-				ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
-					if action.Button(c, a.t("resetSettingsAction"), action.ButtonProps{
-						Variant: action.Text, Size: theme.Small,
-					}).Clicked() {
-						a.confirmResetSettings()
+	a.pageHeader(c, a.t("settings"), "", nil)
+	ui.Row(c).Grow(1).Basis(0).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+		a.settingsNavigation(c)
+		layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.settingsScroll}, func() {
+			ui.Row(c).FillWidth().Justify(ui.Center).Children(func() {
+				ui.Column(c).Grow(1).Basis(0).MinWidth(0).MaxWidth(settingsMaxWidth).Padding(16).Gap(14).Children(func() {
+					section := c.Key(a.activeSettingsSection())
+					switch a.activeSettingsSection() {
+					case "appearance":
+						a.appearanceCard(section)
+					case "history":
+						a.historyColumnsCard(section)
+						a.graphCard(section)
+						a.detailsCard(section)
+					case "git":
+						a.gitCard(section)
+					case "shortcuts":
+						a.shortcutsCard(section)
+					case "about":
+						a.aboutCard(section)
+						ui.Row(section).FillWidth().Justify(ui.End).Children(func() {
+							if workbenchButton(section, a.t("resetSettingsAction"), buttonNormal, false).Clicked() {
+								a.confirmResetSettings()
+							}
+						})
 					}
 				})
 			})
-		})
-	}).Grow(1).Basis(0).MinHeight(0)
+		}).Grow(1).Basis(0).MinWidth(0).MinHeight(0)
+	})
 }
 
 func (a *app) settingsCard(c *ui.Context, title string, body func()) {
@@ -190,7 +187,7 @@ func (a *app) paletteRow(c *ui.Context) {
 			items = append(items, item)
 		}
 		chosen := overlay.DropdownMenu(c, &a.paletteOpen, overlay.DropdownMenuProps{Items: items}, func(trigger ui.Element) {
-			action.StyleButton(c, trigger, "", action.ButtonProps{Variant: action.Default, Size: theme.Small})
+			styleWorkbenchButton(c, trigger, buttonNormal, false, a.paletteOpen)
 			// The visual label is on the row to the left and inside the
 			// trigger itself, so a reader reaching the button heard only its
 			// dots and name. Name the control and say what it currently holds.
@@ -218,17 +215,24 @@ func (a *app) paletteRow(c *ui.Context) {
 func (a *app) choiceRow(c *ui.Context, label string, items []choice.ToggleItem, current string, set func(string)) {
 	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 		display.Text(c, label, display.TextProps{FontSize: scaledFont(12)}).Width(96)
-		selected := []string{current}
-		choice.ToggleGroup(c, &selected, choice.ToggleGroupProps{
-			Items:   items,
-			Variant: choice.ToggleSegmented,
-			Size:    theme.Small,
+		tk := theme.TokensOf(c)
+		ui.Row(c).Grow(1).Basis(0).MinWidth(0).Wrap().Padding(3).Gap(4).
+			Background(tk.BgLayout).Radius(6).Children(func() {
+			for _, item := range items {
+				selected := item.Value == current
+				button := styleWorkbenchButton(c.Key(item.Value), ui.ButtonBase(c.Key(item.Value)), buttonNormal, item.Disabled, selected).
+					Role(ui.RoleToggleButton).Label(item.Label).Checked(selected).Shrink(0)
+				button.Children(func() {
+					if item.Icon != nil {
+						ui.Icon(c, item.Icon).FontSize(scaledFont(14))
+					}
+					ui.Text(c, item.Label).SingleLine()
+				})
+				if button.Clicked() && !selected && !item.Disabled {
+					set(item.Value)
+				}
+			}
 		})
-		// Clicking the active item clears the selection; keep the setting as it
-		// was rather than leaving it unset.
-		if len(selected) == 1 && selected[0] != current {
-			set(selected[0])
-		}
 	})
 }
 

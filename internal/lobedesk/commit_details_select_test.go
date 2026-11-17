@@ -58,7 +58,7 @@ func TestSettingsPathTextCanBeSelected(t *testing.T) {
 	if err != nil {
 		t.Skipf("no settings path: %v", err)
 	}
-	a := &app{locale: localeChinese}
+	a := &app{locale: localeChinese, settingsSection: "about"}
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
 		// The page is taller than a window: every card has to be laid out for

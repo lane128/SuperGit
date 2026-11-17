@@ -6,7 +6,6 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/overlay"
@@ -252,15 +251,15 @@ func (a *app) refGraphColor(palette []ui.Color, name string) ui.Color {
 func (a *app) historyRefMenu(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	anchor := ui.ButtonBase(c).Label(a.historyRefLabel())
-	action.StyleButton(c, anchor, "", action.ButtonProps{Variant: action.Default, Size: theme.Small})
+	styleWorkbenchButton(c, anchor, buttonNormal, false, a.historyRefOpen)
 	if len([]rune(a.historyRefLabel())) > 22 {
 		anchor.Tooltip(a.historyRefLabel())
 	}
 	anchor.Gap(6).Children(func() {
 		icon, color := a.historyRefHeaderIcon(tk)
-		ui.Icon(c, icon).FontSize(scaledFont(13)).TextColor(color)
+		ui.Icon(c, icon).FontSize(scaledFont(14)).TextColor(color)
 		ui.Text(c, a.historyRefLabel()).FontSize(scaledFont(12)).SingleLine().MaxWidth(220)
-		ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(11)).TextColor(tk.TextTertiary)
+		ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(14)).TextColor(tk.TextSecondary)
 	})
 	wasOpen := a.historyRefOpen
 	overlay.Popover(c, anchor, &a.historyRefOpen, overlay.PopoverProps{Placement: overlay.Bottom}, func() {
@@ -329,9 +328,7 @@ func (a *app) historyRefMenu(c *ui.Context) {
 					display.Text(c, err, display.TextProps{
 						Type: display.TextDanger, FontSize: scaledFont(10), Rows: 2,
 					}).Grow(1).Basis(0).MinWidth(0)
-					button := action.Button(c, label, action.ButtonProps{
-						Variant: action.Default, Size: theme.Small,
-					}).Disabled(retrying)
+					button := workbenchButton(c, label, buttonNormal, retrying)
 					if !retrying && button.Clicked() {
 						a.reload()
 					}

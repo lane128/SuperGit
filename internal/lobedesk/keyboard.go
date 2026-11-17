@@ -21,7 +21,7 @@ func (a *app) revealIfSelected(row ui.Element, selected bool) {
 // on screen. The history page's first row carries the working tree, so
 // selecting it is what makes the files column the live changes.
 func (a *app) worktreeFilesShown() bool {
-	return a.page == "history" && a.worktreeSelected
+	return (a.page == "history" || a.page == "changes") && a.worktreeSelected
 }
 
 // toggleSelectedStage stages or unstages the working tree's selected file, the
@@ -75,20 +75,20 @@ func (a *app) canCommitShortcut() bool {
 	if a.repo == nil || a.busy || a.loading {
 		return false
 	}
-	if a.historyDetailsHidden || a.historyRefOpen {
+	if a.page != "changes" && (a.historyDetailsHidden || a.historyRefOpen) {
 		return false
 	}
 	if a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open {
 		return false
 	}
-	return a.worktreeFilesShown() && a.detailTabShown() == detailTabSummary
+	return a.worktreeFilesShown() && (a.page == "changes" || a.detailTabShown() == detailTabSummary)
 }
 
 // worktreeDiffShown reports whether the working tree's patch is the one on
 // screen: the history page with its first row selected and the file tab in
 // front.
 func (a *app) worktreeDiffShown() bool {
-	if !a.worktreeFilesShown() || a.historyDetailsHidden {
+	if !a.worktreeFilesShown() || !a.detailPaneVisible() {
 		return false
 	}
 	if a.detailTabShown() == detailTabFile {

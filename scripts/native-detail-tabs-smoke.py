@@ -100,7 +100,9 @@ def run():
                 auto("wait", "--text", text, "--timeout", "20s", "--settle")
 
             def tabs():
-                return [e for e in controls() if e[1] == "tab"]
+                entries = controls()
+                start = next((i for i, e in enumerate(entries) if e[1] == "tabList" and e[2] == "File details"), None)
+                return [] if start is None else [e for e in entries[start + 1:] if e[1] == "tab"]
 
             def check_file_group_tab(row):
                 auto("focus", row[0], "--settle")
@@ -118,6 +120,7 @@ def run():
                         raise TimeoutError("native automation socket unavailable; see app.log")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
+                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 wait("Tab fixture changes")
                 press("listItem", "2 changes")
@@ -189,6 +192,7 @@ def run():
                 windows = auto("windows")
                 settings_window = next(re.match(r"(w\d+)", line)[1] for line in windows.splitlines() if "SuperGit · Settings" in line)
                 auto("window", settings_window)
+                press("tab", "History")
                 press("checkBox", "Patches")
                 auto("window", "w1")
                 assert len(tabs()) == 1 and tabs()[0][2] == "Summary", "hiding patches did not return to summary"
@@ -212,6 +216,8 @@ def run():
                 print("PASS native legacy detail settings hide/restore patches and file column without repository writes", flush=True)
 
                 press("listItem", "2 changes")
+                press("tab", "Changes")
+                assert any(e[1] == "textField" and e[2] == "Commit summary (required)" for e in controls()), "Changes lost commit editor"
                 press("listItem", paths[0], occurrence=0)
                 wait("+working version")
                 # The file view header follows the two file-list stage buttons.
@@ -231,7 +237,10 @@ def run():
                 wait("+working version")
                 assert fingerprint() == after_stage, "refresh wrote repository data"
                 assert "Draft survives tabs" in auto("snapshot", "--full"), "refresh lost draft"
-                print("PASS native exact-file stage and refresh preserve HEAD, working bytes, unrelated Index entries and draft", flush=True)
+                print("PASS native Changes exact-file stage and refresh preserve HEAD, working bytes, unrelated Index entries and draft", flush=True)
+                auto("screenshot", str(artifacts / "changes-staged.png"))
+                press("tab", "History")
+                press("listItem", "2 changes")
 
                 # A tracked patch exceeds the existing 4 MiB Git output cap.
                 oversized = paths[2]
@@ -283,6 +292,7 @@ def run():
                 # All writes below remain in the disposable fixture. Verify the
                 # actual UI submit path, hook failure, full message and Amend.
                 press("listItem", "3 changes")
+                press("tab", "Changes")
 
                 def fill_commit(summary, body):
                     fields = controls()
@@ -439,6 +449,7 @@ def run():
                 auto("screenshot", str(artifacts / "file-actions-final.png"))
                 print("PASS native Stage All / Unstage All scopes, Discard All cancellation and Index preservation, explicit untracked file deletion", flush=True)
 
+                press("tab", "History")
                 history_before = fingerprint()
                 imported = []
                 for i in range(2401):

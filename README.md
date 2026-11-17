@@ -2,6 +2,8 @@
 
 使用 Go + MyGo 原生 GPU UI 的 Git 桌面客户端。当前为 macOS 开发预览，使用真实仓库与系统 Git，中文界面，无 WebView。`design/` 保留完整产品原型；原型中的进阶功能以本文能力表为准。
 
+新版工作台设计见 [布局对比 PDF](design/workbench-redesign/SuperGit-Design-Variants.pdf)、[UI 开发规范](design/workbench-redesign/UI-Spec.md) 和 [设计交接目录](design/workbench-redesign/README.md)。
+
 ## 运行
 
 本机环境：Go 1.27.3、MyGo v0.8.3、macOS Apple Silicon、Xcode、系统 Git。首次构建下载 Go modules；原生构建需要 CGO 与 macOS SDK。

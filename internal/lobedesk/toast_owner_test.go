@@ -6,7 +6,6 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/feedback"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"supergit/internal/gitrepo"
@@ -18,7 +17,7 @@ func TestShownRepositoryNoticeExitsAfterRootSwitch(t *testing.T) {
 	a.queueFor(toastSettings, "warning", "settings save failed", "")
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
-		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.toastHost(c, toastMain)
 		a.flushNotice(c, toastMain)
 	}, 600, 300)
 	for i := 0; i < 5; i++ {
@@ -55,7 +54,7 @@ func TestQueuedRepositoryNoticeCannotMoveToAnotherRoot(t *testing.T) {
 	a.queue("success", "current result", "")
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
-		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.toastHost(c, toastMain)
 		a.flushNotice(c, toastMain)
 	}, 600, 300)
 	for i := 0; i < 5; i++ {
@@ -73,7 +72,7 @@ func TestShownRepositoryNoticeCannotRunActionAfterRootSwitch(t *testing.T) {
 	a.pushNotice(toastMain, &toastNotice{kind: "success", title: "old action", action: "Undo old action", onAction: func() { acted = true }})
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
-		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.toastHost(c, toastMain)
 		a.flushNotice(c, toastMain)
 	}, 600, 300)
 	for i := 0; i < 5; i++ {
@@ -183,7 +182,7 @@ func TestFlushedNoticeIsShown(t *testing.T) {
 	a.queue("error", "push failed", "denied")
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
-		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.toastHost(c, toastMain)
 		a.flushNotice(c, toastMain)
 	}, 600, 300)
 	for i := 0; i < 5; i++ {
@@ -210,7 +209,7 @@ func TestNoticesShowInTheOrderTheyArrived(t *testing.T) {
 	flushed := false
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
-		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.toastHost(c, toastMain)
 		if !flushed {
 			flushed = true
 			a.flushNotice(c, toastMain)
@@ -242,7 +241,7 @@ func TestFlushedNoticeKeepsItsDetailAndAction(t *testing.T) {
 	})
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
-		feedback.ToastHost(c, feedback.ToastHostProps{})
+		a.toastHost(c, toastMain)
 		a.flushNotice(c, toastMain)
 	}, 600, 300)
 	for i := 0; i < 5; i++ {

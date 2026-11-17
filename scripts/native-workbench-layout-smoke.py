@@ -57,10 +57,10 @@ with tempfile.TemporaryDirectory(prefix="supergit-layout.") as directory:
                 continue
             bounds = re.search(r"bounds=([-0-9.]+),([-0-9.]+),([-0-9.]+)x([-0-9.]+)", match[4])
             if bounds:
-                entries.append((match[2], tuple(float(v) for v in bounds.groups())))
-        history = next(r for role, r in entries if role == "group" and r[0] > 150 and r[1] < 150 and r[2] >= 260 and r[3] > 300)
-        tab_at = next(i for i, (role, _) in enumerate(entries) if role == "tabList")
-        details = next(r for role, r in reversed(entries[:tab_at]) if role == "scroll")
+                entries.append((match[2], tuple(float(v) for v in bounds.groups()), json.loads(match[3]) if match[3] else ""))
+        history = next(r for role, r, _ in entries if role == "group" and r[0] > 150 and r[1] < 150 and r[2] >= 260 and r[3] > 300)
+        tab_at = next(i for i, (role, _, label) in enumerate(entries) if role == "tabList" and label == "File details")
+        details = next(r for role, r, _ in reversed(entries[:tab_at]) if role == "scroll")
         return (history[0], history[2], details[0])
 
     def stop():
@@ -85,6 +85,8 @@ with tempfile.TemporaryDirectory(prefix="supergit-layout.") as directory:
                         raise RuntimeError("layout fixture app did not open automation socket")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
+                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("key", "cmd+1", "--settle")
                 auto("wait", "--text", "Layout fixture commit", "--timeout", "20s", "--settle")
                 return process
 
@@ -127,6 +129,41 @@ with tempfile.TemporaryDirectory(prefix="supergit-layout.") as directory:
             auto("screenshot", str(artifacts / "files-divider-reset.png"))
             (artifacts / "result.json").write_text(json.dumps({"original": original, "dragged": preferred, "restored": restored, "reset": reset, "reset_restored": reset_restored}, indent=2))
             print("PASS native Files divider double-click restores default width and persists across restart", flush=True)
+
+            def press_named(role, label):
+                matches = re.findall(r'^\s*(@e\d+) \[' + role + r'\] ' + re.escape(json.dumps(label)) + r'(?: |$)', auto("snapshot", "--full"), re.MULTILINE)
+                assert len(matches) == 1, f"expected one {role} {label}: {matches}"
+                auto("press", matches[0], "--settle")
+
+            def changes_diff_left():
+                snapshot = auto("snapshot", "--full")
+                prefix = snapshot.split('[tabList] "File details"', 1)[0]
+                scrolls = re.findall(r'\[scroll\].*?bounds=([-0-9.]+),([-0-9.]+),([-0-9.]+)x([-0-9.]+)', prefix)
+                assert scrolls, "missing Changes Diff viewport"
+                return float(scrolls[-1][0])
+
+            press_named("tab", "Changes")
+            draft_field = re.search(r'(@e\d+) \[textField\] "Commit summary \(required\)"', auto("snapshot", "--full"))[1]
+            auto("fill", draft_field, "Changes divider draft", "--settle")
+            changes_original = changes_diff_left()
+            divider = changes_original - 3.5
+            for kind, px in (("move", divider), ("down", divider), ("move", divider + 64), ("up", divider + 64)):
+                auto("pointer", kind, str(px), "260", "--settle")
+            changes_dragged = changes_diff_left()
+            assert changes_dragged > changes_original + 40, "Changes Files divider did not follow pointer"
+            assert "Changes divider draft" in auto("snapshot", "--full"), "Changes drag lost commit draft"
+            assert json.loads(settings.read_text()).get("filesSplit", 0) > 0, "Changes width was not persisted"
+            auto("screenshot", str(artifacts / "changes-divider-dragged.png"))
+            stop()
+            app = None
+            app = launch()
+            press_named("tab", "Changes")
+            changes_restored = changes_diff_left()
+            assert abs(changes_restored - changes_dragged) <= 2, "Changes width did not survive restart"
+            assert (git("rev-parse", "HEAD"), git("ls-files", "--stage"), (repo / "notes.txt").read_bytes()) == before, "Changes divider wrote Git state"
+            auto("screenshot", str(artifacts / "changes-divider-restored.png"))
+            (artifacts / "changes-result.json").write_text(json.dumps({"original": changes_original, "dragged": changes_dragged, "restored": changes_restored}, indent=2))
+            print("PASS native Changes divider pointer drag, retained draft and persisted width after restart", flush=True)
         except Exception:
             try:
                 (artifacts / "failure.snapshot.txt").write_text(auto("snapshot", "--full"))

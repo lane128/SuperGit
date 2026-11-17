@@ -117,6 +117,8 @@ for action in ("Abort", "Skip", "Continue"):
                         raise RuntimeError("native automation unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
+                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("key", "cmd+1", "--settle")
                 wait("Current operation branch")
                 ready()
                 press("In progress: cherry-pick")

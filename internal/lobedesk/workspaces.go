@@ -8,7 +8,6 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/field"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
@@ -23,8 +22,7 @@ func (a *app) worktreesPage(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	a.pageHeader(c, a.t("worktreesAndSubmodules"),
 		a.workspacesSubtitle(len(a.worktrees), len(a.submodules), a.worktreesErr != "", a.submodulesErr != ""), func() {
-			button := action.Button(c, a.t("newWorktree"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-				Disabled(a.busy || a.loading)
+			button := workbenchButton(c, a.t("newWorktree"), buttonNormal, a.busy || a.loading)
 			if button.Clicked() {
 				a.openWorktreeForm()
 			}
@@ -581,7 +579,7 @@ func (a *app) worktreeFormDialogFor(c *ui.Context, owner toastOwner) {
 					pathInput = field.Input(c, &a.worktreeForm.path, field.InputProps{
 						Variant: field.InputFilled, Placeholder: a.t("worktreePath"), Size: theme.Middle,
 					}).Grow(1).Basis(0)
-					if action.Button(c, a.t("chooseParentDir"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+					if workbenchButton(c, a.t("chooseParentDir"), buttonNormal, false).Clicked() {
 						a.chooseWorktreeParent()
 					}
 				})
@@ -606,11 +604,10 @@ func (a *app) worktreeFormDialogFor(c *ui.Context, owner toastOwner) {
 					a.worktreeForm.open = false
 				}
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.End).Children(func() {
-					if action.Button(c, a.t("cancel"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+					if workbenchButton(c, a.t("cancel"), buttonNormal, false).Clicked() {
 						a.worktreeForm.open = false
 					}
-					button := action.Button(c, a.t("create"), action.ButtonProps{Variant: action.Primary, Size: theme.Small}).
-						Disabled(!ready)
+					button := workbenchButton(c, a.t("create"), buttonPrimary, !ready)
 					if ready && button.Clicked() {
 						confirmed = true
 						a.worktreeForm.open = false

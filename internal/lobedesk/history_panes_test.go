@@ -144,9 +144,8 @@ func worktreePageApp() *app {
 	}
 }
 
-// The patch's own header keeps the stage action and the file menu that used
-// to sit in the workspace's diff pane. The file tab above already names the
-// file, so the header adds the folder instead of repeating the name.
+// The patch header keeps the guarded stage action and identifies the original
+// path and comparison even when the active file tab is truncated.
 func TestTheWorkingTreePatchKeepsItsStageAction(t *testing.T) {
 	a := worktreePageApp()
 	a.worktreeSelected = true
@@ -157,11 +156,11 @@ func TestTheWorkingTreePatchKeepsItsStageAction(t *testing.T) {
 	if _, ok := tt.Find(a.t("stageFile")); !ok {
 		t.Fatal("the working tree's patch has no stage action")
 	}
-	if _, ok := tt.Find("dir"); !ok {
-		t.Error("the header does not say which folder the file is in")
+	if _, ok := tt.Find("dir/a.go"); !ok {
+		t.Error("the header does not identify the original path")
 	}
-	if _, ok := tt.Find("a.go"); ok {
-		t.Error("the header repeats the file name the tab already shows")
+	if !tt.HasText(a.t("indexToWorktree")) {
+		t.Error("the header does not identify the comparison baseline")
 	}
 }
 

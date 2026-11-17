@@ -2,8 +2,12 @@ package lobedesk
 
 import "github.com/egoist/mygo/ui"
 
+func (a *app) detailPaneVisible() bool {
+	return a.page == "changes" || a.page == "history" && !a.historyDetailsHidden
+}
+
 func (a *app) detailNavigationAllowed() bool {
-	return a.page == "history" && !a.historyDetailsHidden && !a.historyRefOpen && !a.loading &&
+	return a.detailPaneVisible() && !a.historyRefOpen && !a.loading &&
 		!a.confirm.open && !a.prompt.open && !a.blameOpen && !a.worktreeForm.open && !a.reset.open
 }
 
@@ -68,7 +72,7 @@ func (a *app) focusRequestedDetailTab(tab ui.Element, key detailTabKey) {
 // The focused row, rather than a hidden patch or the commit list, owns file
 // navigation. Opening its neighbor also gives that row focus on the next frame.
 func (a *app) navigateHistoryFile(from detailFileKey, delta int) {
-	if !a.detailNavigationAllowed() || a.detailsChangesHidden {
+	if !a.detailNavigationAllowed() || a.detailsChangesHidden && a.page != "changes" {
 		return
 	}
 	var files []detailFileKey
@@ -106,7 +110,7 @@ func (a *app) navigateHistoryFile(from detailFileKey, delta int) {
 }
 
 func (a *app) wireHistoryFileKeys(row ui.Element, file detailFileKey) {
-	if a.page != "history" {
+	if a.page != "history" && a.page != "changes" {
 		return
 	}
 	for _, step := range []struct {

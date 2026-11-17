@@ -13,9 +13,9 @@ import (
 // while the commit's followed the font preset, so at the large preset the
 // working tree's rows were the tighter of the two.
 const (
-	fileRowBaseH    float32 = 26
+	fileRowBaseH    float32 = 29
 	fileRowGap      float32 = 1
-	fileRowNameSize float32 = 11
+	fileRowNameSize float32 = 12
 	fileRowDirSize  float32 = 9
 )
 

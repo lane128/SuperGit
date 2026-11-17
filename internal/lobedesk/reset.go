@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 	"supergit/internal/gitrepo"
@@ -92,11 +91,11 @@ func (a *app) resetDialogFor(c *ui.Context, owner toastOwner) {
 						{"mixed", a.t("resetMixed")},
 						{"hard", a.t("resetHard")},
 					} {
-						button := action.Button(c, option.label, action.ButtonProps{Variant: action.Default, Size: theme.Small}).
-							Disabled(blocked)
+						role := buttonNormal
 						if option.key == "hard" {
-							button.TextColor(tk.Error)
+							role = buttonDanger
 						}
+						button := workbenchButton(c, option.label, role, blocked)
 						if !blocked && button.Clicked() {
 							chosen = option.key
 						}
@@ -109,7 +108,7 @@ func (a *app) resetDialogFor(c *ui.Context, owner toastOwner) {
 					// Cancel takes the opening focus: the first focusable is
 					// Soft reset, so Enter on a fresh dialog would reset the
 					// repository before the reader chose a mode.
-					if action.Button(c, a.t("cancel"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).
+					if workbenchButton(c, a.t("cancel"), buttonNormal, false).
 						AutoFocus().Clicked() {
 						a.reset.open = false
 					}

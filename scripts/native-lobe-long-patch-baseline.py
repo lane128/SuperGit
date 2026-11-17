@@ -22,7 +22,10 @@ parser.add_argument("--stage-unstage", action="store_true", help="Also unstage t
 parser.add_argument("--selected-lines", type=int, choices=(1, 40), default=1, help="Number of consecutive changed lines to stage; 40 crosses the virtualized viewport")
 parser.add_argument("--line-kind", choices=("del", "add"), default="del", help="Stage first deletions (default) or last additions in the full-replacement fixture")
 parser.add_argument("--discard-undo", action="store_true", help="Discard one changed line through confirmation, then undo and verify exact fixture restoration")
+parser.add_argument("--selection-bar", action="store_true", help="Use the visible Changes selection bar for stage/unstage instead of context menus")
 options = parser.parse_args()
+if options.selection_bar:
+    options.stage_unstage = True
 if options.line_kind == "add" and options.multi_hunk:
     parser.error("Addition staging requires the full-replacement fixture")
 if options.discard_undo:
@@ -49,7 +52,7 @@ artifacts = pathlib.Path(tempfile.mkdtemp(prefix="lobe-long-patch-", dir=build))
 env_git = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 env_git.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
 changed_positions = {0, *range(499, 4000, 500)} if options.multi_hunk else set(range(4000))
-results = {"lines_per_version": 4000, "expected_changed_lines": 2 * len(changed_positions), "worktree": options.worktree, "multi_hunk": options.multi_hunk, "wide_lines": options.wide_lines, "unicode_lines": options.unicode_lines, "font_scale": options.font_scale, "stage_line": options.stage_line, "stage_unstage": options.stage_unstage, "selected_lines": options.selected_lines, "line_kind": options.line_kind, "discard_undo": options.discard_undo, "runs": []}
+results = {"lines_per_version": 4000, "expected_changed_lines": 2 * len(changed_positions), "worktree": options.worktree, "multi_hunk": options.multi_hunk, "wide_lines": options.wide_lines, "unicode_lines": options.unicode_lines, "font_scale": options.font_scale, "stage_line": options.stage_line, "stage_unstage": options.stage_unstage, "selected_lines": options.selected_lines, "line_kind": options.line_kind, "discard_undo": options.discard_undo, "selection_bar": options.selection_bar, "runs": []}
 
 
 def fixture_content(version):
@@ -214,6 +217,8 @@ with tempfile.TemporaryDirectory(prefix="supergit-long-patch.") as directory:
                         raise AssertionError("Native app did not open its automation socket")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
+                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("key", "cmd+1", "--settle")
                 wait("Long patch after")
                 # Start from the small parent, then measure selecting the 8,000-line patch.
                 press("listItem", "Long patch before")
@@ -327,6 +332,8 @@ with tempfile.TemporaryDirectory(prefix="supergit-long-patch.") as directory:
                     (artifacts / f"partial-discard-undo-{number}.snapshot.txt").write_text(auto("snapshot", "--full"))
                     auto("screenshot", str(artifacts / f"partial-discard-undo-{number}.png"))
                 if options.stage_line:
+                    if options.selection_bar:
+                        press("tab", "Changes")
                     # Select a newly acquired gutter after End/Home and any
                     # conservative watcher reload; never reuse an old row ref.
                     adding = options.line_kind == "add"
@@ -347,10 +354,15 @@ with tempfile.TemporaryDirectory(prefix="supergit-long-patch.") as directory:
                         endpoint = next(e for e in entries() if e[1] == "button" and e[2] == stage_endpoint)
                         assert "offscreen" not in endpoint[3], "Range selection did not reveal its offscreen endpoint"
                         auto("focus", endpoint[0], "--settle")
-                    auto("key", "Shift+F10", "--settle")
-                    stage_label = "Stage line" if options.selected_lines == 1 else f"Stage {options.selected_lines} selected lines"
-                    wait(stage_label)
-                    press("menuItem", stage_label)
+                    if options.selection_bar:
+                        wait(f"{options.selected_lines} selected ·")
+                        auto("screenshot", str(artifacts / f"selection-bar-stage-{number}.png"))
+                        press("button", "Stage selection")
+                    else:
+                        auto("key", "Shift+F10", "--settle")
+                        stage_label = "Stage line" if options.selected_lines == 1 else f"Stage {options.selected_lines} selected lines"
+                        wait(stage_label)
+                        press("menuItem", stage_label)
                     wait("Line staged" if options.selected_lines == 1 else "Selected lines staged")
                     original_index = fixture_content("after").encode()
                     if adding:
@@ -396,12 +408,16 @@ with tempfile.TemporaryDirectory(prefix="supergit-long-patch.") as directory:
                                 menu_labels = [e[2] for e in entries() if e[1] == "menuItem"]
                                 raise AssertionError(f"Staged range endpoint not revealed; menu selection: {menu_labels}")
                             auto("focus", endpoint[0], "--settle")
-                        auto("key", "Shift+F10", "--settle")
-                        unstage_label = "Unstage line" if options.selected_lines == 1 else f"Unstage {options.selected_lines} selected lines"
-                        wait(unstage_label)
-                        # Observe the transient notice before a potentially long
-                        # scroll/focus settle consumes its entire display lifetime.
-                        press("menuItem", unstage_label, settle=False)
+                        if options.selection_bar:
+                            wait(f"{options.selected_lines} selected ·")
+                            auto("screenshot", str(artifacts / f"selection-bar-unstage-{number}.png"))
+                            press("button", "Unstage selection", settle=False)
+                        else:
+                            auto("key", "Shift+F10", "--settle")
+                            unstage_label = "Unstage line" if options.selected_lines == 1 else f"Unstage {options.selected_lines} selected lines"
+                            wait(unstage_label)
+                            # Observe the notice before scroll/focus settling.
+                            press("menuItem", unstage_label, settle=False)
                         wait("Line unstaged" if options.selected_lines == 1 else "Selected lines unstaged")
                         assert fingerprint() == before, "Native partial unstage did not restore exact original fixture state"
                         measurement["partial_unstage_exact_fingerprint"] = True

@@ -93,7 +93,7 @@ func containsString(list []string, want string) bool {
 // settings page, under a heading for its group and with the page names
 // heading the page groups.
 func TestTheSettingsCardListsEveryShortcut(t *testing.T) {
-	a := &app{locale: localeChinese}
+	a := &app{locale: localeChinese, settingsSection: "shortcuts"}
 	tt := ui.NewTester(func(c *ui.Context) {
 		a.settingsPage(c)
 	}, 1000, 2000)

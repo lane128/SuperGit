@@ -208,16 +208,25 @@ func TestHistoryRefDotsMatchLaneInkOnLight(t *testing.T) {
 // A row keeps its two-line height while either column is visible; hiding
 // both columns lets it become the compact single-line row.
 func TestHistoryRowHeightFollowsColumns(t *testing.T) {
-	a := &app{}
-	if got := a.historyRowHeight(); got != 50 {
-		t.Fatalf("default row height = %v; want 50", got)
-	}
-	a.hideAuthor = true
-	if got := a.historyRowHeight(); got != 50 {
-		t.Fatalf("row height with only the time = %v; want 50", got)
-	}
-	a.hideTime = true
-	if got := a.historyRowHeight(); got != 36 {
-		t.Fatalf("compact row height = %v; want 36", got)
+	before := uiFontScaleValue()
+	t.Cleanup(func() { setUIFontScale(before) })
+	for _, scale := range []float32{fontScaleSmall, fontScaleStandard, fontScaleLarge} {
+		setUIFontScale(scale)
+		a := &app{}
+		want := 44 * scale
+		if scale == fontScaleSmall {
+			want = 41.6
+		}
+		if got := a.historyRowHeight(); !nearlyEqual(got, want) {
+			t.Fatalf("default row height = %v; want %v", got, want)
+		}
+		a.hideAuthor = true
+		if got := a.historyRowHeight(); !nearlyEqual(got, want) {
+			t.Fatalf("row height with only the time = %v; want %v", got, want)
+		}
+		a.hideTime = true
+		if got := a.historyRowHeight(); !nearlyEqual(got, 34*scale) {
+			t.Fatalf("compact row height = %v; want %v", got, 34*scale)
+		}
 	}
 }

@@ -70,9 +70,14 @@ func TestBothFileListsDrawOneKindOfRow(t *testing.T) {
 			if !ok {
 				t.Fatal("the commit's file row is not laid out")
 			}
-			if want := scaledFont(fileRowBaseH); !nearlyEqual(wrow.Bounds.H, want) || !nearlyEqual(crow.Bounds.H, want) {
+			if want := scaledFont(29); !nearlyEqual(wrow.Bounds.H, want) || !nearlyEqual(crow.Bounds.H, want) {
 				t.Errorf("rows are %v and %v high; want both %v at this preset", wrow.Bounds.H, crow.Bounds.H, want)
 			}
+			reference := ui.NewTester(func(c *ui.Context) {
+				theme.Apply(c)
+				ui.Text(c, "a.go").FontSize(scaledFont(12))
+			}, 300, 120)
+			nameReference, _ := reference.Find("a.go")
 			for _, text := range []struct{ name, label string }{{"a.go", "name"}, {"dir", "folder"}} {
 				w, ok := work.Find(text.name)
 				if !ok {
@@ -81,6 +86,9 @@ func TestBothFileListsDrawOneKindOfRow(t *testing.T) {
 				c, ok := commit.Find(text.name)
 				if !ok {
 					t.Fatalf("the commit's %s is not drawn", text.label)
+				}
+				if text.label == "name" && !nearlyEqual(w.H, nameReference.H) {
+					t.Errorf("file name height %v differs from 12pt reference %v", w.H, nameReference.H)
 				}
 				if !nearlyEqual(w.H, c.H) {
 					t.Errorf("the %s is %v high in the working tree and %v in the commit; want one size", text.label, w.H, c.H)

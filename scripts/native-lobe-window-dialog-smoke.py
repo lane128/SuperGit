@@ -92,6 +92,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-window-dialog.") as directory:
                     raise RuntimeError("native automation socket unavailable")
                 time.sleep(0.05)
             auto("open", "--socket", str(socket))
+            auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
             auto("key", "cmd+1", "--settle")
             wait("w1", "1 change")
             press("w1", "1 change", "listItem")
@@ -101,6 +102,8 @@ with tempfile.TemporaryDirectory(prefix="supergit-window-dialog.") as directory:
             panel = next(re.match(r"w\d+", line)[0] for line in windows.splitlines()
                          if "SuperGit · Settings" in line)
             (artifacts / "windows.txt").write_text(windows)
+
+            press(panel, "About", "tab")
 
             # First confirmation wins across windows; later requests must not
             # replace its action, message, or owner, even with explicit targeting.

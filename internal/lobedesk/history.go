@@ -204,11 +204,11 @@ func (a *app) historyReadStatus(c *ui.Context) {
 		}
 		display.Text(c, label, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 3})
 		if a.historyLoadingMore {
-			if action.Button(c, a.t("cancel"), action.ButtonProps{Variant: action.Text, Size: theme.Small}).Clicked() {
+			if workbenchButton(c, a.t("cancel"), buttonNormal, false).Clicked() {
 				a.pauseHistoryTraversal()
 			}
 		} else if a.historyPaused || a.historyPageErr != "" {
-			if action.Button(c, a.t("retry"), action.ButtonProps{Variant: action.Text, Size: theme.Small}).Disabled(a.loading).Clicked() {
+			if workbenchButton(c, a.t("retry"), buttonNormal, a.loading).Clicked() {
 				a.resetHistoryTraversal()
 				a.loadMoreHistory()
 			}
@@ -570,11 +570,11 @@ func (a *app) fileHistoryReadStatus(c *ui.Context) {
 		}
 		display.Text(c, label, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 3})
 		if a.fileHistoryLoading {
-			if action.Button(c, a.t("cancel"), action.ButtonProps{Variant: action.Text, Size: theme.Small}).Clicked() {
+			if workbenchButton(c, a.t("cancel"), buttonNormal, false).Clicked() {
 				a.pauseFileHistory()
 			}
 		} else if a.fileHistoryPaused || a.fileHistoryErr != "" {
-			if action.Button(c, a.t("retry"), action.ButtonProps{Variant: action.Text, Size: theme.Small}).Disabled(a.loading).Clicked() {
+			if workbenchButton(c, a.t("retry"), buttonNormal, a.loading).Clicked() {
 				a.resetFileHistory()
 				a.fileHistoryErr = ""
 				a.loadFileHistory()
@@ -675,15 +675,16 @@ func commitSubjectNeedsTooltip(width float32, subject string) bool {
 	return float32(len([]rune(subject)))*6.5 > available
 }
 
-// historyRowHeight is the history row's height. Two text lines need the
-// room; with both columns hidden the row drops to a single compact line, so
-// the list shows noticeably more commits without changing the graph's
-// horizontal geometry.
+// historyRowHeight is shared by rendered rows, virtual spacers and graph
+// positioning. The 34pt single-line design grows to 44pt when metadata needs
+// a second line; both follow the text preset to preserve vertical breathing room.
 func (a *app) historyRowHeight() float32 {
 	if a.hideAuthor && a.hideTime {
-		return 36
+		return scaledFont(34)
 	}
-	return 50
+	// Ref capsules keep their 20pt height even at the small text preset.
+	// Leave room for that fixed first line, metadata, the gap and padding.
+	return max(scaledFont(44), refCapsuleHeight+scaledFont(24))
 }
 
 // lead is how many rows sit above the commits in the same list -- the working
@@ -761,19 +762,27 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 				}
 				x := laneXGap(x0, graphRow.Lane, gap)
 				col := graphInk(tk, graph.LaneColor(graphRow.Color))
-				merge := len(commit.Parents) > 1
+				shape := graphNodeShape(commit, a.status.Head, graphRow)
 				inner, ring := graphNodeRing(node, line)
 				mergeSize, dot := graphNodeMerge(node, line), graphNodeDot(node, line)
 				if selected {
 					p.Fill(ui.Rect{X: x - ring, Y: center - ring, W: ring * 2, H: ring * 2}, rowBg, ring)
 					p.Stroke(ui.Rect{X: x - inner, Y: center - inner, W: inner * 2, H: inner * 2}, col, inner, 2)
 				}
-				if merge {
+				switch shape {
+				case "head", "merge":
 					p.Fill(ui.Rect{X: x - mergeSize, Y: center - mergeSize, W: mergeSize * 2, H: mergeSize * 2}, rowBg, mergeSize)
-					// The outline keeps the lane's weight: at the thick preset a
-					// fixed 2-point square read lighter than the line it caps.
 					p.Stroke(ui.Rect{X: x - mergeSize, Y: center - mergeSize, W: mergeSize * 2, H: mergeSize * 2}, col, mergeSize, max(2, line))
-				} else {
+					if shape == "merge" {
+						core := max(float32(1), node*1.4)
+						p.Fill(ui.Rect{X: x - core, Y: center - core, W: core * 2, H: core * 2}, col, core)
+					}
+				case "fork":
+					diamond := (&ui.Path{}).MoveTo(x, center-mergeSize).
+						LineTo(x+mergeSize, center).LineTo(x, center+mergeSize).
+						LineTo(x-mergeSize, center).Close()
+					p.FillPath(diamond, col)
+				default:
 					p.Fill(ui.Rect{X: x - dot, Y: center - dot, W: dot * 2, H: dot * 2}, col, dot)
 				}
 				if graphRow.Boundary {
@@ -784,7 +793,7 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 				}
 			})
 		}
-		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(4).Children(func() {
+		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(scaledFont(2)).Children(func() {
 			titleGap := float32(6)
 			if rowRefsNarrow(listWidth) {
 				titleGap = 4
@@ -923,9 +932,11 @@ func (a *app) historyWorktreeRow(c *ui.Context, index, total int) {
 				lane.Draw(func(p *ui.Painter, r ui.Rect) { a.drawWorktreeNode(p, r, tk, link) })
 			}
 		}
-		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(4).Children(func() {
+		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(scaledFont(2)).Children(func() {
 			display.Text(c, title, display.TextProps{FontSize: scaledFont(12), Strong: selected, Rows: 1})
-			display.Text(c, a.t("commitChanges"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 1})
+			if !a.hideAuthor || !a.hideTime {
+				display.Text(c, a.t("commitChanges"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 1})
+			}
 		})
 	})
 	// The arrows move the selection while this row keeps the focus. Enter and
@@ -992,7 +1003,7 @@ func (a *app) commitFileList(c *ui.Context) {
 	case a.commitFilesErr != "":
 		ui.Column(c).Gap(6).Children(func() {
 			display.Text(c, a.commitFilesErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(11), Rows: 3})
-			if action.Button(c, a.t("retry"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+			if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
 				a.loadCommitDetail(true)
 			}
 		})
@@ -1097,7 +1108,7 @@ func (a *app) commitDiffView(c *ui.Context) {
 				MaxWidth(520).TextAlign(ui.Center)
 			// A failed patch used to be a dead end: tapping the same commit
 			// again returned because its files were already loaded.
-			if action.Button(c, a.t("retry"), action.ButtonProps{Variant: action.Default, Size: theme.Small}).Clicked() {
+			if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
 				a.loadCommitDetail(true)
 			}
 		})

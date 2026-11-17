@@ -14,6 +14,7 @@ import (
 // an entry to buildThemes, nothing else: the settings page, the persisted
 // settings and the history graph read the list from there.
 const (
+	themePaletteSuperGit            = "supergit"
 	themePaletteDefault             = "default"
 	themePaletteCatppuccin          = "catppuccin"
 	themePaletteCatppuccinFrappe    = "catppuccin-frappe"
@@ -40,6 +41,7 @@ var appThemes = buildThemes()
 
 func buildThemes() []appTheme {
 	list := []appTheme{
+		{key: themePaletteSuperGit, label: "paletteSuperGit"},
 		{key: themePaletteDefault, label: "paletteDefault"},
 		{key: themePaletteCatppuccin, label: "paletteCatppuccin"},
 		{key: themePaletteCatppuccinFrappe, label: "paletteCatppuccinFrappe"},
@@ -47,6 +49,12 @@ func buildThemes() []appTheme {
 	}
 	for i := range list {
 		switch list[i].key {
+		case themePaletteSuperGit:
+			list[i].config = theme.NewConfig(supergitTokens(false), supergitTokens(true))
+			list[i].dots = [3]ui.Color{ui.Hex("#8CB4FF"), ui.Hex("#8AD5AA"), ui.Hex("#F2A1AE")}
+			// Keep the proven lane order while the workbench theme is introduced.
+			list[i].lanesLight = catppuccinLatte.laneColors()
+			list[i].lanesDark = catppuccinMocha.laneColors()
 		case themePaletteDefault:
 			list[i].config = theme.Default()
 			list[i].dots = [3]ui.Color{ui.Hex("#1677ff"), ui.Hex("#722ed1"), ui.Hex("#52c41a")}

@@ -123,6 +123,8 @@ with tempfile.TemporaryDirectory(prefix="supergit-force-prune.") as directory:
                     raise RuntimeError("native automation unavailable")
                 time.sleep(0.05)
             auto("open", "--socket", str(socket))
+            auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+            auto("key", "cmd+1", "--settle")
             wait("Force fixture source")
             auto("wait", "--text", "Loading", "--gone", "--timeout", "20s", "--settle")
             force_confirmation(remote_tip)
