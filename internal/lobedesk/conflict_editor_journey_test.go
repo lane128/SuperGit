@@ -17,7 +17,7 @@ func TestConflictEditorWorkbenchJourney(t *testing.T) {
 		width, height := size[0], size[1]
 		t.Run(fmt.Sprintf("%dx%d", int(width), int(height)), func(t *testing.T) {
 			a, done, root := conflictEditorFixture(t)
-			a.page = "changes"
+			a.page = "history"
 			t.Cleanup(func() {
 				a.resetHistoryTraversal()
 				a.resetFileHistory()

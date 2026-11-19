@@ -125,7 +125,7 @@ func (a *app) commitMessageFields(c *ui.Context) {
 	a.syncCommitFields()
 	s := &a.commitFields
 	fontSize, maxRows := float32(13), 8
-	if a.page == "changes" {
+	if a.worktreeSelected {
 		fontSize, maxRows = 12, 3
 	}
 	ui.Column(c.Key("commit-message")).FillWidth().Gap(5).Children(func() {

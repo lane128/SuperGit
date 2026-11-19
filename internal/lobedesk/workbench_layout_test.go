@@ -123,10 +123,12 @@ func TestHistoryDefaultFilesWidthLeavesRoomForPatch(t *testing.T) {
 			t.Errorf("window %.0f: Files %.1f / patch %.1f, want %.0f / ≥%.0f", tc.width, files, patch, tc.files, tc.minPatch)
 		}
 	}
-	a := &app{page: "changes"}
+	// The working tree's row carries the commit box under its files, so its
+	// Files column opens wider than a commit's.
+	a := &app{page: "history", worktreeSelected: true}
 	a.filesSplit.rowWidth = 800
 	if got := a.historyFilesWidth(); math.Abs(float64(got-300)) > 0.5 {
-		t.Errorf("Changes Files width = %.1f, want 300", got)
+		t.Errorf("working tree Files width = %.1f, want 300", got)
 	}
 }
 
@@ -305,8 +307,12 @@ func TestWorkbenchFilesDividerRespondsToPointerDrag(t *testing.T) {
 
 func TestChangesDividerDragSurvivesRestartAndNarrowing(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	a := &app{page: "changes", worktreeSelected: true, themeMode: "light", locale: localeEnglish, commitText: "retained draft"}
-	tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); a.changesPage(c) }, 1000, 600)
+	a := &app{page: "history", worktreeSelected: true, themeMode: "light", locale: localeEnglish, commitText: "retained draft"}
+	tt := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c)
+		width, _ := c.Size()
+		a.historyDetailsPane(c, 1, width)
+	}, 1000, 600)
 	tt.Frame()
 	before := a.historyFilesWidth()
 	x := before + splitterWidth/2
@@ -321,19 +327,24 @@ func TestChangesDividerDragSurvivesRestartAndNarrowing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := &app{page: "changes"}
+	b := &app{page: "history", worktreeSelected: true}
 	b.applySettings(readSettings(path))
 	b.filesSplit.rowWidth = 1000
 	if math.Abs(float64(b.historyFilesWidth()-preferred)) > 1 {
 		t.Fatal("Changes Files preference did not survive restart")
 	}
 	share := b.filesSplit.share
-	b.filesSplit.rowWidth = changesFilesPaneMin + splitterWidth + historyDiffPaneMin
+	// At this width the Files column gives width back so the patch keeps its
+	// own minimum; both floors hold even with a split saved wide.
+	b.sidebarSplit.rowWidth = minWindowWidth
+	filesMin, patchMin := b.historyFilesMinWidth(), b.historyPatchMinWidth()
+	b.filesSplit.rowWidth = filesMin + splitterWidth + patchMin
 	files := b.historyFilesWidth()
 	patch := b.filesSplit.rowWidth - splitterWidth - files
-	if files < changesFilesPaneMin-0.01 || patch < historyDiffPaneMin-0.01 {
+	if files < filesMin-0.01 || patch < patchMin-0.01 {
 		t.Fatalf("narrow Changes lost minimum panes: %v/%v", files, patch)
 	}
+	b.sidebarSplit.rowWidth = 0
 	b.filesSplit.rowWidth = 1000
 	if b.filesSplit.share != share || math.Abs(float64(b.historyFilesWidth()-preferred)) > 1 || a.commitText != "retained draft" {
 		t.Fatal("narrowing lost preferred width or draft")

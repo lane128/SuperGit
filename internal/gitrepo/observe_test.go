@@ -7,6 +7,31 @@ import (
 	"testing"
 )
 
+// The open path parses its rows and hashes its baseline from one porcelain
+// status. Both entry points must therefore produce the same stamp.
+func TestChangeStampFromStatusMatchesTheReadStatus(t *testing.T) {
+	dir := fixture(t)
+	seed(t, dir)
+	write(t, dir, "dirty.txt", "external\n")
+	r := openTest(t, dir)
+	ctx := context.Background()
+	_, status, err := r.StatusWithText(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared, err := r.ChangeStampFromStatus(ctx, status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct, err := r.ChangeStamp(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shared != direct {
+		t.Fatalf("the stamp from the displayed status differs from a fresh one: %q != %q", shared, direct)
+	}
+}
+
 func TestChangeStampTracksRepositoryStateAndIsStable(t *testing.T) {
 	dir := fixture(t)
 	seed(t, dir)

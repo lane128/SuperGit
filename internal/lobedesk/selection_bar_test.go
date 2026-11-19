@@ -9,7 +9,7 @@ import (
 )
 
 func TestFileSelectionBarCountsRangesCopiesAndClears(t *testing.T) {
-	a := &app{page: "changes", locale: localeEnglish, worktreeSelected: true, repo: &gitrepo.Repository{Root: t.TempDir()}, selectedPath: "same.go",
+	a := &app{page: "history", locale: localeEnglish, worktreeSelected: true, repo: &gitrepo.Repository{Root: t.TempDir()}, selectedPath: "same.go",
 		status: gitrepo.Status{Entries: []gitrepo.Entry{{Path: "same.go", Index: 'M', Worktree: 'M'}}},
 		diff: gitrepo.Diff{Text: "selected patch", CanStageHunks: true, Lines: []gitrepo.DiffLine{
 			{Kind: "hunk", Text: "@@ -3 +3 @@"}, {Kind: "del", Old: 3, Text: "-old"}, {Kind: "add", New: 3, Text: "+new"},
@@ -55,7 +55,7 @@ func TestFileSelectionBarCountsRangesCopiesAndClears(t *testing.T) {
 
 func TestOverviewSelectionBarUsesOriginalVersionAndRejectsOldRoot(t *testing.T) {
 	a, callbacks := overviewFixture(t)
-	a.page, a.locale = "changes", localeEnglish
+	a.page, a.locale = "history", localeEnglish
 	a.loadWorktreeOverview()
 	waitOverview(t, a, callbacks)
 	var entry worktreeOverviewEntry

@@ -306,7 +306,9 @@ func (a *app) historyPageAtWidth(c *ui.Context, width float32) {
 	}
 	// Missing from a replacement page does not mean hidden by the search.
 	// Reconcile only once the selected row is loaded or the walk is complete.
-	if !a.worktreeSelected && (a.selectedSHA == "" || a.hasSelectedIn(source) || !more) {
+	// A chosen stash is the details' subject: picking a commit for it would
+	// replace the stash's patch with a commit nobody chose.
+	if a.selectedStash == "" && !a.worktreeSelected && (a.selectedSHA == "" || a.hasSelectedIn(source) || !more) {
 		if sha := historySelection(commits, a.selectedSHA); sha != "" && sha != a.selectedSHA {
 			a.selectCommit(sha)
 		}
@@ -509,10 +511,38 @@ func (a *app) commitList(c *ui.Context) {
 				// role as the commits, so it is read as the list's first row.
 				ui.Column(c).Fill().Role(ui.RoleList).Children(func() {
 					// The pinned row is inset like the rows the scroll area
-					// holds, so its tint lines up with theirs.
+					// holds, so its tint lines up with theirs. Stashes follow
+					// it inside the scroll area, above the commits, the way
+					// Sublime Merge lists them in the log.
 					ui.Column(c).FillWidth().PaddingX(6).Children(func() {
-						a.historyWorktreeRow(c, 0, len(commits)+1)
+						a.historyWorktreeRow(c, 0, len(a.stashes)+len(commits)+1)
 					})
+					// The stashes sit under the working tree's row and above the
+					// commits, as Sublime Merge lists them in the log. Their
+					// column is capped so a long stash list cannot eat the
+					// history; the box scrolls on its own. A failed read takes
+					// the column's place with the way back, because an error
+					// peeled off elsewhere would leave the log looking as if the
+					// repository had no stashes.
+					if a.stashesErr != "" {
+						ui.Column(c).FillWidth().PaddingX(18).PaddingY(8).Gap(4).Shrink(0).Children(func() {
+							display.Text(c, a.stashesLabel(0, true), display.TextProps{Strong: true, FontSize: scaledFont(11)})
+							display.Text(c, a.stashesErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(11), Rows: 2})
+							if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
+								a.reload()
+							}
+						})
+					} else if len(a.stashes) > 0 {
+						ui.Column(c).FillWidth().PaddingX(6).Shrink(0).Children(func() {
+							layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.stashesScroll}, func() {
+								ui.Column(c).FillWidth().Children(func() {
+									for i, stash := range a.stashes {
+										a.stashRow(c, stash, i+2, len(a.stashes)+len(commits)+1)
+									}
+								})
+							}).MaxHeight(historyStashRowsShown * historyStashRowMin)
+						})
+					}
 					if state == historyListEmpty {
 						a.diffPlaceholder(c, lucide.History(), a.t("noHistory"), a.t("noHistoryHint"))
 					} else if state == historyListNoMatch {
@@ -539,7 +569,7 @@ func (a *app) commitList(c *ui.Context) {
 									}
 								}
 								virtualPatchRows(c, a.historyViewport, &a.historyScroll, heights, reveal, func(rowContext *ui.Context, i int) {
-									a.commitRow(rowContext.Key(commits[i].SHA), commits[i], i, 1, len(commits)+1, graph)
+									a.commitRow(rowContext.Key(commits[i].SHA), commits[i], i, len(a.stashes)+1, len(a.stashes)+len(commits)+1, graph)
 								})
 							})
 						}).Grow(1).Basis(0).MinHeight(0)
@@ -782,6 +812,10 @@ const (
 	historyListPadding = 6
 	historyRowPadding  = 8
 	historyRowGraphGap = 4
+	// historyStashRowsShown caps the stash column before it scrolls on its
+	// own, so a long stash list cannot take the commits' room.
+	historyStashRowsShown = 4
+	historyStashRowMin    = 46
 )
 
 // lead is how many rows sit above the commits in the same list -- the working

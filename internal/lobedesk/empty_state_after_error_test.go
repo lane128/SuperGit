@@ -56,15 +56,15 @@ func TestBranchesPageShowsNoEmptyStateAfterAFailedRead(t *testing.T) {
 	}
 }
 
-func TestStashPageShowsNoEmptyStateAfterAFailedRead(t *testing.T) {
+func TestTheHistoryListShowsNoEmptyStateAfterAFailedStashRead(t *testing.T) {
 	const err = "fatal: cannot read stashes"
 	a := &app{locale: localeChinese, stashesErr: err}
-	tt := pageTester(a, a.stashPage)
+	tt := pageTester(a, a.historyPage)
 	if _, ok := tt.Find(err); !ok {
-		t.Error("the page hides the read error")
+		t.Error("the list hides the read error")
 	}
 	if _, ok := tt.Find(a.t("noStashes")); ok {
-		t.Error("the page offers an empty stash list beside the error")
+		t.Error("the list offers an empty stash list beside the error")
 	}
 	if _, ok := tt.AccessByRole(ui.RoleButton, a.t("retry")); !ok {
 		t.Error("the failed stash read offers no retry")

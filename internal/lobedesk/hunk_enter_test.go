@@ -17,7 +17,7 @@ import (
 )
 
 func TestHunkEnterLeavesTextInputAlone(t *testing.T) {
-	a := &app{ctx: canceledContext(), runOnMain: func(func()) {}, locale: localeEnglish, page: "changes", repo: &gitrepo.Repository{Root: t.TempDir()}, worktreeSelected: true, selectedPath: "a.txt", status: gitrepo.Status{Entries: []gitrepo.Entry{{Path: "a.txt", Index: '.', Worktree: 'M'}}}, diff: gitrepo.Diff{CanStageHunks: true, Hunks: []gitrepo.Hunk{{Patch: "original patch"}}}}
+	a := &app{ctx: canceledContext(), runOnMain: func(func()) {}, locale: localeEnglish, page: "history", repo: &gitrepo.Repository{Root: t.TempDir()}, worktreeSelected: true, selectedPath: "a.txt", status: gitrepo.Status{Entries: []gitrepo.Entry{{Path: "a.txt", Index: '.', Worktree: 'M'}}}, diff: gitrepo.Diff{CanStageHunks: true, Hunks: []gitrepo.Hunk{{Patch: "original patch"}}}}
 	a.detailTabs().Open(detailFileKey{Path: "a.txt"})
 	value := "retained commit draft"
 	tt := ui.NewTester(func(c *ui.Context) {
@@ -65,7 +65,7 @@ func TestHunkEnterRespectsCurrentTargetAndGuards(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			a := &app{ctx: canceledContext(), runOnMain: func(func()) {}, locale: localeEnglish, page: "changes", repo: &gitrepo.Repository{Root: t.TempDir()}, worktreeSelected: true, selectedPath: "a.txt", status: gitrepo.Status{Entries: []gitrepo.Entry{{Path: "a.txt", Index: '.', Worktree: 'M'}}}, diff: gitrepo.Diff{CanStageHunks: true, Hunks: []gitrepo.Hunk{{Patch: "original patch"}}}}
+			a := &app{ctx: canceledContext(), runOnMain: func(func()) {}, locale: localeEnglish, page: "history", repo: &gitrepo.Repository{Root: t.TempDir()}, worktreeSelected: true, selectedPath: "a.txt", status: gitrepo.Status{Entries: []gitrepo.Entry{{Path: "a.txt", Index: '.', Worktree: 'M'}}}, diff: gitrepo.Diff{CanStageHunks: true, Hunks: []gitrepo.Hunk{{Patch: "original patch"}}}}
 			a.detailTabs().Open(detailFileKey{Path: "a.txt"})
 			line := gitrepo.DiffLine{Kind: "hunk", Text: "@@ -1 +1 @@", Hunk: 0}
 			globalActivations := 0
@@ -157,7 +157,7 @@ func TestHunkEnterAppliesOnlyFocusedReplacement(t *testing.T) {
 			if len(a.diff.Hunks) != 2 {
 				t.Fatalf("expected two hunks: %+v", a.diff.Hunks)
 			}
-			a.page, a.locale, a.worktreeSelected = "changes", localeEnglish, true
+			a.page, a.locale, a.worktreeSelected = "history", localeEnglish, true
 			a.selectedPath, a.selectedStaged = "hunks.txt", staged
 			a.detailTabs().Open(detailFileKey{Path: "hunks.txt", Staged: staged})
 			var line gitrepo.DiffLine

@@ -245,3 +245,34 @@ func TestHeadSubjectOfAnEmptyRepositoryIsEmpty(t *testing.T) {
 		t.Errorf("HeadSubject of an empty repository = %q, %v; want empty, no error", got, err)
 	}
 }
+
+// The default list anchors on the checked-out branch: its tip is the first
+// row, so its node sits at the top of the graph instead of being pushed down
+// by a newer branch. Nothing is shown above it.
+func TestHistoryPageAnchorsTheCheckedOutCommitAtTheTop(t *testing.T) {
+	dir := fixture(t)
+	seed(t, dir)
+	git(t, dir, "checkout", "-q", "-b", "ahead")
+	write(t, dir, "ahead.txt", "newer\n")
+	git(t, dir, "add", "--", "ahead.txt")
+	git(t, dir, "commit", "-m", "newer branch commit")
+	git(t, dir, "checkout", "-q", "main")
+	head := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	r := openTest(t, dir)
+	page, err := r.HistoryPage(context.Background(), nil, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Tips[0] != head {
+		t.Fatalf("tips do not start with HEAD: %v (HEAD %s)", page.Tips, head)
+	}
+	if len(page.Commits) == 0 || page.Commits[0].SHA != head {
+		t.Fatalf("first row is %v, want the checked-out commit %s", page.Commits, head)
+	}
+	if got := len(page.Commits); got != 2 {
+		t.Fatalf("anchoring lost or duplicated rows: %d", got)
+	}
+	if page.Commits[1].Subject != "newer branch commit" {
+		t.Fatalf("other refs must follow below the anchor: %#v", page.Commits[1])
+	}
+}

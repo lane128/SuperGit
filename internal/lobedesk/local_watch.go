@@ -37,8 +37,20 @@ type localWatchRequest struct {
 // selected file invalidate the overview. Do not walk ignored or untracked trees.
 func readLocalWatchStamp(parent context.Context, repo *gitrepo.Repository, entries []gitrepo.Entry) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, localBackgroundInterval)
+	status, err := repo.StatusText(ctx)
+	cancel()
+	if err != nil {
+		return "", err
+	}
+	return readLocalWatchStampWithStatus(parent, repo, entries, status)
+}
+
+// readLocalWatchStampWithStatus takes the porcelain status an open already
+// read for display, so the slowest probe read is shared rather than repeated.
+func readLocalWatchStampWithStatus(parent context.Context, repo *gitrepo.Repository, entries []gitrepo.Entry, status string) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, localBackgroundInterval)
 	defer cancel()
-	stamp, err := repo.ChangeStamp(ctx)
+	stamp, err := repo.ChangeStampFromStatus(ctx, status)
 	if err != nil {
 		return "", err
 	}

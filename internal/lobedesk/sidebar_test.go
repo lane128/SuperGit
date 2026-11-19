@@ -100,6 +100,21 @@ func TestWithoutARepositoryTheSidebarOpensNoPage(t *testing.T) {
 	}
 }
 
+// Without a repository the Welcome window is not a checkout: the sidebar must
+// not keep a repository header (avatar and name) above the pages for a
+// repository that is not open.
+func TestTheSidebarHasNoRepositoryHeaderWithoutARepository(t *testing.T) {
+	for _, language := range []locale{localeEnglish, localeChinese} {
+		t.Run(string(language), func(t *testing.T) {
+			a := &app{locale: language}
+			tt := sidebarTester(a)
+			if _, ok := tt.Find("SuperGit"); ok {
+				t.Fatal("the sidebar names a workspace when no repository is open")
+			}
+		})
+	}
+}
+
 // canceledContext stands in for the app's context in tests: the reads it
 // starts fail at once rather than reaching for a repository that is not there.
 func canceledContext() context.Context {

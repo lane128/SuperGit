@@ -26,7 +26,10 @@ func TestBlankRepositoryTabJourney(t *testing.T) {
 		splitCommitGit(t, bRoot, "tag", tag)
 	}
 	fingerprintB = repositoryOpenFingerprint(t, bRoot)
-	a.locale, a.page, a.showGraph = localeEnglish, "changes", true
+	a.locale, a.page, a.showGraph = localeEnglish, "history", true
+	// Opening a repository selects the working tree's row, whose docked commit
+	// box is the editor the journey types into.
+	a.worktreeSelected = true
 	callbacks := make(chan func(), 128)
 	a.runOnMain = func(fn func()) { callbacks <- fn }
 	var selected string
@@ -130,7 +133,9 @@ func TestBlankRepositoryTabJourney(t *testing.T) {
 		t.Fatal("valid choice did not fill the blank in place")
 	}
 	const bSummary = "Bravo draft summary"
-	click(ui.RoleTab, b.t("changes"))
+	// The commit editor lives in the working tree's row, which a repository
+	// does not open on; there is no separate Changes page to click.
+	selectWorktreeRow(t, view, b)
 	focusCommitField(t, view, b.t("commitSummary"))
 	view.Type(bSummary)
 	click(ui.RoleTab, filepath.Base(aRoot))
@@ -142,7 +147,6 @@ func TestBlankRepositoryTabJourney(t *testing.T) {
 		t.Fatal("returning to Bravo lost its draft")
 	}
 
-	click(ui.RoleTab, b.t("history"))
 	click(ui.RoleOption, subject)
 	click(ui.RoleOption, "base.txt")
 	head := b.selectedSHA

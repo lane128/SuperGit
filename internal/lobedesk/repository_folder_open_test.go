@@ -75,6 +75,7 @@ func TestRepositoryFolderHandoffWaitsForRestoreAndBusyTab(t *testing.T) {
 		t.Fatal("cold handoff discarded a saved tab")
 	}
 	c := tabs.active
+	selectWorktreeRow(t, view, c)
 	focusCommitField(t, view, c.t("commitSummary"))
 	view.Type("Keep the active draft during folder handoff")
 	c.busy = true

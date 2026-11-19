@@ -12,9 +12,10 @@ import (
 )
 
 func commitFormTester(a *app) *ui.Tester {
+	a.worktreeSelected = true
 	return ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
-		ui.Column(c).Width(420).Height(560).Children(func() { a.commitForm(c) })
+		ui.Column(c).Width(420).Height(560).Children(func() { a.worktreeCommitPane(c) })
 	}, 420, 560)
 }
 

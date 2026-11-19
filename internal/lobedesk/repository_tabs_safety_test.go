@@ -145,6 +145,7 @@ func TestRepositoryTabsDismissOtherRepositoryUndo(t *testing.T) {
 func TestRepositoryTabsFailedRefreshKeepsAmendDisabled(t *testing.T) {
 	tabs, a, b, tt, callbacks := repositoryTabsSafetyFixture(t)
 	root := b.repo.Root
+	selectWorktreeRow(t, tt, b)
 	clickRepositoryTabsControl(t, tt, ui.RoleCheckBox, b.t("amendLast"))
 	b.commitText = "Draft to keep on read failure"
 	clickRepositoryTabsControl(t, tt, ui.RoleTab, filepath.Base(a.repo.Root))
@@ -292,6 +293,7 @@ func TestRepositoryTabsRefuseAmendAfterExternalBranchSwitch(t *testing.T) {
 	root := b.repo.Root
 	selectionGit(t, root, "branch", "other") // Same SHA, different symbolic HEAD.
 	originalHead := selectionGit(t, root, "rev-parse", "refs/heads/other")
+	selectWorktreeRow(t, tt, b)
 	clickRepositoryTabsControl(t, tt, ui.RoleCheckBox, b.t("amendLast"))
 	b.commitText = "First branch amend draft"
 	tt.Frame()

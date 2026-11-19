@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -218,10 +219,12 @@ type app struct {
 	// drag holds near its edge.
 	commitInfoScroll    ui.ScrollState
 	commitFilesScroll   ui.ScrollState
-	changesCommitScroll ui.ScrollState
 	commitFilesViewport ui.Rect
 	commitDiffScroll    ui.ScrollState
 	commitDiffViewport  ui.Rect
+	// worktreeCommitScroll scrolls the working tree's commit form above its
+	// pinned action footer.
+	worktreeCommitScroll ui.ScrollState
 	// A pane can be hidden from the settings page; hiding the files and the
 	// patch leaves the Summary with the whole width.
 	detailsInfoHidden    bool
@@ -487,7 +490,7 @@ type app struct {
 func Run(initialPath string) error {
 	defaults := defaultSettings()
 	a := &app{
-		page:             "changes",
+		page:             "history",
 		locale:           locale(defaults.Language),
 		themeMode:        defaults.Theme,
 		palette:          defaults.Palette,
@@ -780,6 +783,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 			openErr = fmt.Errorf("checkout root changed from %q to %q", previousRoot, repo.Root)
 		}
 		var status gitrepo.Status
+		var statusText string
 		var localStamp string
 		var headMessage string
 		var identity commitIdentityState
@@ -795,36 +799,54 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 		var operationMessage string
 		var statusErr, historyErr, branchesErr, remoteBranchesErr, stashesErr, tagsErr, worktreesErr, submodulesErr error
 		if openErr == nil {
-			// Establish the baseline before reading displayed data. A save during
-			// the read must remain newer than this baseline for the next probe.
-			// Newly dirty paths may cause one conservative extra refresh.
-			localStamp, _ = readLocalWatchStamp(a.ctx, repo, watchEntries)
-			status, statusErr = repo.Status(a.ctx)
-			if statusErr == nil {
-				// Read apart from the page: the amend box acts on HEAD even
-				// when the list is showing another branch.
-				if status.Head != "" {
-					headMessage, _ = repo.CommitMessage(a.ctx, status.Head)
-					headMessage = strings.TrimSuffix(headMessage, "\n")
-				}
-				identity = readCommitIdentity(a.ctx, repo, status.Head != "")
+			var reads sync.WaitGroup
+			// The commit list does not depend on the working tree, so it starts
+			// beside the status read rather than after it. On a repository whose
+			// history walk is the slow part, that walk now overlaps the status
+			// scan instead of adding to it.
+			reads.Go(func() {
 				if pinned != "" {
 					history, historyErr = repo.HistoryPage(historyCtx, []string{pinned}, 0, historyLimit)
 				} else {
 					history, historyErr = repo.ReadHistory(historyCtx, historyLimit)
 				}
-				branches, branchesErr = repo.Branches(a.ctx)
-				remoteBranches, remoteBranchesErr = repo.RemoteBranches(a.ctx)
-				remotes, _ = repo.Remotes(a.ctx)
-				stashes, stashesErr = repo.Stashes(a.ctx)
-				tags, tagsErr = repo.Tags(a.ctx)
-				worktrees, worktreesErr = repo.Worktrees(a.ctx)
-				submodules, submodulesErr = repo.Submodules(a.ctx)
-				operation, _ = repo.Operation(a.ctx)
-				if commitOperation(operation.Kind) {
-					operationMessage, _ = repo.OperationMessage(a.ctx)
-				}
+			})
+			// The displayed rows and the watcher's baseline are read from one
+			// porcelain status. Reading it twice made a large open pay for the
+			// slowest command twice.
+			status, statusText, statusErr = repo.StatusWithText(a.ctx)
+			if statusErr == nil {
+				// Establish the baseline from the same observation the window
+				// shows. A save after it is newer than the baseline and wakes
+				// the watcher; a save before it is already on screen.
+				localStamp, _ = readLocalWatchStampWithStatus(a.ctx, repo, watchEntries, statusText)
+				// The remaining reads are independent of each other: run them
+				// together so opening a large repository waits for the slowest
+				// one instead of their sum.
+				reads.Go(func() {
+					// Read apart from the page: the amend box acts on HEAD even
+					// when the list is showing another branch.
+					if status.Head != "" {
+						headMessage, _ = repo.CommitMessage(a.ctx, status.Head)
+						headMessage = strings.TrimSuffix(headMessage, "\n")
+					}
+				})
+				reads.Go(func() { identity = readCommitIdentity(a.ctx, repo, status.Head != "") })
+				reads.Go(func() { branches, branchesErr = repo.Branches(a.ctx) })
+				reads.Go(func() { remoteBranches, remoteBranchesErr = repo.RemoteBranches(a.ctx) })
+				reads.Go(func() { remotes, _ = repo.Remotes(a.ctx) })
+				reads.Go(func() { stashes, stashesErr = repo.Stashes(a.ctx) })
+				reads.Go(func() { tags, tagsErr = repo.Tags(a.ctx) })
+				reads.Go(func() { worktrees, worktreesErr = repo.Worktrees(a.ctx) })
+				reads.Go(func() { submodules, submodulesErr = repo.Submodules(a.ctx) })
+				reads.Go(func() {
+					operation, _ = repo.Operation(a.ctx)
+					if commitOperation(operation.Kind) {
+						operationMessage, _ = repo.OperationMessage(a.ctx)
+					}
+				})
 			}
+			reads.Wait()
 		}
 
 		var alias string
@@ -986,7 +1008,11 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 				a.window.SetTitle("SuperGit · " + filepath.Base(repo.Root))
 			}
 			if reset {
-				a.worktreeSelected = a.page == "changes"
+				// A repository opens on its newest commit, whose row is the
+				// graph's first vertex; the working tree's live changes sit
+				// above it as one more row of the same list. reconcileSelection
+				// picks the commit once the rows land.
+				a.worktreeSelected = false
 				a.detailContexts = detailContextsState{}
 				a.detailTabStrip = ui.ScrollState{}
 				a.selectedPath = ""
@@ -1169,12 +1195,9 @@ func (a *app) reconcileSelection() {
 			a.stashDiff = gitrepo.Diff{}
 		}
 	}
-	if a.selectedStash == "" && len(a.stashes) > 0 && a.stashesErr == "" {
-		// A failed read may have left part of the list; picking its first row
-		// would load a patch the error says cannot be vouched for.
-		a.selectedStash = a.stashes[0].SHA
-		a.stashDiff = gitrepo.Diff{}
-	}
+	// A stash is the subject only when the reader picks it: the list puts the
+	// working tree and the commits first, and auto-picking a stash on every
+	// reload would describe a row that is not the one selected above it.
 
 	if a.fileFilter == "" && a.selectedSHA != "" {
 		found := false
@@ -1199,6 +1222,12 @@ func (a *app) reconcileSelection() {
 		a.commitFiles = nil
 		a.commitPath = ""
 		a.resetCommitDiff()
+	}
+	// A repository with no commits has no row but the working tree, and its
+	// commit editor is where the first commit comes from.
+	if a.fileFilter == "" && a.historyErr == "" && a.selectedSHA == "" && a.selectedStash == "" &&
+		len(a.commits) == 0 && !a.worktreeSelected {
+		a.worktreeSelected = true
 	}
 }
 
@@ -1344,6 +1373,11 @@ func (a *app) selectWorktree() {
 	a.messageCommitRequest = nil
 	a.messageMenuGeneration++
 	a.pendingJumpSHA = ""
+	if a.selectedStash != "" {
+		// The stash stops being the details' subject; selecting a commit or
+		// the working tree leaves it in the list, unselected.
+		a.clearStashDetail()
+	}
 	if a.worktreeSelected {
 		return
 	}
@@ -1355,7 +1389,9 @@ func (a *app) selectWorktree() {
 	a.commitPath = ""
 	a.commitMessage = ""
 	a.commitMessageErr = ""
-	a.commitFilesScroll.Y = 0
+	// The Files column remembers where each subject's list stood; choosing the
+	// working tree puts its own position back rather than the commit's.
+	a.commitFilesScroll = ui.ScrollState{X: a.detailTabs().FilesScroll.X, Y: a.detailTabs().FilesScroll.Y}
 	// The file the reader already had stays open, so choosing the working
 	// tree changes what the panes describe, not which file the workspace
 	// shows. Only when that file is gone does the first working file take
@@ -1375,6 +1411,9 @@ func (a *app) selectWorktree() {
 func (a *app) selectCommit(sha string) {
 	if sha == "" {
 		return
+	}
+	if a.selectedStash != "" {
+		a.clearStashDetail()
 	}
 	a.messageCommitRequest = nil
 	a.messageMenuGeneration++
@@ -1399,7 +1438,9 @@ func (a *app) selectCommit(sha string) {
 	a.resetCommitDiff()
 	a.commitDiffErr = ""
 	a.commitInfoScroll.Y = 0
-	a.commitFilesScroll.Y = 0
+	// The Files column puts the historical list's own position back, as it
+	// does when the working tree takes the details.
+	a.commitFilesScroll = ui.ScrollState{X: a.detailTabs().FilesScroll.X, Y: a.detailTabs().FilesScroll.Y}
 	a.commitDiffScroll.Y = 0
 	a.clearCommitSelection()
 	a.applyDetailTab(detailTabKey{})

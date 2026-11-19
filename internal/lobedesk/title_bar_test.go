@@ -16,24 +16,24 @@ func titleBarTester(a *app) *ui.Tester {
 	}, 900, 44)
 }
 
-func TestTitleBarPagesStayBesideRepositoryActions(t *testing.T) {
+// History is the window: the title bar names the branch and keeps the
+// repository actions, and no Changes/History/Stash tab splits it up.
+func TestTitleBarKeepsRepositoryActionsWithoutPageTabs(t *testing.T) {
 	for _, language := range []locale{localeChinese, localeEnglish} {
 		for _, scale := range []float32{fontScaleStandard, fontScaleLarge} {
 			setUIFontScale(scale)
-			a := &app{locale: language, page: "changes", repo: &gitrepo.Repository{Root: t.TempDir()},
+			a := &app{locale: language, page: "history", repo: &gitrepo.Repository{Root: t.TempDir()},
 				status:   gitrepo.Status{Branch: "feature/a-long-current-branch", Ahead: 12, Behind: 34},
 				branches: []gitrepo.Branch{{Name: "feature/a-long-current-branch", Current: true}},
 				remotes:  []gitrepo.Remote{{Name: "origin"}}, busy: true,
 				operation: gitrepo.Operation{Kind: "cherry-pick"}}
 			tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); ui.Column(c).Fill().Children(func() { a.titleBar(c) }) }, 900, 44) // Reserve 80 DIP for native window controls at 980 DIP.
-			var end float32
 			for _, page := range []string{"changes", "history", "stash"} {
-				tab, ok := tt.AccessByRole(ui.RoleTab, a.t(page))
-				if !ok || tab.Bounds.W <= 0 || tab.Bounds.X < end || tab.Bounds.Y+tab.Bounds.H > 44 {
-					t.Fatalf("%s/%v: page tab unavailable in title bar: %s %+v", language, scale, page, tab)
+				if tab, ok := tt.AccessByRole(ui.RoleTab, a.t(page)); ok {
+					t.Fatalf("%s/%v: the title bar still offers a %q page tab: %+v", language, scale, page, tab.Bounds)
 				}
-				end = tab.Bounds.X + tab.Bounds.W
 			}
+			var end float32
 			for _, control := range []struct {
 				role  ui.Role
 				label string

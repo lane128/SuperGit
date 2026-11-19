@@ -58,7 +58,7 @@ func TestHistoryMergeFoldRevealsSearchedOrSelectedCommit(t *testing.T) {
 		t.Fatal("expected a complete, eligible branch to start folded")
 	}
 	a.selectedSHA = "main"
-	a.moveCommitSelection(1)
+	a.moveHistorySelection(1)
 	if a.selectedSHA != "base" || len(a.projectHistoryMerges(a.commits)) != 3 {
 		t.Fatalf("list navigation should skip folded commits, got %q", a.selectedSHA)
 	}

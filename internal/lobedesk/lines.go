@@ -41,7 +41,7 @@ func (a *app) lineIndices() []int {
 // extend it keeps the anchor and grows or shrinks the range, as Shift+arrows
 // do in an editor; without it the new row becomes the only selection.
 func (a *app) moveLineSelection(delta int, extend bool) bool {
-	if (a.page == "history" || a.page == "changes") && !a.worktreeDiffShown() {
+	if a.page == "history" && !a.worktreeDiffShown() {
 		return false
 	}
 	if len(a.lineSel) == 0 {

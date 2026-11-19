@@ -21,7 +21,7 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 	a, _, root := worktreeApp(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	a.ctx = ctx
-	a.locale, a.page, a.worktreeSelected = localeEnglish, "changes", true
+	a.locale, a.page, a.worktreeSelected = localeEnglish, "history", true
 	callbacks := make(chan func(), 128)
 	a.runOnMain = func(fn func()) { callbacks <- fn }
 	t.Cleanup(func() {
@@ -101,7 +101,7 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 			case fn := <-callbacks:
 				fn()
 			case <-timer.C:
-				t.Fatalf("stash journey did not settle: page=%s busy=%v loading=%v diff=%v commitFiles=%v commitDiff=%v stashDiff=%v overview=%+v", a.page, a.busy, a.loading, a.diffLoading, a.commitFilesLoading, a.commitDiffLoading, a.stashDiffLoading, a.overviewEntries)
+				t.Fatalf("stash journey did not settle: page=%s busy=%v loading=%v diff=%v commitFiles=%v commitDiff=%v stashDiff=%v selectedStash=%q seq=%d err=%q overview=%+v", a.page, a.busy, a.loading, a.diffLoading, a.commitFilesLoading, a.commitDiffLoading, a.stashDiffLoading, a.selectedStash, a.stashSeq, a.stashDiffErr, a.overviewEntries)
 			}
 		}
 		for range 3 {
@@ -120,6 +120,14 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 		t.Helper()
 		node := control(role, label)
 		tt.ClickAt(node.Bounds.X+node.Bounds.W/2, node.Bounds.Y+node.Bounds.H/2)
+	}
+	clickWorktree := func() {
+		t.Helper()
+		label := a.t("noChangesShort")
+		if n := len(a.status.Entries); n > 0 {
+			label = a.changesLabel(n)
+		}
+		click(ui.RoleOption, label)
 	}
 	shot := func(name string) {
 		t.Helper()
@@ -145,9 +153,8 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 	}
 	wait()
 	shot("01-mixed-dirty-worktree")
-	// Cancel the actual stash prompt before performing the save.
-	click(ui.RoleTab, a.t("stash"))
-	wait()
+	// The stash action sits in the title bar; the working tree's row is
+	// already the subject, so there is no page to switch to first.
 	openSave := func() {
 		t.Helper()
 		click(ui.RoleMenuButton, a.t("saveStashAction"))
@@ -183,8 +190,6 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 	if got := splitCommitGit(t, root, "show", stash.SHA+"^3:scratch.txt"); got != "untracked bytes\n" {
 		t.Fatalf("stash untracked=%q", got)
 	}
-	click(ui.RoleTab, a.t("history"))
-	wait()
 	node := control(ui.RoleOption, "Incoming branch change")
 	tt.RightClickAt(node.Bounds.X+4, node.Bounds.Y+node.Bounds.H/2)
 	label := ""
@@ -208,8 +213,6 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 	if got := strings.TrimSpace(splitCommitGit(t, root, "show", "-s", "--format=%P", "HEAD")); got != local+" "+incoming {
 		t.Fatalf("merge parents=%q", got)
 	}
-	click(ui.RoleTab, a.t("stash"))
-	wait()
 	click(ui.RoleOption, stashTitle(stash))
 	wait()
 	if a.stashDiffErr != "" || a.stashDiff.Text == "" {
@@ -259,7 +262,7 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 		if read("notes.txt") != "staged notes\nunstaged notes\n" || read("scratch.txt") != "untracked bytes\n" {
 			t.Fatal("Pop lost independent dirty files")
 		}
-		click(ui.RoleTab, a.t("changes"))
+		clickWorktree()
 		wait()
 		commit, ok := tt.AccessByRole(ui.RoleButton, a.t("commit"))
 		if !ok || !commit.Disabled {
@@ -404,7 +407,7 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 	if !failure {
 		t.Fatalf("repeated Apply did not preserve actual Git failure: %+v", a.notices[toastMain])
 	}
-	click(ui.RoleTab, a.t("changes"))
+	clickWorktree()
 	wait()
 	shot("05-restored-mixed-worktree")
 }

@@ -34,7 +34,9 @@ func TestRepositorySessionRestoresOrderedCheckouts(t *testing.T) {
 	if want := []string{a.repo.Root, b.repo.Root}; !slices.Equal(got.Roots, want) || got.Active != b.repo.Root {
 		t.Fatalf("restored %+v, want ordered roots %v and active %q", got, want, b.repo.Root)
 	}
-	if reopened.active.commitText != "" || reopened.active.loadErr != "" || !reopened.active.worktreeSelected {
+	// A restored checkout opens on its newest commit, the same as a freshly
+	// opened repository.
+	if reopened.active.commitText != "" || reopened.active.loadErr != "" || reopened.active.selectedSHA == "" {
 		t.Fatal("active checkout was not loaded into a clean session")
 	}
 	reopened.saveSession()
@@ -46,7 +48,7 @@ func TestRepositorySessionRestoresOrderedCheckouts(t *testing.T) {
 	for reopened.active.loading {
 		runContinuation(t, callbacks)
 	}
-	if reopened.active.status.Head == "" || !reopened.active.worktreeSelected {
+	if reopened.active.status.Head == "" || reopened.active.selectedSHA == "" {
 		t.Fatal("restored inactive checkout was not loaded on selection")
 	}
 	reopened.saveSession()

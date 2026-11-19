@@ -617,13 +617,3 @@ func (a *app) repoName() string {
 	}
 	return path.Base(a.repo.Root)
 }
-
-func stagedTagColor(n int) string {
-	if n > 0 {
-		return "success"
-	}
-	// Zero is not a status color. The "gray" family's active ink is a fixed
-	// mid-gray from Lobe (2.2:1 on its dark fill), so an empty badge asks for
-	// the same neutral filled tag as the file counts, which follows the theme.
-	return ""
-}

@@ -14,17 +14,9 @@ import (
 	"supergit/internal/gitrepo"
 )
 
-const (
-	stashPaneWidth = 300
-	// The list and the selected stash's diff keep at least these widths when
-	// the divider between them is dragged.
-	stashSplitMinList   = 240
-	stashSplitMinDetail = 380
-	// stashOpeningRoom is the width assumed on the first frame, before the
-	// row has been laid out; without it the list would take the whole page
-	// for a frame and the detail would vanish.
-	stashOpeningRoom = 940
-)
+// The stash list is a column of the History list now, so the page's split
+// constants went with it. The saved StashSplit preference stays readable for
+// settings files written by older builds.
 
 func (a *app) stashesLabel(n int, failed bool) string {
 	if failed {
@@ -49,76 +41,10 @@ func (a *app) clearStashDetail() {
 	a.selectedStash = ""
 	a.stashDiff = gitrepo.Diff{}
 	a.stashDiffErr = ""
+	// The patch read in flight belongs to the row being dropped; its result
+	// is discarded by the sequence, and the spinner must stop with it.
+	a.stashDiffLoading = false
 	a.stashSeq++
-}
-
-func (a *app) stashPage(c *ui.Context) {
-	tk := theme.TokensOf(c)
-	a.pageHeader(c, a.t("stashes"), a.stashesLabel(len(a.stashes), a.stashesErr != ""), func() {
-		a.stashSaveMenu(c)
-	})
-	row := ui.Row(c).Grow(1).Basis(0).MinHeight(0).AlignItems(ui.Stretch)
-	// The first frame has no width yet; the opening width stands in so the
-	// two panes do not collapse before the layout lands.
-	room := row.Bounds().W
-	if room <= 0 {
-		room = stashOpeningRoom
-	}
-	a.stashSplit.rowWidth = room
-	row.Children(func() {
-		ui.Column(c).Grow(a.stashShare()).Basis(0).MinWidth(0).AlignSelf(ui.Stretch).Children(func() {
-			// A ring inside the pane marks the focused list without touching
-			// the divider on the right.
-			list := ui.Column(c).Fill().Focusable()
-			ring := ui.Transparent
-			if list.FocusWithin() {
-				ring = tk.Blue.Alpha(0.35)
-			}
-			list.Border(1, ring)
-			list.Children(func() {
-				if a.stashesErr != "" {
-					// The failed read leaves no rows to work with, so the
-					// error carries the way back: retry the list read.
-					ui.Column(c).Padding(12).Gap(6).Children(func() {
-						display.Text(c, a.stashesErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(11), Rows: 3})
-						if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
-							a.reload()
-						}
-					})
-				}
-				layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.stashesScroll}, func() {
-					ui.Column(c).FillWidth().Padding(7).Gap(2).Children(func() {
-						if len(a.stashes) == 0 {
-							// A failed list read leaves this empty; the error
-							// above says why, so do not suggest there is
-							// nothing to stash.
-							if a.stashesErr == "" {
-								listEmptyState(c, lucide.Archive(), tk.TextTertiary, a.t("noStashes"), a.t("noStashesHint"))
-							}
-							return
-						}
-						ui.Column(c).FillWidth().Gap(2).Role(ui.RoleList).Children(func() {
-							for i, stash := range a.stashes {
-								a.stashRow(c, stash, i+1, len(a.stashes))
-							}
-						})
-					})
-				}).Grow(1).Basis(0).MinHeight(0)
-			})
-		})
-		a.splitHandle(c, &a.stashSplit,
-			shareForWidth(a.stashSplit.rowWidth, stashPaneWidth), stashSplitMinList, stashSplitMinDetail,
-			a.t("resizeStashPanes"))
-		a.stashDetail(c)
-	})
-}
-
-// stashShare is how much of the page the stash list takes; the selected
-// stash's diff keeps the rest.
-func (a *app) stashShare() float32 {
-	return a.stashSplit.fraction(
-		shareForWidth(a.stashSplit.rowWidth, stashPaneWidth),
-		stashSplitMinList, stashSplitMinDetail)
 }
 
 func (a *app) stashSaveMenu(c *ui.Context) {
@@ -234,9 +160,11 @@ func (a *app) stashRow(c *ui.Context, stash gitrepo.Stash, pos, size int) {
 	}
 }
 
-func (a *app) stashDetail(c *ui.Context) {
+// stashDetailPane draws the chosen stash: its header with the apply, pop and
+// drop actions, then its patch. History gives it the whole details column.
+func (a *app) stashDetailPane(c *ui.Context, share float32) {
 	tk := theme.TokensOf(c)
-	ui.Column(c).Grow(1 - a.stashShare()).Basis(0).MinWidth(0).AlignSelf(ui.Stretch).Children(func() {
+	ui.Column(c).Grow(share).Basis(0).MinWidth(0).AlignSelf(ui.Stretch).Children(func() {
 		// The header describes one stash and offers its actions, so it only
 		// exists once a stash is chosen. Without one, a bare divider above the
 		// pane's empty state reads as a rendering gap.
@@ -326,6 +254,16 @@ func (a *app) selectedStashObject() (gitrepo.Stash, bool) {
 func (a *app) selectStash(sha string) {
 	if sha == "" || (a.selectedStash == sha && a.stashDiff.Text != "") {
 		return
+	}
+	// The stash becomes the details' subject: the working tree's row and any
+	// historical commit stop describing the pane beside the list.
+	if a.worktreeSelected || a.selectedSHA != "" {
+		a.saveDetailScroll()
+		a.worktreeSelected = false
+		a.setSelectedCommit("")
+		a.commitFiles = nil
+		a.commitFilesLoaded = false
+		a.commitPath = ""
 	}
 	a.selectedStash = sha
 	a.stashDiff = gitrepo.Diff{}

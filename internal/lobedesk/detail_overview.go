@@ -223,12 +223,9 @@ func (a *app) detailOverview(c *ui.Context) {
 	scroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitInfoScroll}, func() {
 		ui.Column(c).FillWidth().Children(func() {
 			if a.worktreeSelected {
-				if a.page != "changes" {
-					ui.Column(c).FillWidth().Padding(14).Gap(12).Children(func() {
-						a.commitForm(c)
-						a.operationCard(c)
-					})
-				}
+				// The commit box is docked under the files column, the way
+				// Sublime Merge keeps it beside the working tree's list; the
+				// Summary tab holds the change overview.
 				a.worktreeOverview(c)
 				return
 			}

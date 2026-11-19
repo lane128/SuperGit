@@ -118,10 +118,10 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 	toolbar.Children(func() {
 		left := ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Gap(8).Padding(0, 0, 0, inset)
 		left.Children(func() {
-			a.workbenchNavigation(c)
 			if a.repo != nil && !a.restoredCheckout {
-				// Page tabs keep their width; the branch label yields space to
-				// shared repository actions while retaining its full tooltip.
+				// History is the window. The working tree is its first row and
+				// the stashes are rows of its list, so the bar names the branch
+				// the way Sublime Merge's window does, without page tabs.
 				ui.Row(c).Grow(1).Basis(0).MinWidth(0).MaxWidth(180).Children(func() { a.branchSelector(c) })
 				if a.status.Ahead > 0 || a.status.Behind > 0 {
 					display.Text(c, aheadBehind(a.status.Ahead, a.status.Behind), display.TextProps{
@@ -176,6 +176,10 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 			// They belong to the repository rather than to one page, and the
 			// history page is the main window now, so they moved here.
 			if a.repo != nil {
+				// Saving the working tree is not a page's action any more;
+				// the stash rows live in History, so the bar keeps the one
+				// control that creates them.
+				a.stashSaveMenu(c)
 				a.remoteActions(c)
 				layout.Divider(c, layout.DividerProps{Vertical: true}).Margin(0, 3)
 			}
@@ -570,12 +574,15 @@ func (a *app) toggleSidebarGroup(key string) {
 	a.invalidate()
 }
 
+// sidebarHeader names the open repository and is its switcher. The Welcome
+// window has no repository, so it gets no header: a workspace name above pages
+// that cannot open reads as a checkout that is not there.
 func (a *app) sidebarHeader(c *ui.Context) {
-	tk := a.sidebarTokens(c)
-	name := "SuperGit"
-	if a.repo != nil {
-		name = a.repoName()
+	if a.repo == nil {
+		return
 	}
+	tk := a.sidebarTokens(c)
+	name := a.repoName()
 	ui.Row(c).FillWidth().Padding(2, 6, 2, 8).Gap(8).AlignItems(ui.Center).Children(func() {
 		display.Avatar(c, name, display.AvatarProps{
 			Size:     24,
@@ -584,10 +591,6 @@ func (a *app) sidebarHeader(c *ui.Context) {
 			// Avatar computes its ink from RGB, so use an opaque surface.
 			Background: tk.BgElevated,
 		})
-		if a.repo == nil {
-			display.Text(c, name, display.TextProps{FontSize: scaledFont(12), Strong: true}).TextColor(tk.Text).SingleLine()
-			return
-		}
 		target := ui.ButtonBase(c).Label(name).Description(a.repo.Root).Row().Grow(1).Basis(0).MinWidth(0).Height(26).Gap(4).AlignItems(ui.Center).Radius(tk.BorderRadiusSM)
 		if target.Hovered() {
 			target.Background(tk.FillTertiary)
@@ -681,6 +684,9 @@ func (a *app) sidebarOpenRow(c *ui.Context) {
 	}
 }
 
+// openPage moves the window to a place. History is the window: its list holds
+// the working tree's row and the stash entries, so "changes" and "stash" are
+// selections in that list rather than pages of their own.
 func (a *app) openPage(page string) {
 	// The settings panel is a window of its own, opened from every entry
 	// point that used to switch the main window to the settings page.
@@ -688,15 +694,25 @@ func (a *app) openPage(page string) {
 		a.openSettingsWindow()
 		return
 	}
-	if a.page == page || a.repo == nil {
+	if a.repo == nil {
 		return
 	}
-	if page == "changes" {
-		a.openChanges()
-	} else if page == "history" {
-		a.restoreHistorySelection()
-	} else if a.page == "history" || a.page == "changes" {
-		a.saveDetailScroll()
+	wantWorktree, wantStash := false, false
+	switch page {
+	case "changes":
+		page, wantWorktree = "history", true
+	case "stash":
+		page, wantStash = "history", true
+	}
+	if page == a.page && !wantWorktree && !wantStash {
+		return
+	}
+	if page != a.page {
+		if page == "history" {
+			a.restoreHistorySelection()
+		} else if a.page == "history" {
+			a.saveDetailScroll()
+		}
 	}
 	a.page = page
 	if page != "history" {
@@ -706,6 +722,12 @@ func (a *app) openPage(page string) {
 		// reader comes back.
 		a.historyRefOpen = false
 		a.historyRefQuery = ""
+	}
+	if wantWorktree {
+		a.openChanges()
+	}
+	if wantStash && a.selectedStash == "" && len(a.stashes) > 0 && a.stashesErr == "" {
+		a.selectStash(a.stashes[0].SHA)
 	}
 	a.invalidate()
 }
@@ -733,14 +755,10 @@ func (a *app) workbenchPage(c *ui.Context, width float32) {
 		a.loadingPage(c)
 	case a.repo == nil:
 		a.emptyPage(c)
-	case a.page == "changes":
-		a.changesPage(c)
 	case a.page == "history":
 		a.historyPageAtWidth(c, width)
 	case a.page == "branches":
 		a.branchesPage(c)
-	case a.page == "stash":
-		a.stashPage(c)
 	case a.page == "worktrees":
 		a.worktreesPage(c)
 	default:

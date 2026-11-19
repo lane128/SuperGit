@@ -43,7 +43,7 @@ func TestCommitArrowsWaitForTheWalk(t *testing.T) {
 		commits:          []gitrepo.Commit{{SHA: "a"}, {SHA: "b"}},
 		selectedSHA:      "a",
 	}
-	a.moveCommitSelection(1)
+	a.moveHistorySelection(1)
 	if a.selectedSHA != "a" {
 		t.Errorf("selection moved to %q while the list was reloading", a.selectedSHA)
 	}

@@ -3,6 +3,7 @@ package lobedesk
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -18,21 +19,36 @@ type commitIdentityState struct {
 
 func readCommitIdentity(ctx context.Context, repo *gitrepo.Repository, hasHead bool) commitIdentityState {
 	state := commitIdentityState{Root: repo.Root, Loaded: true}
-	var err error
-	state.Author, err = repo.AuthorIdentity(ctx)
-	if err != nil {
-		state.AuthorError = err.Error()
-	}
-	state.Committer, err = repo.CommitterIdentity(ctx)
-	if err != nil {
-		state.CommitterError = err.Error()
-	}
-	if hasHead {
-		state.HeadAuthor, err = repo.HeadAuthorIdentity(ctx)
+	// The three identities are independent Git reads; together with the rest
+	// of the open they would otherwise add three subprocess rounds in a row.
+	var reads sync.WaitGroup
+	reads.Go(func() {
+		identity, err := repo.AuthorIdentity(ctx)
 		if err != nil {
-			state.HeadAuthorError = err.Error()
+			state.AuthorError = err.Error()
+			return
 		}
+		state.Author = identity
+	})
+	reads.Go(func() {
+		identity, err := repo.CommitterIdentity(ctx)
+		if err != nil {
+			state.CommitterError = err.Error()
+			return
+		}
+		state.Committer = identity
+	})
+	if hasHead {
+		reads.Go(func() {
+			identity, err := repo.HeadAuthorIdentity(ctx)
+			if err != nil {
+				state.HeadAuthorError = err.Error()
+				return
+			}
+			state.HeadAuthor = identity
+		})
 	}
+	reads.Wait()
 	return state
 }
 

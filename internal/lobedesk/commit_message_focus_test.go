@@ -24,11 +24,16 @@ func commitFocusBinding(t *testing.T) appShortcut {
 }
 
 func TestCommitMessageShortcutFocusesActualEditorOnce(t *testing.T) {
-	for _, page := range []string{"changes", "history", "branches", "stash", "worktrees"} {
+	for _, page := range []string{"history", "branches", "worktrees"} {
 		t.Run(page, func(t *testing.T) {
 			a, _ := overviewFixture(t)
 			a.locale = localeEnglish
 			a.page = page
+			if page != "history" {
+				// The commit editor lives on the working tree's row of the
+				// History list; the other pages do not draw it.
+				a.worktreeSelected = false
+			}
 			draft := "中文 summary\n\nbody line\n\n"
 			a.commitText = draft
 			a.amend = true
@@ -51,18 +56,19 @@ func TestCommitMessageShortcutFocusesActualEditorOnce(t *testing.T) {
 			}
 			index := fingerprint()
 			var other string
+			fields := func(c *ui.Context) {
+				if a.page == "history" && a.worktreeSelected {
+					a.commitMessageFields(c)
+				} else {
+					field.Input(c, &other, field.InputProps{}).Label("other page")
+				}
+			}
 			tt := ui.NewTester(func(c *ui.Context) {
 				theme.Apply(c)
 				a.registerShortcuts(c)
-				ui.Column(c).Width(550).Children(func() {
-					if a.page == "changes" {
-						a.commitMessageFields(c)
-					} else {
-						field.Input(c, &other, field.InputProps{}).Label("other page")
-					}
-				})
+				ui.Column(c).Width(550).Children(func() { fields(c) })
 			}, 600, 400)
-			if page == "changes" {
+			if page == "history" {
 				node, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
 				if !ok {
 					t.Fatal("missing body")
@@ -71,7 +77,7 @@ func TestCommitMessageShortcutFocusesActualEditorOnce(t *testing.T) {
 			}
 			tt.Key(binding.Mod, binding.Key)
 			tt.Frame()
-			if a.page != "changes" || !tt.Focused(a.t("commitSummary")) || a.commitText != draft || !a.amend {
+			if a.page != "history" || !a.worktreeSelected || !tt.Focused(a.t("commitSummary")) || a.commitText != draft || !a.amend {
 				t.Fatal("navigation did not preserve draft/amend and focus actual summary")
 			}
 			tt.Key(0, ui.KeyEnd)
@@ -101,7 +107,8 @@ func TestCommitMessageShortcutGuardsAndStaleRequests(t *testing.T) {
 	for _, blocked := range []string{"nil", "busy", "loading", "history refresh", "chooser", "ref popup", "clone", "new", "confirm"} {
 		t.Run(blocked, func(t *testing.T) {
 			a, _ := overviewFixture(t)
-			a.page = "stash"
+			a.page = "history"
+			a.worktreeSelected = false
 			switch blocked {
 			case "nil":
 				a.repo = nil
@@ -128,15 +135,15 @@ func TestCommitMessageShortcutGuardsAndStaleRequests(t *testing.T) {
 			}
 			tt.Key(s.Mod, s.Key)
 			s.Run(a)
-			if a.page != "stash" {
-				t.Fatal("blocked request changed page")
+			if a.page != "history" || a.worktreeSelected {
+				t.Fatal("blocked request changed the selection")
 			}
 		})
 	}
 	for _, change := range []string{"root", "sequence", "page", "dialog"} {
 		t.Run("stale "+change, func(t *testing.T) {
 			a, _ := overviewFixture(t)
-			a.page = "changes"
+			a.page = "history"
 			s.Run(a)
 			switch change {
 			case "root":
@@ -144,7 +151,8 @@ func TestCommitMessageShortcutGuardsAndStaleRequests(t *testing.T) {
 			case "sequence":
 				a.loadSeq++
 			case "page":
-				a.page = "stash"
+				a.page = "branches"
+				a.worktreeSelected = false
 			case "dialog":
 				a.newRepoForm.open = true
 			}
@@ -156,7 +164,8 @@ func TestCommitMessageShortcutGuardsAndStaleRequests(t *testing.T) {
 			if tt.Focused(a.t("commitSummary")) {
 				t.Fatal("stale request focused editor")
 			}
-			a.page = "changes"
+			a.page = "history"
+			a.worktreeSelected = true
 			a.newRepoForm.open = false
 			tt.Frame()
 			if tt.Focused(a.t("commitSummary")) {

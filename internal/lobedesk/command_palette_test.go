@@ -322,7 +322,7 @@ func TestCommandPaletteCommitMessageActionOwnsFocus(t *testing.T) {
 	tt.Key(0, ui.KeyEnter)
 	tt.Frame()
 	tt.Frame()
-	if a.commandPalette.open || a.page != "changes" || !tt.Focused(a.t("commitSummary")) || a.commitText != "draft\n\nbody" {
+	if a.commandPalette.open || a.page != "history" || !a.worktreeSelected || !tt.Focused(a.t("commitSummary")) || a.commitText != "draft\n\nbody" {
 		t.Fatal("target action did not own Summary focus")
 	}
 	tt.Key(0, ui.KeyTab)

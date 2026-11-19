@@ -106,7 +106,7 @@ func TestUnstageAllShortcutRealIndexAndRefresh(t *testing.T) {
 			a.lineSel = map[int]bool{1: true}
 			head := status.Head
 			if unborn {
-				a.page = "changes"
+				a.page = "history"
 			}
 			tt := ui.NewTester(func(c *ui.Context) {
 				theme.Apply(c)
@@ -179,7 +179,7 @@ func testBatchShortcutGuards(t *testing.T, s appShortcut) {
 	}{
 		{"nil repo", func(a *app) { a.repo = nil }}, {"empty Index", func(a *app) { a.status.Entries = nil }},
 		{"busy", func(a *app) { a.busy = true }}, {"loading", func(a *app) { a.loading = true }},
-		{"commit selected", func(a *app) { a.worktreeSelected = false }}, {"other page", func(a *app) { a.page = "stash" }},
+		{"commit selected", func(a *app) { a.worktreeSelected = false }}, {"other page", func(a *app) { a.page = "branches" }},
 		{"hidden detail", func(a *app) { a.historyDetailsHidden = true }}, {"chooser", func(a *app) { a.repositoryChooserOpen = true }},
 		{"ref picker", func(a *app) { a.historyRefOpen = true }}, {"confirmation", func(a *app) { a.confirm.open = true; a.confirm.owner = toastMain }},
 		{"prompt", func(a *app) { a.prompt.open = true }}, {"reset", func(a *app) { a.reset.open = true }},

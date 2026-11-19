@@ -21,7 +21,8 @@ func TestClampSplitKeepsBothPanesUsable(t *testing.T) {
 		{"inside the range", 0.6, 1000, 0.6},
 		{"too small for the left pane", 0.1, 1000, 240 / room},
 		{"too large for the right pane", 0.95, 1000, 1 - 300/room},
-		{"too narrow for both", 0.6, 500, 0.5},
+		// Neither pane fits: each keeps its minimum's share of the shortfall.
+		{"too narrow for both", 0.6, 500, 240.0 / (240 + 300)},
 		{"no width yet", 0.3, 0, 0.3},
 	}
 	for _, tc := range cases {
@@ -144,7 +145,6 @@ func TestFilesDividerStaysAtLimitUntilPointerReturns(t *testing.T) {
 			width, _ := c.Size()
 			a.historyDetailsPane(c, 1, width)
 		}},
-		{"changes", 280, (*app).changesPage},
 	} {
 		t.Run(tc.page, func(t *testing.T) {
 			a := &app{page: tc.page, themeMode: "light"}

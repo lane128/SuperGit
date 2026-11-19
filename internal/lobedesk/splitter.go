@@ -48,9 +48,12 @@ func clampSplit(share, rowWidth, minLeft, minRight float32) float32 {
 	lo := minLeft / room
 	hi := 1 - minRight/room
 	// Nested dividers can leave the exact minimum a few float32 ULPs short.
-	// Do not turn a rounding error into a 50/50 split that breaks both panes.
+	// Do not turn a rounding error into a different split.
 	if lo > hi && lo-hi > 0.00001 {
-		return 0.5
+		// Too narrow for both minimums: keep their proportion. An even split
+		// starves the pane that needed more room, which is how a three-column
+		// page collapses to half its width on a window it almost fits.
+		return lo / (lo + (1 - hi))
 	}
 	if share < lo {
 		return lo

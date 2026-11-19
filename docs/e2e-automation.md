@@ -634,3 +634,9 @@ macOS e2e 构建通过。首个原生夹具 `build/repository-switch-native-bey_
 - `python3 -I scripts/native-lobe-integrate-smoke.py`：两个独立临时仓库 / HOME，历史行 focus + Shift+F10 → Cherry-pick / Revert，验证取消不写入、所选 SHA、新提交父提交、完整说明 / 原 SHA、准确 Unicode 路径文件字节、topic 引用保留和无残留进行中操作。证据位于 `build/lobe-integrate-*/`；只覆盖无冲突发起，不是应用内冲突编辑。
 
 自动化 `window w1` 只改变命令目标，不改变原生键盘焦点；当前确认框固定到发起动作的 owner 窗口，切换命令目标不会迁移它。`focus` 与坐标输入也只把事件送给目标内容，不调用系统窗口激活。旧脚本的 `window auto` 只适用于实际焦点恰为确认 owner 的场景；双窗口验收应分别读取两个窗口，并向 owner 窗口的新鲜按钮 ref 回答，不能把命令目标切换当作真实系统焦点切换。
+
+## 统一 History 窗口（2026-11-19）
+
+默认入口不再是 Changes：仓库打开后直接停在 History，选中当前分支最新提交（有提交时），工作树是列表首行、Stash 是其后的一行，页面只剩 History（⌘2 分支页、⌘4 工作树页仍保留）。启动探针不应再等 `Commit summary (required)`，也不存在 `Changes` 页面标签；可用 `All refs` 或具体提交标题作为历史就绪门，再按需选中工作树行（如 `1 change` / `2 changes`）。
+
+`python3 -I scripts/native-lobe-unified-history.py` 是本次入口的独立原生检查：临时仓库含一个比 HEAD 更晚的旁支提交和一个 Stash，断言没有 Changes / History / Stash 页签、行顺序为工作树 → Stash → HEAD → 更新旁支、点击工作树行出现提交编辑区、点击 Stash 行出现 Apply / Pop / Drop，且浏览不改动 Git 数据；同时用 PATH 垫片记录打开期间只有一次 `git status --porcelain`。结果和截图保存在 `build/lobe-unified-history-*/`。多数既有 `native-lobe-*` 脚本仍按旧默认等待 Changes 编辑区或按 `Changes` 标签，运行前需按上述门更新；本轮未逐一重跑这些脚本。

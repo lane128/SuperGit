@@ -21,18 +21,31 @@ func (r *Repository) HistoryPage(ctx context.Context, tips []string, offset, lim
 	if offset < 0 || limit < 1 || limit > 2000 || tips == nil && offset != 0 {
 		return HistoryPage{}, fmt.Errorf("无效的历史分页范围")
 	}
+	anchor := ""
 	if tips == nil {
 		// --all would also walk refs/stash and refs/notes, whose synthetic
 		// commits are not history the user can browse as commits.
 		args := []string{"log", "--no-walk=unsorted", "--branches", "--tags", "--remotes", "--format=%H"}
-		if r.hasHead(ctx) {
-			args = append(args, "HEAD")
-		}
 		out, err := run(ctx, r.Root, "", append(args, "--")...)
 		if err != nil {
 			return HistoryPage{}, err
 		}
 		tips = strings.Fields(out)
+		// The checked-out commit leads the traversal. The graph allocates lanes
+		// in row order, so this keeps the current branch in the leftmost lane
+		// and every other branch forking to its right; no newer branch can push
+		// rows above it.
+		if head, err := r.ResolveRef(ctx, "HEAD"); err == nil {
+			anchor = head
+			rest := make([]string, 0, len(tips)+1)
+			rest = append(rest, head)
+			for _, tip := range tips {
+				if tip != head {
+					rest = append(rest, tip)
+				}
+			}
+			tips = rest
+		}
 	}
 	page := HistoryPage{Tips: append([]string{}, tips...)}
 	for _, tip := range tips {
@@ -55,6 +68,20 @@ func (r *Repository) HistoryPage(ctx context.Context, tips []string, offset, lim
 	page.HasMore = len(page.Commits) > limit
 	if page.HasMore {
 		page.Commits = page.Commits[:limit]
+	}
+	// Topo-order may still place another tip above the anchor. It cannot be an
+	// ancestor of the anchor (parents always follow children), so moving the
+	// anchor to the front keeps every edge pointing downwards. This runs after
+	// truncation: the retained lookahead row belongs to the next page.
+	if anchor != "" {
+		for i, commit := range page.Commits {
+			if commit.SHA != anchor || i == 0 {
+				continue
+			}
+			copy(page.Commits[1:i+1], page.Commits[0:i])
+			page.Commits[0] = commit
+			break
+		}
 	}
 	return page, nil
 }

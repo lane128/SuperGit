@@ -16,7 +16,7 @@ func TestLargeWorktreeFilesBuildNearbyRowsAndRevealStagedVersion(t *testing.T) {
 	tt := pageTester(a, func(c *ui.Context) {
 		ui.Column(c).Fill().Children(func() {
 			ui.ButtonBase(c).Label("before files").Height(24)
-			ui.Row(c).Height(400).FillWidth().Children(func() { a.historyFilesPane(c) })
+			ui.Column(c).Height(400).FillWidth().Children(func() { a.filesPaneBody(c) })
 			ui.ButtonBase(c).Label("after files").Height(24)
 		})
 	})

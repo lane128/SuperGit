@@ -369,7 +369,7 @@ func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Elemen
 	tk := theme.TokensOf(c)
 	primary := a.selectedPath == entry.Path && a.selectedStaged == staged
 	selected := a.workspaceFileSelected(fileRef{entry.Path, staged})
-	if a.page == "history" || a.page == "changes" {
+	if a.page == "history" {
 		// Explicit list membership survives Summary; a legacy preview-only
 		// cursor is selected only while its file tab is visible.
 		explicitSelection := a.repo != nil && a.workspaceSelection.Root == a.repo.Root && a.workspaceSelection.Files != nil
@@ -985,29 +985,6 @@ func (a *app) operationCard(c *ui.Context) {
 				a.confirmAbortOperation(kind)
 			}
 		})
-	})
-}
-
-func (a *app) commitForm(c *ui.Context) {
-	staged := len(a.stagedEntries())
-	branch := a.status.Branch
-	if branch == "" {
-		branch = a.t("detached")
-	}
-	layout.Block(c, layout.BlockProps{Variant: layout.BlockFilled}).FillWidth().
-		Padding(14).Gap(10).Children(func() {
-		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-			display.Text(c, a.t("commit"), display.TextProps{Strong: true, FontSize: scaledFont(13)})
-			display.Tag(c, a.stagedLabel(staged), display.TagProps{
-				Variant: display.TagFilled, Color: display.TagColor(stagedTagColor(staged)), Size: theme.Small, Round: true,
-			})
-		})
-		display.Text(c, a.tf("commitTo", branch), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
-		a.commitMessageFields(c)
-		display.Text(c, a.t("commitHelp"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10), Rows: 2})
-		a.commitAmendControl(c)
-		a.commitIdentityView(c)
-		a.commitAction(c, false)
 	})
 }
 

@@ -160,16 +160,11 @@ func TestReviewVirtualFilesRestoreRememberedTabFocus(t *testing.T) {
 	}
 }
 
+// A save that lands just after the status read an open used must not be lost
+// behind a baseline that already contains it. The open reads status once now,
+// so the injected save happens after that one read; the watcher then has to
+// notice the file is dirty on its next probe.
 func TestReviewSaveDuringRefreshRemainsObservable(t *testing.T) {
-	for _, skip := range []bool{false, true} {
-		t.Run(fmt.Sprintf("after-second-status-%t", skip), func(t *testing.T) {
-			testSaveDuringRefresh(t, skip)
-		})
-	}
-}
-
-func testSaveDuringRefresh(t *testing.T, skip bool) {
-	t.Helper()
 	a, callbacks := overviewFixture(t)
 	realGit, err := exec.LookPath("git")
 	if err != nil {
@@ -182,10 +177,6 @@ func testSaveDuringRefresh(t *testing.T, skip bool) {
 	script := `#!/bin/sh
 for arg do
  if [ "$arg" = status ] && [ ! -e "$REVIEW_MARKER" ]; then
-  if [ "$REVIEW_SKIP" = 1 ] && [ ! -e "$REVIEW_MARKER.skip" ]; then
-   /usr/bin/touch "$REVIEW_MARKER.skip"
-   exec "$REVIEW_REAL_GIT" "$@"
-  fi
   "$REVIEW_REAL_GIT" "$@"
   rc=$?
   /usr/bin/touch "$REVIEW_MARKER"
@@ -197,11 +188,6 @@ exec "$REVIEW_REAL_GIT" "$@"
 `
 	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
-	}
-	if skip {
-		t.Setenv("REVIEW_SKIP", "1")
-	} else {
-		t.Setenv("REVIEW_SKIP", "0")
 	}
 	t.Setenv("REVIEW_REAL_GIT", realGit)
 	t.Setenv("REVIEW_TARGET", filepath.Join(a.repo.Root, "same.go"))
@@ -217,6 +203,10 @@ exec "$REVIEW_REAL_GIT" "$@"
 		case <-timer.C:
 			t.Fatal("reload timeout")
 		}
+	}
+	if len(a.status.Entries) != 0 {
+		// The save landed after the read; the window itself still shows clean.
+		t.Fatal("fixture save was observed by the read it happened after")
 	}
 	actual, err := a.repo.Status(a.ctx)
 	if err != nil {

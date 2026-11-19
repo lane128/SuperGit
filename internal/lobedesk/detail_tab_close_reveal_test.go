@@ -8,7 +8,7 @@ import (
 )
 
 func TestQAMinimumWindowCloseRevealsSuccessorAndPreservesDraft(t *testing.T) {
-	a := &app{page: "changes", worktreeSelected: true, locale: localeEnglish, repo: &gitrepo.Repository{Root: t.TempDir()}}
+	a := &app{page: "history", worktreeSelected: true, locale: localeEnglish, repo: &gitrepo.Repository{Root: t.TempDir()}}
 	first := detailFileKey{Path: "first-extremely-long-file-name-long-enough-to-fill-tab.go"}
 	closing := detailFileKey{Path: "b.go"}
 	next := detailFileKey{Path: "successor-extremely-long-file-name-long-enough-to-fill-tab.go"}
@@ -16,7 +16,9 @@ func TestQAMinimumWindowCloseRevealsSuccessorAndPreservesDraft(t *testing.T) {
 	for _, file := range []detailFileKey{first, closing, next, last} {
 		a.detailTabs().Open(file)
 	}
-	a.detailTabs().Activate(detailTabKey{File: closing})
+	// The commit box is the Summary tab's content now, so the draft is typed
+	// there before a file tab takes the pane.
+	a.detailTabs().Activate(detailTabKey{Summary: true})
 	a.selectedPath = closing.Path
 	a.diffLoading = true // No asynchronous fixture read is needed to test strip layout.
 	// Prime the neighbor's diff so the normal pointer close can activate it.
@@ -32,6 +34,10 @@ func TestQAMinimumWindowCloseRevealsSuccessorAndPreservesDraft(t *testing.T) {
 	view.Type("keep my description")
 	if a.commitText != "keep my summary\n\nkeep my description" {
 		t.Fatalf("draft setup failed: %q", a.commitText)
+	}
+	a.activateDetailTab(detailTabKey{File: closing})
+	for range 5 {
+		view.Frame()
 	}
 	xLabel := func(file detailFileKey) string { return a.t("close") + " " + file.Path }
 	if node, _ := view.AccessByRole(ui.RoleButton, xLabel(closing)); node.Offscreen || node.Bounds.W == 0 {

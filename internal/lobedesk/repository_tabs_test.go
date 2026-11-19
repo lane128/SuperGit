@@ -81,6 +81,7 @@ func TestRepositoryTabsKeepDraftsAndReuseCanonicalRoot(t *testing.T) {
 	if !strings.Contains(first.diff.Text, "first repository patch") || strings.Contains(second.diff.Text, "first repository patch") || tabs.active != second {
 		t.Fatal("late Diff completion crossed repository sessions")
 	}
+	selectWorktreeRow(t, view, second)
 	click(ui.RoleTextField, second.t("commitSummary"))
 	view.Type("Second draft")
 	view.Frame()

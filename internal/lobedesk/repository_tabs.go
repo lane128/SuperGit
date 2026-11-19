@@ -80,7 +80,7 @@ func (tabs *repositoryTabs) newSession(source *app) *app {
 	next := &app{
 		repositoryTabs: tabs, ctx: ctx, cancel: cancel, runOnMain: source.runOnMain,
 		openDirectoryDialog: source.openDirectoryDialog, saveFileDialog: source.saveFileDialog,
-		page: "changes", lineAnchor: -1, lineCursor: -1, linePressIndex: -1,
+		page: "history", lineAnchor: -1, lineCursor: -1, linePressIndex: -1,
 		commitAnchor: -1, commitCursor: -1, commitPressIndex: -1,
 	}
 	next.copyWindowPreferences(source)
