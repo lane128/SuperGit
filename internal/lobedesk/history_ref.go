@@ -578,6 +578,31 @@ func (a *app) reloadHistoryFromTip(tip string) {
 	}()
 }
 
+// locateRef brings a sidebar ref's tip into view without changing what
+// History lists. The sidebar is a way to find a place, not a way to filter:
+// the ref selector, the loaded rows and their count stay as they are, and the
+// jump pages on until the commit appears. A reload already in flight owns the
+// rows; hand it the jump so it runs once the new walk lands.
+func (a *app) locateRef(kind, name string) {
+	if a.repo == nil || name == "" {
+		return
+	}
+	tip := a.historyRefTip(historyRef{Kind: kind, Name: name})
+	if tip == "" {
+		return
+	}
+	if a.page != "history" {
+		a.openPage("history")
+	}
+	if a.historyReloading {
+		a.pendingJumpSHA = tip
+		a.invalidate()
+		return
+	}
+	a.jumpToCommitKeeping(tip, true)
+	a.invalidate()
+}
+
 // showRefHistory scopes the history page to one ref, the same state the
 // header's ref selector sets. Branch, remote and tag menus use it to jump
 // from a ref to the commits it reaches.

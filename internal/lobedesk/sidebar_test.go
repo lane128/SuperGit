@@ -123,17 +123,17 @@ func canceledContext() context.Context {
 	return ctx
 }
 
-// A branch in the sidebar is a scope for the history list, as the branch tree
-// in the Git clients this follows is: one click goes from the ref to its
-// commits, without finding the branch again on its own page.
-func TestABranchInTheSidebarScopesTheHistory(t *testing.T) {
+// A branch in the sidebar is a way to find its tip in the history list. The
+// click selects that commit and leaves the list's scope and rows alone;
+// scoping stays with the header's ref selector and the row menus.
+func TestABranchInTheSidebarLocatesItsTip(t *testing.T) {
 	a := &app{
 		locale: localeChinese, page: "history",
 		repo:     &gitrepo.Repository{Root: t.TempDir()},
-		branches: []gitrepo.Branch{{Name: "main", Current: true}, {Name: "feat"}},
-		// Scoping the history starts a walk; a canceled context ends it at
-		// once instead of running git against the empty folder.
-		ctx: canceledContext(),
+		branches: []gitrepo.Branch{{Name: "main", Current: true, SHA: "main-sha"}, {Name: "feat", SHA: "feat-sha"}},
+		commits:  []gitrepo.Commit{{SHA: "main-sha"}, {SHA: "feat-sha"}},
+		ctx:      canceledContext(),
+		runOnMain: func(func()) {},
 	}
 	tt := sidebarTester(a)
 	row, ok := tt.AccessByRole(ui.RoleButton, "feat")
@@ -141,11 +141,12 @@ func TestABranchInTheSidebarScopesTheHistory(t *testing.T) {
 		t.Fatal("the feat branch is not in the sidebar")
 	}
 	tt.ClickAt(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2)
-	if got := a.historyRef; got != (historyRef{Kind: historyRefLocal, Name: "feat"}) {
+	if got := a.historyRef; got != (historyRef{}) {
 		t.Errorf("clicking feat scoped history to %+v", got)
 	}
-	// The page switch itself is posted to the main loop once the row's menu
-	// would have closed; the headless tester does not run one.
+	if a.selectedSHA != "feat-sha" || !a.revealSelection {
+		t.Errorf("clicking feat selected %q (reveal=%t); want its tip", a.selectedSHA, a.revealSelection)
+	}
 }
 
 // The checked-out branch used to append a middle dot to its name; a clipped

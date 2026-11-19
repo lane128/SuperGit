@@ -310,9 +310,9 @@ func itoa(n int) string {
 //
 // Below History come the repository's own locations: its
 // branches, remote branches, tags, stashes, worktrees and submodules, each a
-// folded list under a counted heading. Picking a ref scopes the history list
-// to it, the way a branch tree in a Git client does, instead of making the
-// reader find the branch again on another page.
+// folded list under a counted heading. Picking a ref locates its commit in
+// the history list and selects it, the way a branch tree in a Git client
+// jumps to the branch's tip, without changing which commits History lists.
 func (a *app) sidebar(c *ui.Context) float32 {
 	tk := a.sidebarTokens(c)
 	width := a.workbenchSidebarWidth()
@@ -355,7 +355,7 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 		for _, remote := range a.remoteBranches {
 			ref := historyRef{Kind: historyRefRemote, Name: remote.Name}
 			a.sidebarRefRow(c, lucide.Cloud(), remote.Name,
-				a.historyRef == ref, false, func() { a.showRefHistory(ref.Kind, ref.Name) })
+				a.historyRef == ref, false, func() { a.locateRef(ref.Kind, ref.Name) })
 		}
 	})
 	if a.repo != nil {
@@ -368,7 +368,7 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 		for _, tag := range a.tags {
 			ref := historyRef{Kind: historyRefTag, Name: tag.Name}
 			a.sidebarRefRow(c, lucide.Tag(), tag.Name,
-				a.historyRef == ref, false, func() { a.showRefHistory(ref.Kind, ref.Name) })
+				a.historyRef == ref, false, func() { a.locateRef(ref.Kind, ref.Name) })
 		}
 	})
 	a.sidebarGroup(c, "stashes", a.t("stashes"), len(a.stashes), func() {
@@ -379,6 +379,9 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 			}
 			a.sidebarRefRow(c, lucide.Archive(), label, a.selectedStash == stash.SHA, false, func() {
 				a.openPage("stash")
+				// The click names one stash, so its row scrolls into view and
+				// takes the selection the details describe.
+				a.revealSelection = true
 				a.selectStash(stash.SHA)
 				a.invalidate()
 			})
@@ -488,9 +491,11 @@ func (a *app) sidebarGroup(c *ui.Context, key, title string, count int, items fu
 	return row
 }
 
-// sidebarRefRow is one ref in a group: its name, and the selection when the
-// history list is scoped to it. current marks the checked-out branch with its
-// own glyph, so a long name that clips still says which branch is live.
+// sidebarRefRow is one ref in a group: its name, and the check that shows the
+// ref selector's filter when it names this ref. Clicking locates the ref's
+// commit in History instead of changing that filter. current marks the
+// checked-out branch with its own glyph, so a long name that clips still says
+// which branch is live.
 func (a *app) sidebarRefRow(c *ui.Context, icon *ui.SVG, label string, selected, current bool, onClick func()) ui.Element {
 	return a.sidebarRefRowWithState(c, icon, label, "", selected, current, onClick)
 }
@@ -551,7 +556,7 @@ func (a *app) sidebarBranchItems(c *ui.Context) {
 	for _, branch := range a.branches {
 		ref := historyRef{Kind: historyRefLocal, Name: branch.Name}
 		row := a.sidebarRefRow(c, lucide.GitBranch(), branch.Name, a.historyRef == ref, branch.Current, func() {
-			a.showRefHistory(ref.Kind, ref.Name)
+			a.locateRef(ref.Kind, ref.Name)
 		})
 		a.branchMenu(c, row, branch)
 	}

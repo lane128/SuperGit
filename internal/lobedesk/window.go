@@ -12,8 +12,11 @@ const (
 	defaultWindowWidth  = 1320
 	defaultWindowHeight = 840
 	// minWindowWidth and minWindowHeight bound the window, so a layout check
-	// below them would test a size no reader can reach.
-	minWindowWidth  = 980
+	// below them would test a size no reader can reach. The width floor is the
+	// narrow window the three History columns and the commit editor still fit:
+	// at 900 points the Files column keeps enough room for the editor instead
+	// of collapsing under the patch pane.
+	minWindowWidth  = 900
 	minWindowHeight = 640
 )
 
@@ -33,7 +36,7 @@ func windowSize() (int, int) {
 	return defaultWindowWidth, defaultWindowHeight
 }
 
-// parseWindowSize reads a size written as "980x640". Sizes below the window's
+// parseWindowSize reads a size written as "900x700". Sizes below the window's
 // minimum are refused rather than clamped: a check meant for a narrow window
 // would otherwise silently run at a different width than it asked for.
 func parseWindowSize(raw string) (width, height int, ok bool) {

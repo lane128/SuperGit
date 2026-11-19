@@ -239,7 +239,7 @@ func TestCommandPaletteCatalogAndUnavailableRows(t *testing.T) {
 		}
 		seen[s.ID] = true
 	}
-	if len(seen) != 18 || !seen["repo.reopenClosedTab"] || !seen["repo.clone"] || !seen["tag.create"] || !seen["history.chooseRef"] || !seen["branch.create"] || !seen["stash.saveTracked"] || !seen["repo.fetch"] || !seen["repo.quickSwitch"] || seen["repo.quickSwitchAlias"] || !seen["branch.quickCheckout"] || seen["repo.reloadF5"] || seen["repo.pullF7"] || seen["repo.commit"] {
+	if len(seen) != 19 || !seen["repo.reopenClosedTab"] || !seen["repo.clone"] || !seen["tag.create"] || !seen["history.chooseRef"] || !seen["branch.create"] || !seen["stash.saveTracked"] || !seen["repo.fetch"] || !seen["repo.quickSwitch"] || seen["repo.quickSwitchAlias"] || !seen["branch.quickCheckout"] || seen["repo.reloadF5"] || seen["repo.pullF7"] || seen["repo.commit"] || !seen["commit.copySHA"] {
 		t.Fatalf("wrong initial whitelist: %v", seen)
 	}
 	if !tt.HasText(a.t("commandPaletteNeedRepo")) {

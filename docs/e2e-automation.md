@@ -637,6 +637,12 @@ macOS e2e 构建通过。首个原生夹具 `build/repository-switch-native-bey_
 
 ## 统一 History 窗口（2026-11-19）
 
-默认入口不再是 Changes：仓库打开后直接停在 History，选中当前分支最新提交（有提交时），工作树是列表首行、Stash 是其后的一行，页面只剩 History（⌘2 分支页、⌘4 工作树页仍保留）。启动探针不应再等 `Commit summary (required)`，也不存在 `Changes` 页面标签；可用 `All refs` 或具体提交标题作为历史就绪门，再按需选中工作树行（如 `1 change` / `2 changes`）。
+默认入口不再是 Changes：仓库打开后直接停在 History，选中当前分支最新提交（有提交时），工作树是列表首行、Stash 是其后的一行，页面只剩 History（⌘2 分支页、⌘4 工作树页仍保留）。侧边栏的分支、远端、Tag 与 Stash 点击只做定位选中：把对应提交或 Stash 行滚动到可见并选中，不改变 History 的 ref 过滤、搜索（目标仍在结果中时）或已加载数量；需要筛选时用顶部 ref 选择器或条目右键菜单的 View history。启动探针不应再等 `Commit summary (required)`，也不存在 `Changes` 页面标签；可用 `All refs` 或具体提交标题作为历史就绪门，再按需选中工作树行（如 `1 change` / `2 changes`）。
 
-`python3 -I scripts/native-lobe-unified-history.py` 是本次入口的独立原生检查：临时仓库含一个比 HEAD 更晚的旁支提交和一个 Stash，断言没有 Changes / History / Stash 页签、行顺序为工作树 → Stash → HEAD → 更新旁支、点击工作树行出现提交编辑区、点击 Stash 行出现 Apply / Pop / Drop，且浏览不改动 Git 数据；同时用 PATH 垫片记录打开期间只有一次 `git status --porcelain`。结果和截图保存在 `build/lobe-unified-history-*/`。多数既有 `native-lobe-*` 脚本仍按旧默认等待 Changes 编辑区或按 `Changes` 标签，运行前需按上述门更新；本轮未逐一重跑这些脚本。
+`python3 -I scripts/native-lobe-unified-history.py` 是本次入口的独立原生检查：临时仓库含一个比 HEAD 更晚的旁支提交和一个 Stash，断言没有 Changes / History / Stash 页签、行顺序为工作树 → Stash → HEAD → 更新旁支、点击工作树行出现提交编辑区、点击 Stash 行出现 Apply / Pop / Drop，且浏览不改动 Git 数据；再展开侧边栏 Tags / Stashes，点击 Tag 与 Stash 行，断言 History 选中对应行、标题仍为 `All refs` 且提交数量不变（侧边栏只定位，不改变列表范围）；同时用 PATH 垫片记录打开期间只有一次 `git status --porcelain`。结果和截图保存在 `build/lobe-unified-history-*/`。多数既有 `native-lobe-*` 脚本仍按旧默认等待 Changes 编辑区或按 `Changes` 标签，运行前需按上述门更新；本轮未逐一重跑这些脚本。
+
+## 900×700 窄窗与命令面板 Copy SHA（2026-11-19）
+
+窗口下限从 980 降到 900（高 640）：`SUPERGIT_WINDOW_SIZE=900x700` 现在真实生效，不再回退到默认 1320×840；低于下限的尺寸仍被拒绝。980 以上的布局不变；小于 980 且选中工作树时，列表、Files 与 patch 各自让出部分最小宽度，保证提交编辑区至少留下 120 点的摘要输入框，选中提交时不启用这套让步，避免改变已有窄窗行为。文件标签的关闭揭示改为滚动 Close 动作本身，避免窄条上包裹层已可见、关闭按钮仍被视口裁掉。
+
+`python3 -I scripts/native-lobe-narrow-window.py` 是本轮的原生检查：临时仓库含合并分叉、一个比 HEAD 更晚的旁支提交、一个 Stash 和无关未跟踪文件，以 `SUPERGIT_WINDOW_SIZE=900x700` 启动，断言截图实际为 900×700（本机为 2× 的 1800×1400）、无页面标签、行顺序正确、工作树摘要框宽度 ≥120 且右缘不超出窗口、Stash 头部 Apply 实际改写工作文件而保留 Stash 条目、命令面板 `copy sha` 可用且剪贴板等于所选提交完整 SHA、浏览与 Apply 之外 HEAD / refs / Index / 未跟踪文件不变。结果、截图与 `results.json` 保存在 `build/lobe-narrow-window-*/`。最近一次通过：`build/lobe-narrow-window-89d2ldth`（摘要框 W=134，截图 1800×1400）。Stash 头部 Apply 与右键菜单走同一处理函数；外部自动化报告头部按钮无效时，先确认等待到 `Pop (apply and drop)` 再点击，并用工作文件内容而不是 toast 判定结果，且脏工作区不得与 Stash 内容冲突。

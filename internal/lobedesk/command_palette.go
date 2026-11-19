@@ -25,7 +25,7 @@ func commandPaletteShortcutBindings() []appShortcut {
 // metadata. Only the palette consumes these additions; window registration and
 // the Settings shortcut card still read the actual shortcut table.
 func commandPaletteTable() []appShortcut {
-	return append(shortcutTable(), fetchPaletteCommand(), stashPaletteCommand(), createBranchPaletteCommand(), historyRefPaletteCommand(), createTagPaletteCommand(), clonePaletteCommand())
+	return append(shortcutTable(), fetchPaletteCommand(), stashPaletteCommand(), createBranchPaletteCommand(), historyRefPaletteCommand(), createTagPaletteCommand(), clonePaletteCommand(), copySHAPaletteCommand())
 }
 
 type commandPaletteState struct {
@@ -45,7 +45,7 @@ type commandPaletteState struct {
 // table supplies labels, execution functions and keys where one exists.
 func paletteCommand(id string) bool {
 	switch id {
-	case "repo.open", "repo.reopenClosedTab", "repo.clone", "window.settings", "page.history", "page.branches", "page.stash", "page.worktrees", "repo.reload", "history.head", "workspace.focusCommitMessage", "branch.quickCheckout", "repo.quickSwitch", "repo.fetch", "stash.saveTracked", "branch.create", "history.chooseRef", "tag.create":
+	case "repo.open", "repo.reopenClosedTab", "repo.clone", "window.settings", "page.history", "page.branches", "page.stash", "page.worktrees", "repo.reload", "history.head", "workspace.focusCommitMessage", "branch.quickCheckout", "repo.quickSwitch", "repo.fetch", "stash.saveTracked", "branch.create", "history.chooseRef", "tag.create", "commit.copySHA":
 		return true
 	}
 	return false
@@ -138,6 +138,9 @@ func (a *app) commandPaletteUnavailable(id string) string {
 	}
 	if id == "history.head" && a.status.Head == "" {
 		return a.t("commandPaletteNeedHead")
+	}
+	if id == "commit.copySHA" && !a.canCopySelectedCommitSHA() {
+		return a.t("commandPaletteNeedCommit")
 	}
 	return ""
 }

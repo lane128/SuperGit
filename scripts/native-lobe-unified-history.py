@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Check the unified History window against a disposable repository.
 
-Asserts three aligned behaviors:
+Asserts four aligned behaviors:
   1. one destination: no Changes / History / Stash page tabs;
   2. the working tree is a row of the log and the stash entries follow it;
   3. the checked-out commit is the first vertex of the graph, even when
-     another branch has a newer commit.
+     another branch has a newer commit;
+  4. a sidebar tag or stash click locates and selects its row in History
+     without changing the list's ref scope or commit count.
 
 Also records the git commands run while opening, to confirm the working tree
 status is read once. Uses disposable Git data and an isolated HOME; the user's
@@ -46,6 +48,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
     (repo / "base.txt").write_text("base\n")
     git("add", "--", "base.txt")
     git("commit", "-m", "Root commit")
+    root_sha = git("rev-parse", "HEAD").decode().strip()
     (repo / "base.txt").write_text("base\nmain tip\n")
     git("commit", "-am", "Main tip")
     head = git("rev-parse", "HEAD").decode().strip()
@@ -57,6 +60,9 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
     git("add", "--", "future.txt")
     subprocess.run(["git", "-C", str(repo), "commit", "-m", "Future side tip"], env=future_env, check=True, capture_output=True)
     git("switch", "main")
+    # A tag older than HEAD gives the sidebar something to locate without
+    # changing the list's scope.
+    git("tag", "root-tag", root_sha)
     (repo / "base.txt").write_text("base\nmain tip\nstashed\n")
     git("stash", "push", "-m", "Fixture stash")
     (repo / "base.txt").write_text("base\nmain tip\ndirty\n")
@@ -159,6 +165,63 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
             selected_stash = [e for e in found if e[2] == stash[0][2] and "offscreen" not in e[3]]
             assert selected_stash and any("checked" in e[3] or "selected" in e[3] for e in selected_stash), "the stash row was not selected"
             results["stash_row_opens_details"] = True
+
+            # 4. Sidebar refs locate and select; they do not re-scope the list.
+            def count_labels():
+                return sorted(e[2] for e in entries() if re.fullmatch(r"\d+ commits?", e[2]))
+
+            def sidebar_row(name, role="button"):
+                for e in entries():
+                    if e[1] != role or name not in e[2] or "offscreen" in e[3]:
+                        continue
+                    match = re.search(r"bounds=([\d.]+),", e[3])
+                    if match and float(match.group(1)) < 320:
+                        return e
+                return None
+
+            def history_row(name):
+                return [e for e in entries() if e[1] == "listItem" and name in e[2] and "offscreen" not in e[3]]
+
+            def wait_selected(name):
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    rows = history_row(name)
+                    if rows and any("selected" in e[3] or "checked" in e[3] for e in rows):
+                        return rows
+                    time.sleep(0.1)
+                return history_row(name)
+
+            def all_refs_shown():
+                return any(e[2] == "All refs" and "offscreen" not in e[3] for e in entries())
+
+            counts_before = count_labels()
+            assert all_refs_shown(), "the header does not start on All refs"
+            tags_heading = sidebar_row("Tags", role="disclosure")
+            assert tags_heading, "the sidebar has no Tags group"
+            auto("click", tags_heading[0], "--settle")
+            tag_row = sidebar_row("root-tag")
+            assert tag_row, "the tag is not listed in the sidebar"
+            auto("focus", tag_row[0], "--settle")
+            auto("click", tag_row[0], "--settle")
+            root_rows = wait_selected("Root commit")
+            assert root_rows and any("selected" in e[3] or "checked" in e[3] for e in root_rows), f"the tag click did not select its commit: {root_rows}"
+            assert count_labels() == counts_before, f"the tag click changed the commit count: {counts_before} -> {count_labels()}"
+            assert all_refs_shown(), "the tag click replaced All refs with a ref filter"
+            auto("screenshot", str(artifacts / "sidebar-tag-locate.png"))
+            results["sidebar_tag_located"] = True
+
+            stashes_heading = sidebar_row("Stashes", role="disclosure")
+            assert stashes_heading, "the sidebar has no Stashes group"
+            auto("click", stashes_heading[0], "--settle")
+            stash_sidebar = sidebar_row("Fixture stash")
+            assert stash_sidebar, "the stash is not listed in the sidebar"
+            auto("focus", stash_sidebar[0], "--settle")
+            auto("click", stash_sidebar[0], "--settle")
+            stash_rows = wait_selected("Fixture stash")
+            assert stash_rows and any("selected" in e[3] or "checked" in e[3] for e in stash_rows), f"the sidebar stash click did not select its row: {stash_rows}"
+            assert count_labels() == counts_before, "the sidebar stash click changed the commit count"
+            auto("screenshot", str(artifacts / "sidebar-stash-locate.png"))
+            results["sidebar_stash_located"] = True
 
             time.sleep(0.5)
             assert fingerprint() == before, "browsing modified Git data"

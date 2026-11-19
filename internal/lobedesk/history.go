@@ -181,13 +181,22 @@ func (a *app) showCommit(sha string) {
 // until it appears. A parent link can point past the loaded window, so the
 // jump keeps paging instead of stopping at 200 rows.
 func (a *app) jumpToCommit(sha string) {
+	a.jumpToCommitKeeping(sha, false)
+}
+
+// jumpToCommitKeeping is jumpToCommit with the option to keep the reader's
+// search. A jump is about one commit, so a search that hides it would make the
+// link look broken; but a locate from the sidebar should not change the rows
+// on screen, so keepSearch survives as long as the filtered rows still
+// contain the target. Clearing the query also makes paging report the real
+// end of history.
+func (a *app) jumpToCommitKeeping(sha string, keepSearch bool) {
 	if a.repo == nil || sha == "" {
 		return
 	}
-	// A jump is about one commit, so a search that hides it would make the
-	// link look broken. Clearing the query also makes paging report the real
-	// end of history.
-	a.historyQuery = ""
+	if !keepSearch || a.historyQuery != "" && !historyLists(a.filteredHistoryRows(), sha) {
+		a.historyQuery = ""
+	}
 	a.historyRowsSet = false
 	find := func(commits []gitrepo.Commit) bool {
 		for _, commit := range commits {
@@ -232,6 +241,16 @@ func (a *app) jumpToCommit(sha string) {
 	}
 	a.pendingJumpSHA = sha
 	a.loadMoreHistory()
+}
+
+// historyLists reports whether the rows the reader is looking at contain sha.
+func historyLists(commits []gitrepo.Commit, sha string) bool {
+	for _, commit := range commits {
+		if commit.SHA == sha {
+			return true
+		}
+	}
+	return false
 }
 
 // historyReadStatus distinguishes a pending, paused or failed partial traversal.
@@ -393,9 +412,12 @@ func (a *app) historyListMinWidth() float32 {
 	if a.detailsChangesHidden || a.sidebarSplit.rowWidth <= 0 {
 		return historySplitMinList
 	}
-	// Keep the same floor as the window widens. Relaxing it would let
-	// a saved sidebar or Files preference take space back from History.
-	return 350
+	// The working tree's commit editor lives under the Files column, so when
+	// the window narrows below the comfortable 980 points the list yields part
+	// of its floor instead of the editor being squeezed to a sliver. Keep the
+	// same floor as the window widens; relaxing it there would let a saved
+	// sidebar or Files preference take space back from History.
+	return 350 - 50*a.historyNarrowPressure()
 }
 
 func (a *app) historyDetailMinWidth() float32 {

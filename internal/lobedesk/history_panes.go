@@ -39,31 +39,52 @@ func (a *app) historyFilesDefaultWidth() float32 {
 	return historyFilesPaneWidth
 }
 
-// historyWidthPressure transitions to a compact Files column at the minimum
-// window width. Base it on the whole window so selection and divider drags
-// cannot move the responsive boundary.
+// historyWidthPressure transitions to the compact Files column at the
+// comfortable window width. Base it on the whole window so selection and
+// divider drags cannot move the responsive boundary. The boundary stays at
+// 980 even though the window can now shrink to 900: these readings were tuned
+// there, and widening the range would change them at every size in between.
 func (a *app) historyWidthPressure() float32 {
-	const normalWidth = 1160
+	const normalWidth, compactWidth = 1160, 980
 	width := a.sidebarSplit.rowWidth
 	if width <= 0 {
 		return 0
 	}
-	return min(1, max(0, (normalWidth-width)/(normalWidth-minWindowWidth)))
+	return min(1, max(0, (normalWidth-width)/(normalWidth-compactWidth)))
+}
+
+// historyNarrowPressure measures how far the window has gone below the
+// comfortable 980 points. Only the working tree's row uses it: its commit
+// editor lives under the Files column, so below 980 the editor keeps its
+// width instead of following the commit list's compact floor. At and above
+// 980 the pressure is zero and the established layout is unchanged.
+func (a *app) historyNarrowPressure() float32 {
+	if !a.worktreeSelected {
+		return 0
+	}
+	const comfortableWidth = 980
+	width := a.sidebarSplit.rowWidth
+	if width <= 0 {
+		return 0
+	}
+	return min(1, max(0, (comfortableWidth-width)/(comfortableWidth-minWindowWidth)))
 }
 
 func (a *app) historyFilesMinWidth() float32 {
 	const compactFilesMin = 96
-	return historyFilesPaneMin - a.historyWidthPressure()*(historyFilesPaneMin-compactFilesMin)
+	filesMin := historyFilesPaneMin - a.historyWidthPressure()*(historyFilesPaneMin-compactFilesMin)
+	return max(filesMin, historyFilesPaneMin*a.historyNarrowPressure())
 }
 
 // historyPatchMinWidth gives wider History windows a more useful reading
-// width even when a saved split heavily favors the Files column.
+// width even when a saved split heavily favors the Files column. Below 980
+// the working tree's patch gives room back to the commit editor.
 func (a *app) historyPatchMinWidth() float32 {
-	const wideWindow = 1600
+	const comfortableWidth, wideWindow = 980, 1600
 	const extraPatchWidth = 120
 	width := a.sidebarSplit.rowWidth
-	progress := min(1, max(0, (width-minWindowWidth)/(wideWindow-minWindowWidth)))
-	return historyDiffPaneMin + progress*extraPatchWidth
+	progress := min(1, max(0, (width-comfortableWidth)/(wideWindow-comfortableWidth)))
+	return historyDiffPaneMin - 70*a.historyNarrowPressure() + progress*extraPatchWidth
 }
 
 // historyFilesWidth is the files column's width this frame, read from the
@@ -441,6 +462,7 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 	if active {
 		wrapper.Background(tk.BgContainer)
 	}
+	var close ui.Element
 	wrapper.Children(func() {
 		const tabPadding, captionWidth = 10, 204
 		tab := ui.ButtonBase(c).Label(name+suffix).Row().Height(38).Padding(0, tabPadding).
@@ -468,7 +490,7 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 			a.activateDetailTab(key)
 		}
 		if !key.Summary {
-			close := ui.ButtonBase(c).Label(a.t("close") + " " + path).Width(26).Height(30).Shrink(0).Center()
+			close = ui.ButtonBase(c).Label(a.t("close") + " " + path).Width(26).Height(30).Shrink(0).Center()
 			a.wireDetailTabKeys(close, key)
 			close.Children(func() { ui.Icon(c, lucide.X()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary) })
 			if close.Clicked() {
@@ -479,9 +501,15 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 		a.focusRequestedDetailTab(tab, key)
 	})
 	// A click inside the wrapper can change the active tab mid-frame.
-	// Only the resulting selection may consume the pending reveal.
+	// Only the resulting selection may consume the pending reveal. Reveal the
+	// Close action, not just the wrapper: on a narrow strip the wrapper can be
+	// visible while its trailing Close button is clipped by the viewport.
 	if a.detailTabs().Active == key && a.detailReveal {
-		wrapper.ScrollIntoView()
+		if key.Summary {
+			wrapper.ScrollIntoView()
+		} else {
+			close.ScrollIntoView()
+		}
 		a.detailReveal = false
 	}
 }
