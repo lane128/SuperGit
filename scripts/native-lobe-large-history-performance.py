@@ -118,7 +118,9 @@ with tempfile.TemporaryDirectory(prefix="supergit-large-performance.") as direct
                     raise AssertionError("Native app did not open automation socket")
                 time.sleep(0.05)
             auto("open", "--socket", str(socket))
-            auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+            # The default destination is History on the newest commit; the
+            # ref-scope control is the stable readiness gate on that page.
+            auto("wait", "--text", "All refs", "--timeout", "30s", "--settle")
             auto("key", "cmd+1", "--settle")
             auto("wait", "--text", "32002 commits", "--timeout", "80s", "--settle")
             results["launch_to_complete_history_seconds"] = time.monotonic() - started
