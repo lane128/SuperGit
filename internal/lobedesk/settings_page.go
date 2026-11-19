@@ -106,6 +106,7 @@ func (a *app) appearanceCard(c *ui.Context) {
 			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		})
+		a.codeFontSizeSetting(c)
 		settingsHelp(c, a.t("appearanceHelp"))
 	})
 }

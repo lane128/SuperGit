@@ -77,11 +77,11 @@ func TestCommitGraphLaysOutLinearHistory(t *testing.T) {
 			t.Errorf("row %d = %+v; want lane 0 without boundary", i, row)
 		}
 	}
-	if len(graph.Spans[0]) != 1 || graph.Spans[0][0].End != 1 {
-		t.Fatalf("row 0 spans = %+v; want one edge to row 1", graph.Spans[0])
+	if len(graphRowSpans(graph, 0)) != 1 || graphRowSpans(graph, 0)[0].End != 1 {
+		t.Fatalf("row 0 spans = %+v; want one edge to row 1", graphRowSpans(graph, 0))
 	}
-	if len(graph.Spans[2]) != 1 {
-		t.Fatalf("row 2 spans = %+v; want the incoming edge", graph.Spans[2])
+	if len(graphRowSpans(graph, 2)) != 1 {
+		t.Fatalf("row 2 spans = %+v; want the incoming edge", graphRowSpans(graph, 2))
 	}
 }
 
@@ -99,9 +99,9 @@ func TestCommitGraphBranchesAndMerges(t *testing.T) {
 	// The merge's first parent continues the node's lane; the second parent
 	// takes a lane of its own.
 	var mergeEdge *commitGraphEdge
-	for i := range graph.Spans[0] {
-		if graph.Spans[0][i].Merge {
-			mergeEdge = &graph.Spans[0][i]
+	for i := range graphRowSpans(graph, 0) {
+		if graphRowSpans(graph, 0)[i].Merge {
+			mergeEdge = &graphRowSpans(graph, 0)[i]
 		}
 	}
 	if mergeEdge == nil {
@@ -112,7 +112,7 @@ func TestCommitGraphBranchesAndMerges(t *testing.T) {
 	}
 	// Row 1 carries the merge edge, the edge from the merge into b, and the
 	// edge from b toward d.
-	if got := len(graph.Spans[1]); got != 3 {
+	if got := len(graphRowSpans(graph, 1)); got != 3 {
 		t.Errorf("row 1 spans = %d; want 3", got)
 	}
 	if graph.Rows[3].Lane != 0 {
@@ -125,8 +125,8 @@ func TestCommitGraphMarksMissingParents(t *testing.T) {
 	if !graph.Rows[0].Boundary {
 		t.Error("a parent outside the loaded list should mark the boundary")
 	}
-	if len(graph.Spans[0]) != 0 {
-		t.Errorf("spans = %+v; want none for a missing parent", graph.Spans[0])
+	if len(graphRowSpans(graph, 0)) != 0 {
+		t.Errorf("spans = %+v; want none for a missing parent", graphRowSpans(graph, 0))
 	}
 }
 
@@ -651,9 +651,10 @@ func TestGraphWidthContainsEveryLane(t *testing.T) {
 // row; a graph that already fits keeps its standard gap.
 func TestANarrowGraphPacksItsLanes(t *testing.T) {
 	g := &commitGraph{Lanes: 8, Width: graphWidth(8), Gap: graphLaneGap}
-	g.FitWidth(120)
-	if g.Width > 120.01 {
-		t.Errorf("the graph takes %v of a 120-wide budget", g.Width)
+	const budget = 144 // Eight 16-DIP lanes plus the graph's horizontal padding.
+	g.FitWidth(budget)
+	if g.Width > budget {
+		t.Errorf("the graph takes %v of a %d-DIP budget", g.Width, budget)
 	}
 	if g.Gap >= graphLaneGap {
 		t.Errorf("the graph kept its wide %v gap", g.Gap)
@@ -815,7 +816,7 @@ func TestEveryRefPointsAtAColorOnItsRow(t *testing.T) {
 		if color, ok := graph.RowLaneColor(row); ok {
 			drawn[color] = true
 		}
-		for _, span := range graph.Spans[row] {
+		for span := range graph.spans(row) {
 			drawn[graph.LaneColor(span.Color)] = true
 		}
 		for _, ref := range commitRefs(commits[row].Refs) {

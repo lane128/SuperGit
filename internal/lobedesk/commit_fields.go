@@ -76,7 +76,27 @@ func (a *app) pasteCommitSummary(text string, start, end int) bool {
 	return true
 }
 
+// The editor treats Cmd+Shift+A as Select All before window shortcuts.
+// Route explicit batch and detail-tab keys through their shared bindings and
+// guards; ordinary editing keys remain with the editor.
+func (a *app) commitFieldBatchKey(k ui.TextKey) bool {
+	if a.fileTabTextKey(k) {
+		return true
+	}
+	for _, s := range shortcutTable() {
+		if (s.ID == "workspace.stageModified" || s.ID == "workspace.unstageAll") &&
+			s.Mod == k.Mods && s.Key == k.Key && s.Available != nil && s.Available(a) {
+			s.Run(a)
+			return true
+		}
+	}
+	return false
+}
+
 func (a *app) commitSummaryKey(k ui.TextKey) bool {
+	if a.commitFieldBatchKey(k) {
+		return true
+	}
 	if k.Key == ui.KeyEnter && k.Mods == 0 {
 		return true
 	}
@@ -112,6 +132,7 @@ func (a *app) commitMessageFields(c *ui.Context) {
 		display.Text(c, a.t("commitSummary"), display.TextProps{FontSize: scaledFont(11)})
 		summary := field.Input(c.Key("summary"), &s.Summary, field.InputProps{Variant: field.InputFilled, Placeholder: a.t("commitSummaryHint")}).
 			FillWidth().FontSize(scaledFont(fontSize)).Label(a.t("commitSummary")).OnTextKey(a.commitSummaryKey)
+		a.consumeCommitMessageFocus(summary)
 		start, end := summary.TextSelection()
 		summary.OnPaste(func(text string) bool { return a.pasteCommitSummary(text, start, end) })
 		if s.PendingPaste {
@@ -123,7 +144,7 @@ func (a *app) commitMessageFields(c *ui.Context) {
 		}
 		display.Text(c, a.t("commitDescription"), display.TextProps{FontSize: scaledFont(11)})
 		body := field.TextArea(c.Key("body"), &s.Body, field.TextAreaProps{Variant: field.InputFilled, Placeholder: a.t("commitDescriptionHint"), MinRows: 3, MaxRows: maxRows}).
-			FillWidth().FontSize(scaledFont(fontSize)).LineHeight(1.45).Label(a.t("commitDescription"))
+			OnTextKey(a.commitFieldBatchKey).FillWidth().FontSize(scaledFont(fontSize)).LineHeight(1.45).Label(a.t("commitDescription"))
 		if body.Changed() {
 			a.storeCommitFields()
 		}

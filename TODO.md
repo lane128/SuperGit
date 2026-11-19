@@ -30,10 +30,10 @@
 | 层次 | 已确认的现状 | 对排期的影响 |
 | --- | --- | --- |
 | Git 后端 | `internal/gitrepo` 已有暂存、提交、分支、同步、Stash、整合操作、worktree / submodule 等能力；两套 UI 共用 | 优先复用已有能力，不能把后端已有视为新版 UI 已接通 |
-| 打包版 | `cmd/supergit` → `internal/desktop`；`make app` 仍打包此入口，包含旧版仓库入口、自动检测、冲突编辑等流程 | README 能力表主要描述此版，不是新版的完成度清单 |
+| 打包版 | `make app` 经 `cmd/supergit` 构建 `internal/lobedesk`。`make desktop-app` 构建旧桌面回退包 | 默认入口切换及原生证据见 R13 |
 | 新版界面 | `cmd/supergit-lobe` → `internal/lobedesk`；已有历史与工作区合并、设置、文件 / 行 / 片段操作、分支和同步等大量演进 | 已超出 README 中早期「仅浏览、暂存、提交」的预览描述，但仍不能据此宣称功能全部对齐 |
 | 本地实时更新 | 2026-11-16 已接入独立本地检测，结合 `ChangeStamp` 与改动文件元数据，前台 / 后台及聚焦检查 | 自动 Fetch 关闭时的外部编辑、暂存、提交、切分支与子模块 HEAD 已原生验收；细节与元数据观察边界见 R10 |
-| 自动化 | `make check` 检查全部 Go 包；`make native-check` 构建旧版 `supergit-e2e`；`native-narrow-shots.py` 使用 Lobe 版 | 旧版完整流程通过，不能证明新版日常闭环已通过 |
+| 自动化 | `make check` 检查全部 Go 包，`make native-check` 验证标准包，`make desktop-native-check` 验证回退入口 | 本轮两个 macOS 原生入口均通过，Windows / Linux 实机验收待完成 |
 | 视觉证据 | 已查看 `build/narrow-shots/zh-light-worktree.png`、`en-dark.png`；980×640 下能容纳四个区域，摘要在前时文件仍呈选中态 | 本轮依据已有截图与代码做规划，没有重新启动或实测 App |
 | 跨平台 | 已验证记录集中在 macOS Apple Silicon；新版外部打开 / 文件定位 / 终端仍直接执行 macOS `open` | 需要平台适配与目标系统实测，不能由 Go 可编译推断跨平台可交付 |
 
@@ -45,7 +45,7 @@
 2. **备选：继续以 desktop 为主线，将新版交互移回旧版**。保留现有交付与测试路径，但要重新实现近期布局、设置与交互，重复成本较大。
 3. **不建议长期双线同规格演进**。短期可保留旧版做行为对照，长期会让能力、文档与自动化继续分叉。
 
-主线方向已确认，尚未决定删除任何实现。M0 的问题调查和已有行为修复可独立推进；打包切换仍须满足上述门槛，新增交互按对应决策解锁。
+2026-11-19 已切换默认打包入口，R13 记录验收结果。旧界面可独立构建作回退与行为对照。R11 继续跟踪待验收能力。
 
 ### 里程碑与完成门槛
 
@@ -79,7 +79,7 @@
 - [x] **R10 / P1 · 接通本地改动自动检测**。2026-11-16 已接通独立于自动 Fetch 的本地检测：复用 `gitrepo.ChangeStamp`，补充当前改动文件的大小、mtime、模式及符号链接目标观察；前台约 3 秒、后台约 15 秒，聚焦立即检查。刷新 / 写入 / 关闭取消旧探测，校验仓库与代次，失败退避并去重提示；刷新保留草稿与焦点，并更新补丁缓存代次。生命周期及真实 Git 回归 RED→GREEN；全量测试 / race / vet、两种构建与两套原生冒烟通过。`native-local-watch-smoke.py` 关闭自动 Fetch、全程不按 Refresh，验证再次保存、未选中 Unicode 文件、外部暂存 / 提交 / 切分支、子模块 HEAD 更新及 HEAD / Index 保护。文件内容观察依赖元数据；刻意保持相同大小、时间戳和模式的字节改写不保证识别。
 - [ ] **R11 / P1 · 候选主线能力差距表**。2026-11-16 已建立 [实际能力差距表](docs/lobe-capability-gaps.md)，区分后端、Lobe 入口、当前 / 历史原生证据与未验收。确认 Clone / Init / 最近仓库尚无新版入口，旧 desktop 原生脚本不能证明新版闭环；另复现 Amend 只预填标题导致正文遗漏，已修复完整消息预填，真实 reload 回归 RED→GREEN，全量测试 / race / vet、两种构建及新增预填断言的完整原生冒烟通过。新增 `native-lobe-sync-smoke.py` 已原生通过 Push 取消 / 首推设置 upstream、Fetch 保护本地状态、FF Pull 及分叉拒绝；后续扩展两个本地裸远端，通过 main → backup/publish/nested 的取消 / 发布、origin 不变、Fetch 双方新引用，保留 HEAD / branch / Index / 暂存二进制和未暂存 Unicode 字节；日志与截图见试用记录。新增 `native-lobe-stash-smoke.py` 通过含未跟踪保存、Apply、Pop、Drop 取消 / 确认及重叠拒绝保护；Git 失败可能恢复未跟踪文件的边界已独立复现并记录。后续同脚本通过 Apply / Pop 实际三方冲突、stash / HEAD 保留、Index 三阶段与双方文本、恢复说明 / Git stderr，以及外部解决暂存后的精确字节；应用内编辑仍未验收。新增 `native-lobe-worktree-smoke.py` 原生通过创建 / 切换 / 返回、移除取消、脏目录拒绝和干净移除后保留分支；后续已通过 toast Delete 的坐标点击，确认只删除原分支且 main HEAD / Index / Unicode 字节不变。完整 Worktree 脚本现 8 组通过，新增锁定菜单禁用、确认后新锁定目标拒绝、ignored 二进制文件拒绝及精确字节 / HEAD / Index 保留；ignored 拒绝原因后续已完成当前语言映射，保留原路径和后端旧错误文本，真实 Worktree / cherry-pick 回归 RED→GREEN、全量 Go / race / vet / 构建、原生 Worktree / 完整工作台通过。新增 `native-lobe-submodule-smoke.py` 通过 Update 初始化 / 回到 Index SHA / dirty 拒绝及打开 child 独立历史；child Worktrees 路径已修复并通过主 / linked 子模块真实仓库回归、原生 Current / 真实目录断言及全量门槛；跨 root 错误提示已复核：最新原生五组通过，先保存父仓库真实更新拒绝，再在 child Worktrees / History 中检查错误容器与正文均不残留，父子 HEAD / refs / Index 条目 / 状态及 .gitmodules / 脏文件字节保持；结果 `build/lobe-submodule-psyuv4uc/results.json`、日志 `build/lobe-submodule-root-followup.log`，三张前后截图已查看。泛用通知归属回归也通过；首次探针遇到自动重读令菜单禁用，补就绪后重新取菜单目标而未改产品。这里只覆盖已完成错误后的切换，不声称运行中竞态或 OS 焦点全覆盖。新增 `native-lobe-operation-smoke.py` 通过真实 cherry-pick 冲突的 Continue 禁用、Abort / Skip 取消确认及外部解决后的 Continue 完整消息 / Index 保护；后续已扩展 Rebase / Merge / Revert 独立冲突操作卡，完整 11 组通过，核对禁用、取消确认、Abort / Skip 恢复、Continue 的完整消息 / 父提交及 Merge 提交框生成双父提交；冲突发起和解决由 fixture 执行，应用内编辑仍未验收。新增 `native-lobe-reference-smoke.py` 经详情 footer 坐标点击，原生通过非当前分支 Push 取消 / 发布 / upstream、分支重命名保留 tip / tracking、本地分支删除、附注标签推送 / 删除和远端分支租约删除；每段核对主 HEAD / Index / Unicode 字节、取消与目标范围。首轮同名本地 / 远端行歧义修正后完整重跑通过，最终截图已查看。Force / prune 后续通过顶栏 focus + Shift+F10 的应用内菜单原生验收：取消与分叉替换、外部远端推进且 fetch 后显式旧租约拒绝、错误详情保留本地化说明和 Git 原文；prune 只删除过期跟踪引用，同名本地分支及完整脏状态保留。原系统右键自动化限制不适用于这条已验证路径。同一引用脚本另通过 footer 发起无冲突 Merge / Rebase 的取消 / 确认，核对双父提交、目标父提交、完整源消息与双方文件；后续 native-lobe-integrate-smoke.py 已通过历史行菜单发起 Cherry-pick / Revert 的取消与确认：新提交父 SHA、完整源说明 / Revert 原 SHA、准确文件字节及 topic 引用保留均核对；只覆盖无冲突正常发起，应用内冲突编辑仍未补齐。新增 native-lobe-reset-smoke.py 原生通过 Soft / Mixed / Hard Reset 与 Undo：历史行 Shift+F10 应用内菜单可用；取消与 Hard 二次确认、HEAD / Index / 工作字节及未跟踪二进制保护均核对。新增 `native-lobe-conflict-side-smoke.py` 已通过 Merge 冲突文件菜单 Ours / Theirs 两组：精确采用原 Index 第 2 / 3 阶段字节并暂存，取边不移动引用，随后 UI Commit 核对双父提交 / 完整消息 / topic 与无关二进制保护；结果 `build/lobe-conflict-side-i1wtl9ae/results.json`。后续 Rebase 真实取边语义和 Abort 恢复通过；二进制 / 删除型冲突的 Merge / Rebase × Ours / Theirs 共 8 组也通过，核对精确阶段字节或暂存删除、Merge 完整提交与 Rebase 原分支恢复。总览 / 文件标签已补中英文外部处理和删除后果说明，代表原生提示滚动可见截图已核对，日志见 `build/lobe-conflict-shapes-check.log`、`build/lobe-conflict-hints-ready.log`。Rebase 取边后 Continue 后续文本 / 二进制 / 删除 × 两侧共六组通过，核对空重放省略或正确父提交 / 原消息 / 作者、main / topic 身份、精确 Index / 工作字节或删除及无残留操作；日志 `build/lobe-rebase-side-continue.log`、`build/lobe-rebase-side-continue-shapes.log`。仅覆盖整文件取边和 Continue，不等于三方手工编辑或其他操作取边。R11 保持未完成。按 UI 实际操作核对：打开 / 最近仓库 / Clone / Init、暂存与完整提交说明（含 Amend）、Fetch / Pull / Push 与 upstream、Stash、冲突继续 / 中止、worktree、submodule、偏好持久化。分别记录「后端已有 / UI 已接通 / 原生已验证 / 尚缺」，不复制旧版能力表充数。**验收**：试用必需流程逐项通过；无法支持的流程显示准确边界和可用退路；Amend 对 HEAD 的完整说明处理先核对，不能只凭标题预填测试判定通过。
 - [ ] **R12 / P1 · 仓库入口与恢复**。D5 确认后补最近仓库与启动规则；建议先列最近仓库，避免新增自动重开开关。**验收**：启动空页有打开入口，近期路径可辨认；命令行指定路径优先；移动、离线或无权限的目录给原因与重新定位入口，不把暂时不可用当作删除依据；不自动改写仓库或联网。Clone / Init 若纳入本批，只复用已有后端并使用明确的新目录。
-- [ ] **R13 / P1 · 打包、偏好与测试对齐**。D1 确认后再改入口，核对 `preferences.json` / `settings.json` 的迁移与冲突规则，保留原设置可回退。**验收**：`make app` 打开的是所评审界面；对应原生自动化覆盖打开 → 外部编辑刷新 → 暂存 → 提交 → 同步，以及冲突、Stash、子模块；独立测试配置不污染真实偏好。补新版原生检查入口，不能只重命名旧脚本。
+- [x] **R13 / P1 · 打包、偏好与测试对齐**。2026-11-19，`make app` 默认构建标签式工作台，`make desktop-app` 构建独立旧桌面回退包。新版读取旧偏好仅补缺失项，保留原文件。`make native-check` 用实际标准打包配方验证打开 → 外部编辑刷新 → 暂存 → 提交 → 同步，以及 Merge 冲突取边、Stash 和子模块。`make desktop-native-check` 九组通过，两套验证使用隔离偏好。[试用记录](docs/lobe-trial-log.md)保留证据及人工验证边界。
 - [x] **R14 / P1 · 文档同步与试用反馈**。2026-11-16 已同步 README、快捷键和原生验证对象；`docs/packaging.md` 明确默认 desktop / Lobe 入口、独立偏好、旧安装包不会自动更新、实际版本号注入与签名边界。原观察区车道间距已改为当前 20 / 最低 6 DIP。新增 [Lobe 试用记录](docs/lobe-trial-log.md)，记录 macOS 27.2.1 arm64、未提交源码状态、实际脚本场景 / 结果及一次未明原因的选择跳变复现。文档与隔离原生试用记录已交付；尚无新增用户日常开发、真实远端或跨平台会话验收，不据此进入分发准备。
 
 ### M3 / M4：跨平台与后续范围
@@ -95,7 +95,7 @@
 
 | ID | 真正需要决定的问题 | 建议与取舍 | 解锁需求 |
 | --- | --- | --- | --- |
-| D1（已确认） | Lobe 达标后接管 | 后续 UI 集中到 Lobe；旧版暂留作当前打包版与对照，能力 / 原生验证 / 偏好迁移达标后切换打包 | R11、R13、M2 |
+| D1（已执行） | Lobe 达标后接管 | 默认 `make app` 已切换至 Lobe，旧桌面回退包保留 | R11、R13、M2 |
 | D2（已确认，更新） | 四列，提交 / 摘要与多文件整合为标签式详情 | 按最新预览：第三列为全高文件列表；第四列首标签为提交 / 摘要并包含全部补丁，后续为可关闭的单文件标签；替代此前上下分区方案 | R06、T1–T6、相关设置命名 |
 | D3 | 打开仓库默认进入哪里？ | 推荐有改动 / 进行中操作选工作区，否则 HEAD；也可保持始终第一条提交，行为改动较小。进入该目标后的首标签规则已在 D2 / T2 中确定，不与启动默认目标混为一项 | R07、R09 |
 | D4 | 两条正确性规则：冲突残留标记、子模块 ignore | 推荐冲突残留阻止直接标记完成，特殊合法文本另设明确流程；子模块始终显示实际状态与 Diff。前者比确认后放行更保守，后者偏离用户 ignore 配置但信息一致 | R01、R05 |

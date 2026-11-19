@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"supergit/internal/desktop"
 )
 
 func main() {
@@ -19,7 +18,7 @@ func main() {
 		}
 		path = os.Args[1]
 	}
-	if err := desktop.Run(path); err != nil {
+	if err := runApp(path); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

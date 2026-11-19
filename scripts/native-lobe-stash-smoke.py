@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise current Lobe Stash UI using a fresh repository and isolated HOME."""
+"""Exercise Lobe Stash in a fresh repository with isolated preferences."""
 import json
 import os
 import pathlib
@@ -9,10 +9,10 @@ import tempfile
 import time
 
 project = pathlib.Path(__file__).resolve().parent.parent
-build = project / "build"
+build = pathlib.Path(os.environ.get("SUPERGIT_NATIVE_BUILD_DIR", project / "build"))
 automation = build / "mygo-automation"
-candidates = list(build.glob("supergit-lobe*e2e"))
-if not automation.is_file() or len(candidates) != 1:
+binary = pathlib.Path(os.environ.get("SUPERGIT_NATIVE_BINARY", build / "supergit-lobe-e2e"))
+if not automation.is_file() or not binary.is_file():
     raise SystemExit("Run make lobe-e2e-build first")
 artifacts = build / "lobe-stash-smoke"
 artifacts.mkdir(parents=True, exist_ok=True)
@@ -22,8 +22,8 @@ session = "supergit-lobe-stash"
 def run():
     with tempfile.TemporaryDirectory(prefix="supergit-lobe-stash.") as directory:
         root = pathlib.Path(directory)
-        repo, home = root / "workspace", root / "home"
-        settings = home / "Library/Application Support/supergit"
+        repo, config = root / "workspace", root / "config"
+        settings = config / "supergit"
         settings.mkdir(parents=True)
         (settings / "settings.json").write_text(json.dumps({"language": "en", "theme": "light", "autoFetch": False}))
         git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
@@ -46,9 +46,9 @@ def run():
         extra.write_text("untracked version\n")
         original_index = git("ls-files", "--stage")
         socket = root / "app.sock"
-        env = {**git_env, "HOME": str(home), "MYGO_AUTOMATION": str(socket), "SUPERGIT_WINDOW_SIZE": "1320x640"}
+        env = {**git_env, "SUPERGIT_TEST_CONFIG_DIR": str(config), "MYGO_AUTOMATION": str(socket), "SUPERGIT_WINDOW_SIZE": "1320x640"}
         with (artifacts / "app.log").open("w") as log, (artifacts / "automation.log").open("w") as trace:
-            app = subprocess.Popen([str(candidates[0]), str(repo)], cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
+            app = subprocess.Popen([str(binary), str(repo)], cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
 
             def auto(*args):
                 result = subprocess.run([str(automation), *args, "--session", session], cwd=project, capture_output=True, text=True, timeout=40)

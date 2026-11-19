@@ -322,20 +322,37 @@ func elideMiddle(text string, max int) string {
 	return string(runes[:head]) + "…" + string(runes[len(runes)-tail:])
 }
 
-// formatDateTime renders a timestamp the one way the app shows times: the
-// local calendar date and clock, down to the second. Git UIs that print "3
-// days ago" trade precision for scanning; this app asks for the exact moment
-// everywhere, so the commit list, the details pane and the blame gutter agree
-// with each other and with the commit's own record.
-//
-// An unparseable value is shown as it came, so a locale-specific date from Git
-// is never blanked out.
+// elidedPrefix marks the omitted beginning of a display string.
+func elidedPrefix(visible string) string {
+	return "…" + visible
+}
+
+// elideAround keeps the text near index and marks any omitted ends.
+func elideAround(text string, index int) string {
+	runes := []rune(text)
+	start, end := max(0, index-1), min(len(runes), index+4)
+	visible := string(runes[start:end])
+	if start > 0 {
+		visible = "…" + visible
+	}
+	if end < len(runes) {
+		visible += "…"
+	}
+	return visible
+}
+
+// formatDateTime renders the local calendar date and clock down to the second.
 func formatDateTime(value string) string {
+	return formatDateTimeLayout(value, "2006-01-02 15:04:05")
+}
+
+// An unparseable timestamp is shown as it came from Git.
+func formatDateTimeLayout(value, layout string) string {
 	if value == "" {
 		return ""
 	}
 	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
-		return parsed.Local().Format("2006-01-02 15:04:05")
+		return parsed.Local().Format(layout)
 	}
 	return value
 }
@@ -494,7 +511,7 @@ func (a *app) historyRows() []gitrepo.Commit {
 	if a.historyRowsSet && a.historyRowsFrame == a.frameSeq {
 		return a.historyRowsCache
 	}
-	return filterCommits(a.historySource(), a.historyQuery)
+	return a.filteredHistoryRows()
 }
 
 // selectedCommit is the commit the reader picked, looked up in the list they
@@ -539,6 +556,9 @@ func (a *app) commitDisabledReason() string {
 	}
 	if a.loading || a.repo == nil {
 		return a.t("loadingRepo")
+	}
+	if a.loadErr != "" {
+		return a.t("reloadFailed")
 	}
 	summary, _, _ := strings.Cut(a.commitText, "\n")
 	if strings.TrimSpace(summary) == "" {

@@ -2,6 +2,7 @@ package lobedesk
 
 import (
 	"hash/fnv"
+	"iter"
 	"math"
 	"strings"
 
@@ -181,14 +182,15 @@ type commitGraphRow struct {
 	Fork     bool // More than one distinct child in the loaded DAG.
 }
 
-// commitGraph is the layout for one rendered commit list. Spans are expanded
-// per row once, so drawing a row only visits the edges that cross it.
+// commitGraph stores each edge once. An interval index finds edges crossing
+// a visible row without expanding long edges into copies for every row.
 type commitGraph struct {
-	Worktree *worktreeGraphLink
-	Rows     []commitGraphRow
-	Spans    [][]commitGraphEdge
-	Lanes    int
-	Width    float32
+	Worktree   *worktreeGraphLink
+	Rows       []commitGraphRow
+	edges      []commitGraphEdge // Ordered by source row, then original parent order.
+	edgeMaxEnd []int             // Subtree maximum End in the implicit balanced interval tree.
+	Lanes      int
+	Width      float32
 	// Gap is the distance between lane centres. It is graphLaneGap until a
 	// narrow list makes FitWidth compress the graph to leave the subject room.
 	Gap float32
@@ -332,12 +334,11 @@ func newCommitGraph(commits []gitrepo.Commit, palette []ui.Color) *commitGraph {
 	for i := range edges {
 		edges[i].ParentLane = graph.Rows[edges[i].End].Lane
 	}
-	graph.Spans = make([][]commitGraphEdge, len(commits))
+	graph.edges = edges
+	graph.edgeMaxEnd = make([]int, len(edges))
+	graph.indexEdges(0, len(edges))
 	maxLane := 0
 	for _, edge := range edges {
-		for row := edge.Start; row <= edge.End; row++ {
-			graph.Spans[row] = append(graph.Spans[row], edge)
-		}
 		maxLane = max(maxLane, edge.ViaLane, edge.SourceLane, edge.ParentLane)
 	}
 	for _, row := range graph.Rows {
@@ -349,18 +350,61 @@ func newCommitGraph(commits []gitrepo.Commit, palette []ui.Color) *commitGraph {
 	return graph
 }
 
-// graphLaneGapMin is how tight FitWidth may pack lanes. Below it the bends
-// stop reading as curves; a repository with more lanes than fit at this gap
-// keeps a graph wider than its budget rather than hiding a node.
-const graphLaneGapMin float32 = 6
+// indexEdges builds a balanced interval tree in-place over source-ordered edges.
+func (g *commitGraph) indexEdges(lo, hi int) int {
+	if lo >= hi {
+		return -1
+	}
+	mid := lo + (hi-lo)/2
+	end := max(g.edges[mid].End, g.indexEdges(lo, mid), g.indexEdges(mid+1, hi))
+	g.edgeMaxEnd[mid] = end
+	return end
+}
 
-// FitWidth packs the lanes into maxWidth when the natural graph would take too
-// much of a narrow list. It only ever shrinks: a graph with room keeps the
-// standard gap, so wide windows look exactly as they did.
+// spans yields exactly the inclusive intervals crossing row, preserving painter
+// order. It allocates no result slice, even when thousands of lanes cross a row.
+func (g *commitGraph) spans(row int) iter.Seq[commitGraphEdge] {
+	return func(yield func(commitGraphEdge) bool) {
+		if row < 0 || row >= len(g.Rows) {
+			return
+		}
+		g.visitSpans(row, 0, len(g.edges), yield)
+	}
+}
+
+func (g *commitGraph) visitSpans(row, lo, hi int, yield func(commitGraphEdge) bool) bool {
+	if lo >= hi || g.edges[lo].Start > row {
+		return true
+	}
+	mid := lo + (hi-lo)/2
+	if g.edgeMaxEnd[mid] < row {
+		return true
+	}
+	if !g.visitSpans(row, lo, mid, yield) {
+		return false
+	}
+	edge := g.edges[mid]
+	if edge.Start <= row && edge.End >= row && !yield(edge) {
+		return false
+	}
+	return g.visitSpans(row, mid+1, hi, yield)
+}
+
+// The largest selected halo reaches 12 DIP from the lane center and the
+// thickest adjacent stroke reaches 1.5 DIP toward it. Leave room for both
+// and their antialiasing. Extra lanes scroll within the same viewport.
+const graphLaneGapMin float32 = 15
+
+func (g *commitGraph) contentWidth() float32 {
+	return g.worktreeGutter() + 16 + float32(g.Lanes)*g.LaneGap()
+}
+
+// FitWidth caps the viewport while retaining readable lane geometry.
 func (g *commitGraph) FitWidth(maxWidth float32) {
 	if maxWidth <= 0 || g.Lanes <= 0 {
 		return
 	}
+	budget := maxWidth
 	gutter := g.worktreeGutter()
 	maxWidth -= gutter
 	natural := graphWidth(g.Lanes)
@@ -372,7 +416,7 @@ func (g *commitGraph) FitWidth(maxWidth float32) {
 	gap := (maxWidth - 16) / float32(g.Lanes)
 	gap = max(graphLaneGapMin, min(graphLaneGap, gap))
 	g.Gap = gap
-	g.Width = gutter + 16 + float32(g.Lanes)*gap
+	g.Width = min(budget, g.contentWidth())
 }
 
 // LaneGap is the distance between lane centres this graph is drawn with.

@@ -10,7 +10,7 @@ import (
 // commit made shortly before midnight in Tokyo falls on the previous day here.
 func TestParseHistoryKeepsTheDayTheListShows(t *testing.T) {
 	when := "2026-11-08T23:30:00+09:00"
-	commits, err := parseHistory("abc123\x00\x00subject\x00Ada\x00" + when + "\x00main")
+	commits, err := parseHistory("abc123\x00\x00subject\x00Ada\x00author@example.invalid\x00" + when + "\x00main")
 	if err != nil {
 		t.Fatalf("parseHistory: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestParseHistoryKeepsTheDayTheListShows(t *testing.T) {
 // A date Git printed in a form this code cannot parse leaves Day empty: the
 // day filter then has nothing to offer, rather than matching the wrong text.
 func TestParseHistoryLeavesAnUnreadableDateWithoutADay(t *testing.T) {
-	commits, err := parseHistory("abc123\x00\x00subject\x00Ada\x00not-a-date\x00main")
+	commits, err := parseHistory("abc123\x00\x00subject\x00Ada\x00author@example.invalid\x00not-a-date\x00main")
 	if err != nil {
 		t.Fatalf("parseHistory: %v", err)
 	}

@@ -43,7 +43,7 @@ func (r *Repository) HistoryPage(ctx context.Context, tips []string, offset, lim
 	if len(tips) == 0 {
 		return page, nil
 	}
-	args := []string{"log", "-z", "--format=%H%x00%P%x00%s%x00%an%x00%aI%x00%D", "--topo-order", "--skip=" + strconv.Itoa(offset), "-n", strconv.Itoa(limit + 1), "--stdin", "--"}
+	args := []string{"log", "-z", historyFormat, "--topo-order", "--skip=" + strconv.Itoa(offset), "-n", strconv.Itoa(limit + 1), "--stdin", "--"}
 	out, err := run(ctx, r.Root, strings.Join(tips, "\n")+"\n", args...)
 	if err != nil {
 		return HistoryPage{}, err

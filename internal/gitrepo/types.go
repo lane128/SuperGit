@@ -36,9 +36,9 @@ type Diff struct {
 	CanStageHunks bool
 }
 type Commit struct {
-	SHA                         string
-	Parents                     []string
-	Subject, Author, Date, Refs string
+	SHA                                      string
+	Parents                                  []string
+	Subject, Author, AuthorEmail, Date, Refs string
 	// Day is Date's calendar day in local time ("2006-01-02"), parsed once when
 	// the log is read. The history search matches it, so a reader can filter to
 	// a day without the search re-parsing every timestamp on every frame.

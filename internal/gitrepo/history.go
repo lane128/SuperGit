@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+// Keep every history producer and streaming/page record boundary in sync.
+const historyFormat = "--format=%H%x00%P%x00%s%x00%an%x00%ae%x00%aI%x00%D"
+const historyFieldCount = 7
+
 // FileHistory lists commits that changed path, following renames. It is a
 // separate query from the paged all-history traversal because --follow cannot
 // be combined with the pinned multi-tip walk.
@@ -23,7 +27,7 @@ func (r *Repository) FileHistory(ctx context.Context, path string, limit int) ([
 	if limit < 1 || limit > 2000 {
 		limit = 200
 	}
-	out, err := run(ctx, r.Root, "", "log", "--follow", "-z", "--format=%H%x00%P%x00%s%x00%an%x00%aI%x00%D", "-n", strconv.Itoa(limit), "--", path)
+	out, err := run(ctx, r.Root, "", "log", "--follow", "-z", historyFormat, "-n", strconv.Itoa(limit), "--", path)
 	if err != nil {
 		return nil, err
 	}
@@ -54,12 +58,12 @@ func parseHistory(out string) ([]Commit, error) {
 	if out == "" {
 		return nil, nil
 	}
-	if len(fields)%6 != 0 {
+	if len(fields)%historyFieldCount != 0 {
 		return nil, fmt.Errorf("无效的提交历史记录")
 	}
-	result := make([]Commit, 0, len(fields)/6)
-	for i := 0; i < len(fields); i += 6 {
-		result = append(result, Commit{SHA: fields[i], Parents: strings.Fields(fields[i+1]), Subject: fields[i+2], Author: fields[i+3], Date: fields[i+4], Refs: fields[i+5], Day: localDay(fields[i+4])})
+	result := make([]Commit, 0, len(fields)/historyFieldCount)
+	for i := 0; i < len(fields); i += historyFieldCount {
+		result = append(result, Commit{SHA: fields[i], Parents: strings.Fields(fields[i+1]), Subject: fields[i+2], Author: fields[i+3], AuthorEmail: fields[i+4], Date: fields[i+5], Refs: fields[i+6], Day: localDay(fields[i+5])})
 	}
 	return result, nil
 }

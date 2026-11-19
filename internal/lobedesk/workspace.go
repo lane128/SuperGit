@@ -24,7 +24,7 @@ import (
 // separate workspace page is gone; its first row lives on in history.
 
 func (a *app) remoteActions(c *ui.Context) {
-	blocked := a.busy || a.loading || a.repo == nil
+	blocked := a.busy || a.loading || a.repo == nil || a.tabSnapshotUnavailable()
 	noRemote := len(a.remotes) == 0
 	fetchHint := ""
 	if noRemote {
@@ -197,12 +197,24 @@ func (a *app) cleanFiles(c *ui.Context) {
 func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.Entry, staged bool) {
 	tk := theme.TokensOf(c)
 	collapsed := a.fileSectionCollapsed(key)
+	selectionCount := 0
+	if s := a.workspaceSelection; a.repo != nil && s.Root == a.repo.Root && s.Group == key {
+		selectionCount = len(s.Files)
+	}
+	description := a.t("fileSectionHint")
+	if selectionCount > 0 {
+		description += "\n" + a.tf("fileGroupCount", len(entries)) + " · " + a.tf("filesSelectedCount", selectionCount)
+	}
+	compact := a.page == "history" && a.historyFilesWidth() < scaledFont(130)
 	ui.Column(c).FillWidth().Gap(1).Children(func() {
 		header := ui.ButtonBase(c).Label(title).Row().FillWidth().Height(28).PaddingX(8).Gap(6).
 			Radius(tk.BorderRadius).AlignItems(ui.Center).Expanded(!collapsed).
 			// The header folds the section and its count keeps counting the
 			// folded rows; say both, or the number reads as what is on screen.
-			Tooltip(a.t("fileSectionHint"))
+			Description(description).Tooltip(description)
+		if compact {
+			header.PaddingX(3).Gap(3).Tooltip(title + "\n" + description)
+		}
 		if header.Hovered() {
 			header.Background(tk.FillTertiary)
 		}
@@ -213,11 +225,15 @@ func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.En
 				chevron = lucide.ChevronRight()
 			}
 			ui.Icon(c, chevron).FontSize(scaledFont(12)).TextColor(tk.TextTertiary)
-			display.Text(c, title, display.TextProps{Type: display.TextSecondary, Strong: true, FontSize: scaledFont(11)})
+			display.Text(c, title, display.TextProps{Type: display.TextSecondary, Strong: true, FontSize: scaledFont(11)}).SingleLine().Grow(1).Basis(0).MinWidth(0)
 			display.Text(c, fmt.Sprint(len(entries)), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
-			// A button centers what it holds; the spacer keeps the header
-			// reading from the left edge like the rows below it.
-			ui.Row(c).Grow(1).Basis(0)
+			if s := a.workspaceSelection; a.repo != nil && s.Root == a.repo.Root && s.Group == key && len(s.Files) > 0 {
+				display.Text(c, a.tf("filesSelectedCount", len(s.Files)), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).Shrink(0)
+			}
+			if !compact {
+				// Keep the wider header reading from the left edge.
+				ui.Row(c).Grow(1).Basis(0)
+			}
 		})
 		if staged {
 			_, reason := a.batchFileTargets("unstage")
@@ -251,7 +267,7 @@ func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.En
 				reveal = i
 			}
 		}
-		ui.Column(c).FillWidth().Role(ui.RoleList).Children(func() {
+		ui.Column(c).FillWidth().Role(ui.RoleList).Label(title).Multiselectable(true).Children(func() {
 			virtualPatchRows(c, a.commitFilesViewport, &a.commitFilesScroll, heights, reveal, func(rowContext *ui.Context, i int) {
 				ui.Column(rowContext).FillWidth().Height(heights[i]).Shrink(0).Children(func() {
 					row := a.fileRow(rowContext, entries[i], staged)
@@ -302,6 +318,9 @@ func (a *app) toggleFilesSection(key string) {
 }
 
 func (a *app) foldFilesSection(key string) {
+	if a.workspaceSelection.Group == key {
+		a.workspaceSelection = workspaceFileSelection{}
+	}
 	a.filesCollapsed[key] = true
 	refs := a.fileRefs()
 	if len(refs) == 0 {
@@ -348,37 +367,47 @@ func (a *app) expandFilesSection(key string) {
 
 func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Element {
 	tk := theme.TokensOf(c)
-	selected := a.selectedPath == entry.Path && a.selectedStaged == staged
+	primary := a.selectedPath == entry.Path && a.selectedStaged == staged
+	selected := a.workspaceFileSelected(fileRef{entry.Path, staged})
 	if a.page == "history" || a.page == "changes" {
-		selected = selected && a.worktreeSelected && a.detailTabShown() == detailTabFile
+		// Explicit list membership survives Summary; a legacy preview-only
+		// cursor is selected only while its file tab is visible.
+		explicitSelection := a.repo != nil && a.workspaceSelection.Root == a.repo.Root && a.workspaceSelection.Files != nil
+		selected = selected && a.worktreeSelected && (explicitSelection || a.detailTabShown() == detailTabFile)
+		primary = primary && a.worktreeSelected && a.detailTabShown() == detailTabFile
 	}
 	row := fileRowShell(c, tk, entry.Path, selected)
+	if a.page == "history" && a.historyFilesWidth() < scaledFont(130) {
+		row.Padding(0, 3).Gap(4)
+	}
 	a.wireHistoryFileKeys(row, detailFileKey{Path: entry.Path, Staged: staged})
+	a.wireFileDiscardKey(row, entry, staged)
 	// The row is a button, so it takes Tab, Shift+F10 and the accessibility
 	// button role. A focused button also takes Enter and Space for itself,
 	// which would only reselect the row; the row's own shortcuts claim those
-	// keys first and run the page's actions (open the file, stage or unstage
-	// it), so mouse and keyboard paths agree.
+	// keys first and stage or unstage the focused path/version, matching
+	// Sublime Merge's file-list Enter behavior.
 	selectForKey := func() bool {
 		if !a.worktreeFilesShown() || !a.detailNavigationAllowed() || a.busy || a.repo == nil || len(a.lineSel) > 0 {
 			return false
 		}
-		// Roving focus can reach a row without clicking it. Bind actions to
-		// that row's raw path and Index/worktree version before invoking them.
-		a.selectFile(entry.Path, staged)
+		// Roving focus outside the set acts on its own row; focus inside the
+		// set retains membership while making that version the preview.
+		a.selectWorkspaceFile(fileRef{entry.Path, staged}, 0, true)
 		return true
 	}
 	row.OnShortcut(0, ui.KeyEnter, func() {
 		if selectForKey() {
-			a.openSelectedFile()
+			a.runWorkspaceStage(a.workspaceStageTargets(entry, staged))
 		}
 	})
 	row.OnShortcut(0, ui.KeySpace, func() {
 		if selectForKey() {
-			a.toggleSelectedStage()
+			a.runWorkspaceStage(a.workspaceStageTargets(entry, staged))
 		}
 	})
-	a.revealIfSelected(row, selected)
+	row.OnShortcut(ui.Cmd, ui.KeyA, func() { a.selectWorkspaceGroup(fileRef{entry.Path, staged}) })
+	a.revealIfSelected(row, primary)
 	row.Children(func() {
 		a.statusTag(c, statusCode(entry, staged), display.TagProps{
 			Variant: display.TagFilled,
@@ -386,7 +415,7 @@ func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Elemen
 			Size:    theme.Small,
 			Round:   true,
 		})
-		fileRowPath(c, row, entry.Path, entry.OriginalPath, selected)
+		fileRowPath(c, row, entry.Path, entry.OriginalPath, primary)
 		if entry.Conflict {
 			a.statusTag(c, "!", display.TagProps{Variant: display.TagFilled, Color: display.TagError, Size: theme.Small, Round: true})
 		} else {
@@ -424,11 +453,11 @@ func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Elemen
 	// The context menu owns the right click, so a row never sees RightClicked;
 	// its open state selects the row instead. The diff and the menu then
 	// describe the same file, as the history and branch lists do.
-	if *ui.Local(row, "contextMenu", func() bool { return false }) && !selected {
-		a.selectFile(entry.Path, staged)
+	if *ui.Local(row, "contextMenu", func() bool { return false }) && !primary {
+		a.selectWorkspaceFile(fileRef{entry.Path, staged}, 0, true)
 	}
 	if row.Clicked() {
-		a.selectFile(entry.Path, staged)
+		a.selectWorkspaceFile(fileRef{entry.Path, staged}, row.ClickModifiers(), false)
 	}
 	// A double click opens the file in its default app, the way Sublime
 	// Merge's file list does; the menu's open action stays for discovery.
@@ -440,6 +469,10 @@ func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Elemen
 
 func (a *app) diffBody(c *ui.Context) {
 	if entry, conflict := a.conflictPreviewEntry(a.selectedPath); conflict {
+		if editor := a.currentConflictEditor(); editor != nil && !editor.Preview {
+			a.conflictEditorBody(c, editor)
+			return
+		}
 		a.conflictPreviewGuidance(c, entry)
 	}
 	switch {
@@ -464,32 +497,42 @@ func (a *app) diffBody(c *ui.Context) {
 		a.diffPlaceholder(c, lucide.FileDiff(), a.t("diffEmpty"))
 		return
 	}
-	width := diffWidth(a.diff)
-	heights := make([]float32, len(a.diff.Lines))
-	for i, line := range a.diff.Lines {
-		heights[i] = diffRowH
-		if line.Kind == "hunk" {
-			heights[i] = diffHunkH
-		}
+	_, conflict := a.conflictPreviewEntry(a.selectedPath)
+	split := a.splitDiff && !conflict
+	diff := a.diff
+	rows := newPatchRows(diff.Lines, nil, split)
+	var widths patchWidths
+	if split {
+		widths = a.splitPatchWidths(diff.Lines, a.diffViewportRect.W)
+	} else {
+		widths.canvas = a.diffWidth(diff)
 	}
+	heights := make([]float32, rows.len())
 	reveal, pressed := -1, -1
-	if a.revealLine {
-		reveal = a.lineCursor
-	}
-	if a.lineDragHeld {
-		pressed = a.linePressIndex
+	for i := range heights {
+		row := rows.at(i)
+		heights[i] = rows.height(a, i)
+		if a.revealLine && rowContainsLine(row, a.lineCursor) {
+			reveal = i
+		}
+		if a.lineDragHeld && rowContainsLine(row, a.linePressIndex) {
+			pressed = i
+		}
 	}
 	scroll := layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Both, State: &a.diffScroll}, func() {
 		// Keep one selectable container and full extent. Retain the pressed
 		// gutter even after it scrolls out, so it owns drag/release events.
-		ui.Column(c).Width(width).AlignSelf(ui.Start).Shrink(0).Selectable().Children(func() {
-			virtualPatchRows(c, a.diffViewportRect, &a.diffScroll, heights, reveal, func(row *ui.Context, i int) {
-				a.diffLine(row, a.diff.Lines[i], width, i)
-			}, pressed)
+		ui.Column(c).Width(widths.canvas).AlignSelf(ui.Start).Shrink(0).Selectable().Children(func() {
+			a.paintPatchRows(c, rows, widths, a.diffViewportRect, &a.diffScroll, heights, reveal, pressed, func(cell *ui.Context, index int, cellWidth float32, side patchSide) {
+				a.diffLineForSide(cell, diff.Lines[index], cellWidth, true, index, side)
+			})
 		})
 	})
 	// Keep the box, not the element: elements expire at the end of a pass,
 	// and the drag reads this while the next pass builds.
+	if split && a.diffViewportRect.W != scroll.Bounds().W {
+		c.After(0)
+	}
 	a.diffViewportRect = scroll.Bounds()
 	scroll.Grow(1).Basis(0).MinHeight(0)
 	if a.syncDiffHoverScroll() {
@@ -562,35 +605,43 @@ func (a *app) syncDiffHoverScroll() bool {
 	return true
 }
 
-func diffWidth(diff gitrepo.Diff) float32 {
-	longest := float32(0)
-	for _, line := range diff.Lines {
-		advance := float32(0)
-		for _, r := range line.Text {
-			switch {
-			case r == '\t':
-				advance += 4 * menloAdvance // The renderer uses four spaces.
-			case r < 0x80:
+func diffEstimatedAdvance(text string) float32 {
+	advance := float32(0)
+	for _, r := range text {
+		switch {
+		case r == '\t':
+			advance += 4 * menloAdvance // The renderer uses four spaces.
+		case r < 0x80:
+			advance += menloAdvance
+		default:
+			// CJK/fullwidth fallback glyphs use one em, rather than
+			// Menlo's narrower ordinary advance or two such advances.
+			kind := unicodewidth.LookupRune(r).Kind()
+			if kind == unicodewidth.EastAsianWide || kind == unicodewidth.EastAsianFullwidth {
+				advance++
+			} else {
 				advance += menloAdvance
-			default:
-				// CJK/fullwidth fallback glyphs use one em, rather than
-				// Menlo's narrower ordinary advance or two such advances.
-				kind := unicodewidth.LookupRune(r).Kind()
-				if kind == unicodewidth.EastAsianWide || kind == unicodewidth.EastAsianFullwidth {
-					advance++
-				} else {
-					advance += menloAdvance
-				}
 			}
 		}
-		if advance > longest {
-			longest = advance
-		}
+	}
+	return advance
+}
+
+func (a *app) diffWidth(diff gitrepo.Diff) float32 {
+	var longest float32
+	for _, line := range diff.Lines {
+		longest = max(longest, diffEstimatedAdvance(line.Text))
 	}
 	// The estimate has to follow the reader's text size: a fixed advance that
 	// fits the standard preset leaves the large preset's longest lines short.
-	width := longest*scaledFont(diffCodeSize) + diffCodeReserve
-	return min(max(width, 560), 20000)
+	size := a.patchFontSize()
+	width := longest*size + diffCodeReserve
+	// Keep the same maximum code advance when a fixed size enlarges the glyphs.
+	limit := float32(20000)
+	if a.codeFontSize > diffCodeSize {
+		limit = (limit-diffCodeReserve)*size/diffCodeSize + diffCodeReserve
+	}
+	return min(max(width, 560), limit)
 }
 
 func (a *app) diffLine(c *ui.Context, line gitrepo.DiffLine, width float32, index int) {
@@ -598,6 +649,10 @@ func (a *app) diffLine(c *ui.Context, line gitrepo.DiffLine, width float32, inde
 }
 
 func (a *app) diffLineFor(c *ui.Context, line gitrepo.DiffLine, width float32, interactive bool, index int) {
+	a.diffLineForSide(c, line, width, interactive, index, patchBoth)
+}
+
+func (a *app) diffLineForSide(c *ui.Context, line gitrepo.DiffLine, width float32, interactive bool, index int, side patchSide) {
 	tk := theme.TokensOf(c)
 	if line.Kind == "hunk" {
 		if interactive {
@@ -626,14 +681,14 @@ func (a *app) diffLineFor(c *ui.Context, line gitrepo.DiffLine, width float32, i
 	}
 	gutter := gutterInk(tk, bg)
 	if !interactive {
-		plain := ui.Row(c).Width(width).Height(diffRowH).Shrink(0).Padding(0, 8, 0, 12).Gap(8).AlignItems(ui.Center).
+		plain := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0).Padding(0, 8, 0, 12).Gap(8).AlignItems(ui.Center).
 			Background(bg)
 		plain.Children(func() {
 			ui.Text(c, lineNumber(line.Old)).Font("Menlo").FontSize(scaledFont(10)).Width(34).Shrink(0).
 				TextAlign(ui.End).TextColor(gutter)
 			ui.Text(c, lineNumber(line.New)).Font("Menlo").FontSize(scaledFont(10)).Width(34).Shrink(0).
 				TextAlign(ui.End).TextColor(gutter)
-			ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(scaledFont(diffCodeSize)).
+			ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(a.patchFontSize()).
 				SingleLine().TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
 		})
 		return
@@ -644,22 +699,15 @@ func (a *app) diffLineFor(c *ui.Context, line gitrepo.DiffLine, width float32, i
 	// paragraph a drag can select from. MyGo only lets a paragraph be selected
 	// when no clickable element owns it, so the paragraph sits in the row's
 	// content container instead of inside the numbers' button.
-	row := ui.Row(c).Width(width).Height(diffRowH).Shrink(0).AlignItems(ui.Center).Background(bg)
+	row := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0).AlignItems(ui.Center).Background(bg)
 	var numbers ui.Element
 	row.Children(func() {
-		inner := ui.Row(c).Height(diffRowH).Width(width-diffHoverActionReserve).Shrink(0).
+		inner := ui.Row(c).Height(a.patchRowHeight()).Width(width-diffHoverActionReserve).Shrink(0).
 			Padding(0, 12, 0, 0).AlignItems(ui.Center)
 		inner.Children(func() {
-			numbers = ui.ButtonBase(c).Label(a.lineGutterLabel(line)).Row().Width(92).Height(diffRowH).Shrink(0).
-				Padding(0, 8).Gap(8).AlignItems(ui.Center)
-			numbers.Children(func() {
-				ui.Text(c, lineNumber(line.Old)).Font("Menlo").FontSize(scaledFont(10)).Width(34).Shrink(0).
-					TextAlign(ui.End).TextColor(gutter)
-				ui.Text(c, lineNumber(line.New)).Font("Menlo").FontSize(scaledFont(10)).Width(34).Shrink(0).
-					TextAlign(ui.End).TextColor(gutter)
-			})
+			numbers = a.patchGutter(c, line, side, gutter)
 			markDiffGutter(numbers, change && a.lineSelected(index), gutter)
-			ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(scaledFont(diffCodeSize)).
+			ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(a.patchFontSize()).
 				SingleLine().TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
 		})
 		if !change || !row.Hovered() {
@@ -677,8 +725,12 @@ func (a *app) diffLineFor(c *ui.Context, line gitrepo.DiffLine, width float32, i
 		})
 		// The action belongs at the right edge of the pane, not at the end of
 		// a long patch row it would sit past the visible area on.
-		if offset := a.diffHoverActionLeft(width) - (width - diffHoverActionReserve); offset < 0 {
-			button.Left(offset)
+		cellStart := float32(0)
+		if side == patchNew {
+			cellStart = width + 2 // Left half and the center divider.
+		}
+		if offset := a.diffHoverActionLeft(cellStart+width) - cellStart - (width - diffHoverActionReserve); offset < 0 {
+			button.Left(max(offset, diffHoverActionReserve-width))
 		}
 		if button.Clicked() {
 			// The hover button acts on its own row; the context menu is how a
@@ -686,7 +738,9 @@ func (a *app) diffLineFor(c *ui.Context, line gitrepo.DiffLine, width float32, i
 			a.applyLines([]int{index})
 		}
 	})
-	a.trackLinePress(c, index, numbers)
+	if side == patchBoth || change {
+		a.trackLinePress(c, index, numbers)
+	}
 	if numbers.Clicked() {
 		if a.lineDragMoved {
 			a.lineDragMoved = false
@@ -760,9 +814,10 @@ func (a *app) diffHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32) 
 	// a stateless Row would silently ignore the secondary click.
 	// The header's text gets the band left of the action, so a long hunk
 	// header and the hover button never fight over the same pixels.
-	row := ui.ButtonBase(c).Label(line.Text).Row().Width(width).Height(24).Shrink(0).AlignItems(ui.Center).
+	row := ui.ButtonBase(c.Key(a.hunkFocusKey(line.Hunk))).Label(line.Text).Row().Width(width).Height(24).Shrink(0).AlignItems(ui.Center).
 		Justify(ui.Start).
 		Background(tk.Info.Alpha(0.06).Over(tk.BgContainer))
+	a.wireHunkEnter(row, line.Hunk)
 	row.Children(func() {
 		inner := ui.Row(c).Height(24).Width(width-diffHoverActionReserve).Shrink(0).
 			Padding(0, 8, 0, 12).AlignItems(ui.Center)
@@ -811,7 +866,7 @@ func (a *app) lineActionsAllowed() bool {
 		return false
 	}
 	entry, ok := a.selectedEntry()
-	return ok && entry.Index != '?' && entry.OriginalPath == "" && !entry.IsSubmodule()
+	return ok && entry.OriginalPath == "" && !entry.IsSubmodule()
 }
 
 func (a *app) applyHunk(index int) {

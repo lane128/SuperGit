@@ -10,10 +10,10 @@ import tempfile
 import time
 
 project = pathlib.Path(__file__).resolve().parents[1]
-build = project / "build"
+build = pathlib.Path(os.environ.get("SUPERGIT_NATIVE_BUILD_DIR", project / "build"))
 automation = build / "mygo-automation"
-binaries = list(build.glob("supergit-lobe*e2e"))
-if len(binaries) != 1 or not automation.is_file():
+app_binary = pathlib.Path(os.environ.get("SUPERGIT_NATIVE_BINARY", build / "supergit-lobe-e2e"))
+if not app_binary.is_file() or not automation.is_file():
     raise SystemExit("run make lobe-e2e-build first")
 parser = argparse.ArgumentParser()
 parser.add_argument("--rebase", action="store_true", help="Verify rebase side identities, then Abort back to the original branch")
@@ -29,8 +29,8 @@ for side in ("ours", "theirs"):
     captures.mkdir()
     with tempfile.TemporaryDirectory(prefix="supergit-conflict-side.") as directory:
         root = pathlib.Path(directory)
-        repo, home = root / "repo", root / "home"
-        settings = home / "Library/Application Support/supergit/settings.json"
+        repo, config = root / "repo", root / "config"
+        settings = config / "supergit/settings.json"
         settings.parent.mkdir(parents=True)
         settings.write_text(json.dumps({"language": "en", "theme": "light", "autoFetch": False}))
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
@@ -82,9 +82,9 @@ for side in ("ours", "theirs"):
         original_refs = git("show-ref")
         socket = root / "app.sock"
         session = "conflict-side-" + side + "-" + str(os.getpid())
-        env.update(HOME=str(home), MYGO_AUTOMATION=str(socket), SUPERGIT_WINDOW_SIZE="1320x640")
+        env.update(SUPERGIT_TEST_CONFIG_DIR=str(config), MYGO_AUTOMATION=str(socket), SUPERGIT_WINDOW_SIZE="1320x640")
         with (captures / "app.log").open("w") as log, (captures / "automation.log").open("w") as trace:
-            app = subprocess.Popen([str(binaries[0]), str(repo)], cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
+            app = subprocess.Popen([str(app_binary), str(repo)], cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
 
             def auto(*args):
                 result = subprocess.run([str(automation), *args, "--session", session], cwd=project, capture_output=True, text=True, timeout=40)
@@ -120,10 +120,10 @@ for side in ("ours", "theirs"):
                 wait("In progress: " + kind)
                 press("button", "In progress: " + kind)
                 wait(path.name)
-                wait("Conflict preview only. Resolve text or binary files with an external tool, then use Mark resolved in the file menu.")
+                guidance = "Compare and edit text conflicts here. For unsupported files, edit and save with an external tool, then use Mark resolved to stage the contents. Finish the pending operation separately."
+                wait(guidance)
                 if options.shape == "deletion":
                     wait("This conflict includes a deletion. Choosing a side with no file deletes and stages this path.")
-                guidance = "Conflict preview only. Resolve text or binary files with an external tool, then use Mark resolved in the file menu."
                 reveal_text = "This conflict includes a deletion. Choosing a side with no file deletes and stages this path." if options.shape == "deletion" else guidance
                 auto("act", ref("text", reveal_text), "scrollIntoView", "--settle")
                 visible_snapshot = snapshot()

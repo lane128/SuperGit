@@ -19,16 +19,20 @@ open build/SuperGit.app
 
 `make app` 打包时把版本写入 `Info.plist`：短版本取最近标签（`v1.2.3` → `1.2.3`），构建号取提交数；没有可用标签、不在 Git 仓库或 git 不可用时沿用 `packaging/Info.plist` 里的值，源码里的 plist 不会被改写。规则与测试在 `tools/appversion/`。
 
-### Lobe UI 预览（实验）
+### 标签式工作台
 
-`cmd/supergit-lobe` 是基于 [Lobe MyGo](https://mygo.lobehub.com) 组件库的独立开发入口，与 `cmd/supergit` 共用 `internal/gitrepo` 真实 Git 后端。新版采用「位置 / 提交 / 文件 / 标签式详情」四列布局；默认 `make app` 打包入口仍为 `cmd/supergit`，待 TODO.md 中的能力、偏好迁移与原生验收门槛通过后再切换。下方能力表描述现有桌面入口，不代表 Lobe 已逐项验收。
+`make app` 从 `cmd/supergit` 构建基于 [Lobe MyGo](https://mygo.lobehub.com) 的标签式工作台。History 使用「位置 / 提交 / 文件 / 标签式详情」布局。`make lobe-app` 生成拥有独立应用标识的本地预览包。`make desktop-app` 生成旧界面的 `build/SuperGit Desktop.app`，供回退时使用。新版逐项验收见 [能力差距表](docs/lobe-capability-gaps.md)。
 
 ```sh
-make lobe-build
-./build/supergit-lobe /path/to/repository
-# 或
-make lobe-run REPO=/path/to/repository
+make app
+open build/SuperGit.app
 ```
+
+请从上面的 `build/SuperGit.app` 路径打开刚构建的应用。此前安装的 `/Applications/SuperGit Lobe.app` 不会随本地构建更新。
+
+在同一窗口打开第二个仓库，点击顶部「打开仓库…」，或使用侧栏的「打开 Git 仓库」。选择另一个 Git 工作区会打开独立的仓库标签，选择已打开的工作区会切回原标签。也可以先点击右上角的「新建标签」（`+`），再从欢迎页打开仓库。
+
+标签栏放不下全部标签时，点击左右箭头可滚动浏览。点击顶部列表按钮可搜索并切换到其他已打开的标签，包括欢迎页。有未提交改动的仓库标签显示圆点，鼠标移到圆点上可看到关闭按钮。把顶部标签拖到另一标签上可调整顺序，按 `Esc` 可取消当前拖动。`Ctrl+Tab` 和 `Ctrl+Shift+Tab` 分别切换到下一个和上一个仓库标签。关闭仓库标签后，可在「文件」菜单或命令面板选择「重新打开已关闭标签页」，也可按 `⌘⇧T`（Windows/Linux 上为 `Ctrl+Shift+T`）。仓库回到原标签位置并读取当前 Git 状态。正常退出后，从 Finder 重新启动会恢复已打开的仓库标签及其顺序，并选中最近活动的仓库。命令行可用 `make lobe-run REPO=/path/to/repository` 单独打开指定仓库。
 
 Lobe 的工作区首标签为「提交」，包含提交表单和全部改动；历史首标签为「摘要」，包含完整说明与全部补丁。点击文件打开可关闭的独立标签，同路径的已暂存、未暂存版本分开显示；切换标签保留提交草稿与各自滚动位置。标签仅在当前会话中保留。已通过 macOS 原生交互、16 组截图矩阵、2000 行补丁虚拟化测试与一次独立代码审查；审查发现的刷新目标错位已修复。文件列表现以一个 Tab 入口导航，↑/↓ 切文件，←/→ 到达分组标题与行内按钮，Shift+Tab 返回此前聚焦行；Space / Enter 使用聚焦文件的路径及暂存分组。工作区总览会优先读取视口内展开的待加载文件块，单文件与总览按刷新代次复用成功补丁，额外缓存预算为 16 MiB；手动重试仍读取 Git。跨平台发布门槛仍保留，执行进度见 `TODO.md`。
 
@@ -36,9 +40,9 @@ Lobe 的工作区首标签为「提交」，包含提交表单和全部改动；
 
 Lobe 已接通独立于自动 Fetch 的本地变化检测：前台约 3 秒、后台约 15 秒，窗口聚焦立即检查。外部保存、暂存、提交、切分支与子模块 HEAD 变化会刷新；保留提交草稿与输入焦点，写入期间暂停检测。Git 元数据之外，还观察当前改动文件的大小、mtime、模式和链接目标；保持相同元数据的字节改写不保证识别。原生验证使用临时仓库与独立偏好，方法见 `docs/e2e-automation.md`；平台、构建状态、实际场景与待调查问题见 [Lobe 试用记录](docs/lobe-trial-log.md)。
 
-Lobe 偏好保存在系统用户配置目录的 `supergit/settings.json`，沿用已有详情开关字段；历史提交信息和补丁都被隐藏时恢复信息块。旧桌面入口使用下述 `SuperGit/preferences.json`。两者尚未完成主线迁移；`make native-check` 验证旧桌面入口，Lobe 使用 `make lobe-build` 与专用原生验证脚本。逐轮功能对齐记录见 `docs/lobe-preview-progress.md`。
+默认工作台在系统用户配置目录的 `supergit/settings.json` 保存外观、代码字号和详情选项。打开的仓库标签和最多 12 个最近仓库分别保存。旧桌面回退包继续使用 `SuperGit/preferences.json`。默认工作台可从旧文件读取尚未设置的主题、代码字号和最近仓库路径，具体优先级见 [打包说明](docs/packaging.md)。
 
-`⌘O` 打开、`⌘R` 刷新、`⌘Enter` 提交 Index。分隔线可拖动。外观、代码字号和最近 12 个仓库持久化到系统用户配置目录的 `SuperGit/preferences.json`；提交草稿和最近 40 条操作记录仅保留在会话中。
+`⌘O` 打开、`⌘R` 刷新、`⌘Enter` 提交 Index。分隔线可拖动。正常退出时，普通提交草稿随各自的仓库标签保存在本机，会在恢复工作台时还原。
 
 ## 能力表
 
@@ -143,13 +147,16 @@ make app e2e-build
 
 原生自动化仅在显式 `e2e` 构建中链接 MyGo automation 插件。普通二进制不链接自动化服务。
 
-Lobe 标签式布局用 `make lobe-e2e-build && python3 -I scripts/native-narrow-shots.py` 复查：脚本自建夹具，覆盖 980／1320／1600×640 × 中文／英文 × 浅色／深色，另加四组 1.15 大字号关键组合。每组保存长说明摘要、13 文件标签与长路径、空提交、工作区四张截图和无障碍快照到 `build/narrow-shots/`；检查最小列宽与活动标签、关闭入口可见性。`python3 -I scripts/native-detail-tabs-smoke.py` 另验证双版本标签、草稿、浏览只读、指定文件暂存及刷新、超限失败重试。实际结果及剩余验收见 TODO.md。`make e2e-build` 构建的是打包版旧界面。
+Lobe 标签式布局用 `make lobe-e2e-build && python3 -I scripts/native-narrow-shots.py` 复查：脚本自建夹具，覆盖 980／1320／1600×640 × 中文／英文 × 浅色／深色，另加四组 1.15 大字号关键组合。每组保存长说明摘要、13 文件标签与长路径、空提交、工作区四张截图和无障碍快照到 `build/narrow-shots/`；检查最小列宽与活动标签、关闭入口可见性。`python3 -I scripts/native-detail-tabs-smoke.py` 另验证双版本标签、草稿、浏览只读、指定文件暂存及刷新、超限失败重试。实际结果及剩余验收见 TODO.md。`make e2e-build` 构建默认标签式工作台的自动化二进制。
 
 ```sh
 make native-check
+make desktop-native-check
 ```
 
-该入口构建、启动并操作真实窗口，分别使用新的本地仓库、bare remote 和独立测试偏好验证日常工作流与精细 Diff 操作，随后关闭测试窗口，保留 fixture 与 `build/` 中的截图。覆盖成功流程、脏工作区拒绝、网络任务取消、左右视图共享选行、部分暂存／取消暂存、旧 Diff 拒绝和历史只读。另验证自动检测外部连续编辑、暂存／提交／切换分支、子模块连续移动 HEAD、超大 Diff 失败后的分支更新、未变 Diff 选行及冲突草稿保留。另有独立的 12,024 次提交／10,001 个文件 fixture，验证历史逐页加载至 2,400 条、越过原 2,000 条边界后的准确 SHA／Diff、虚拟滚动，以及外部提交后保留深度刷新并继续加载至 2,700 条；并验证历史列表方向键／首尾跳转、搜索编辑和结果焦点、筛选后准确 SHA／Diff、刷新插入提交后的选择与焦点保留及空结果不误选。键盘场景用真实按键验证导航／搜索焦点、普通草稿编辑、表单／确认页保护、Esc 取消、工作区显式提交，以及 Diff 滚动保留／回退和冲突草稿保护。工作区文件场景另外验证跨组导航跳过标题、同路径双版本的准确 Diff、首尾滚动、刷新后的路径／分组保持、组移动和消失回退、提交说明按键隔离、冲突显式激活、空列表及刷新不抢编辑焦点；浏览前后核对 Index、HEAD 和文件内容。无文件变化的真实 Merge 场景验证进行中操作条出现／消失时，文件列表与提交编辑器分别保持焦点及草稿。另用超限文本验证工作区与 Index Diff 的局部报错、同路径双分组重试与恢复，以及已脏文件连续编辑后自动失败／恢复不抢编辑焦点、不改写仓库。提交变更文件场景使用 64 文件提交，验证列表间焦点往返、首尾与连续快速导航、准确只读 Diff、快照刷新保持选择、空提交和提交替换后的文件身份，并核对浏览未改写仓库。该场景还验证完整提交说明的中文、缩进和 trailers、固定元数据区域滚动、快速切换与刷新后的消息身份，以及超限说明失败后重试仍不影响准确文件 Diff。另外构造缺失 tree／blob 的本地历史提交，验证文件列表／Diff 明确报错、重试固定对象、切换文件清除旧错误，以及补回对象后重试恢复；核对 HEAD、Index 与工作区内容未变。独立 Stash fixture 验证未选择／空差异、超限失败及只读重试、reflog 序号移动与快速切换后的 SHA 身份，以及所选条目被移除后拒绝改读其他条目；核对 HEAD、Index、工作区和 Stash 列表没有被浏览操作改写。独立标签 fixture 验证名称可编辑而目标 SHA 只读、表单与确认取消均无写入、在较早提交创建轻量标签并刷新历史标记、重复名称拒绝覆盖，以及外部 HEAD 推进后拒绝旧确认；核对 HEAD、Index、工作区字节与本地测试远端标签。单独验证可运行 `python3 -I scripts/check-native-workflows.py --diff`、`--watch`、`--history`、`--keyboard`、`--files`、`--commit-files`、`--stash` 或 `--tags`（需先 `make e2e-build`）。需要可用的 macOS 图形会话。
+`make native-check` 通过标准 `make app` 配方构建隔离的 macOS 测试包，先验证顶部新建标签、系统文件夹打开事件、两个仓库各自的草稿与重启恢复，再检查外部编辑刷新、部分暂存、提交、同步、Stash、Merge 冲突取边和子模块。
+
+旧桌面回退检查 `make desktop-native-check` 构建、启动并操作真实窗口，分别使用新的本地仓库、bare remote 和独立测试偏好验证日常工作流与精细 Diff 操作，随后关闭测试窗口，保留 fixture 与 `build/` 中的截图。覆盖成功流程、脏工作区拒绝、网络任务取消、左右视图共享选行、部分暂存／取消暂存、旧 Diff 拒绝和历史只读。另验证自动检测外部连续编辑、暂存／提交／切换分支、子模块连续移动 HEAD、超大 Diff 失败后的分支更新、未变 Diff 选行及冲突草稿保留。另有独立的 12,024 次提交／10,001 个文件 fixture，验证历史逐页加载至 2,400 条、越过原 2,000 条边界后的准确 SHA／Diff、虚拟滚动，以及外部提交后保留深度刷新并继续加载至 2,700 条；并验证历史列表方向键／首尾跳转、搜索编辑和结果焦点、筛选后准确 SHA／Diff、刷新插入提交后的选择与焦点保留及空结果不误选。键盘场景用真实按键验证导航／搜索焦点、普通草稿编辑、表单／确认页保护、Esc 取消、工作区显式提交，以及 Diff 滚动保留／回退和冲突草稿保护。工作区文件场景另外验证跨组导航跳过标题、同路径双版本的准确 Diff、首尾滚动、刷新后的路径／分组保持、组移动和消失回退、提交说明按键隔离、冲突显式激活、空列表及刷新不抢编辑焦点；浏览前后核对 Index、HEAD 和文件内容。无文件变化的真实 Merge 场景验证进行中操作条出现／消失时，文件列表与提交编辑器分别保持焦点及草稿。另用超限文本验证工作区与 Index Diff 的局部报错、同路径双分组重试与恢复，以及已脏文件连续编辑后自动失败／恢复不抢编辑焦点、不改写仓库。提交变更文件场景使用 64 文件提交，验证列表间焦点往返、首尾与连续快速导航、准确只读 Diff、快照刷新保持选择、空提交和提交替换后的文件身份，并核对浏览未改写仓库。该场景还验证完整提交说明的中文、缩进和 trailers、固定元数据区域滚动、快速切换与刷新后的消息身份，以及超限说明失败后重试仍不影响准确文件 Diff。另外构造缺失 tree／blob 的本地历史提交，验证文件列表／Diff 明确报错、重试固定对象、切换文件清除旧错误，以及补回对象后重试恢复；核对 HEAD、Index 与工作区内容未变。独立 Stash fixture 验证未选择／空差异、超限失败及只读重试、reflog 序号移动与快速切换后的 SHA 身份，以及所选条目被移除后拒绝改读其他条目；核对 HEAD、Index、工作区和 Stash 列表没有被浏览操作改写。独立标签 fixture 验证名称可编辑而目标 SHA 只读、表单与确认取消均无写入、在较早提交创建轻量标签并刷新历史标记、重复名称拒绝覆盖，以及外部 HEAD 推进后拒绝旧确认；核对 HEAD、Index、工作区字节与本地测试远端标签。单独验证可运行 `python3 -I scripts/check-native-workflows.py --diff`、`--watch`、`--history`、`--keyboard`、`--files`、`--commit-files`、`--stash` 或 `--tags`（需先 `make desktop-e2e-build`）。需要可用的 macOS 图形会话。
 
 标签原生场景还验证空／搜索／无匹配、附注／符号／非提交对象、插入分支后搜索框焦点、未载入历史的旧提交及嵌套标签详情、刷新保留与显式选择替换，以及缺失对象报错和 fixture 修复后的重试恢复。悬空符号标签单独核对保留并明确枚举限制；浏览前后核对引用、HEAD、Index、工作区字节及本地测试远端标签。不会在已有用户仓库中执行这些测试。
 
@@ -166,13 +173,14 @@ go test ./internal/desktop -run '^$' -bench BenchmarkHistory -benchmem -benchtim
 
 历史展示按仓库版本及搜索条件缓存；重复绘制不再重新筛选和排列 DAG，绘制时通过连线区间索引跳过不相交的分支。2,000 条提交、25 个可见行的纯模型对照：原空搜索／匹配搜索约 135／567 µs，每次分配 0.67／1.24 MB；缓存后约 1.05／1.06 µs、零分配。搜索或 snapshot 变化后的冷构建约 569 µs、1.40 MB。以上不含 UI 布局、文字和 GPU 绘制，不是完整帧耗时；原生 smoke 记录的命令耗时也包含自动化和等待。基准保留原算法作为对照，日志为 `build/history-benchmark-after.log`、`build/history-git-benchmark.log`。
 
-也可手动启动并检查：
+也可手动启动旧桌面回退版进行验证。
 
 ```sh
-make e2e-build
+make desktop-e2e-build
 sh scripts/create-workflow-demo.sh > build/workflow-demo-root.txt
 # 用输出文件中的真实 root 替换下文 /path/to/root
-MYGO_AUTOMATION="$PWD/build/workflows.sock" ./build/supergit-e2e /path/to/root/workspace
+SUPERGIT_TEST_CONFIG_DIR=/path/to/root/config \
+  MYGO_AUTOMATION="$PWD/build/workflows.sock" ./build/supergit-desktop-e2e /path/to/root/workspace
 # 另一个终端
 ./build/mygo-automation open --session product --socket "$PWD/build/workflows.sock"
 python3 -I scripts/native-workflow-smoke.py /path/to/root

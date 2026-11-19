@@ -24,6 +24,8 @@ func (a *app) batchFileTargets(kind string) ([]fileActionTarget, string) {
 		switch kind {
 		case "stage":
 			include = entry.Unstaged()
+		case "stageTracked":
+			include = entry.Unstaged() && !isUntracked(entry)
 		case "unstage":
 			include = entry.Staged()
 		case "discard":
@@ -42,10 +44,32 @@ func (a *app) batchFileTargets(kind string) ([]fileActionTarget, string) {
 	return targets, ""
 }
 
+func (a *app) canUnstageAllShortcut() bool   { return a.batchShortcutAllowed("unstage") }
+func (a *app) canStageTrackedShortcut() bool { return a.batchShortcutAllowed("stageTracked") }
+
+func (a *app) batchShortcutAllowed(kind string) bool {
+	if !a.worktreeFilesShown() || !a.detailNavigationAllowed() || a.repositoryChooserOpen || a.hasPendingDialog(toastMain) {
+		return false
+	}
+	_, reason := a.batchFileTargets(kind)
+	return reason == ""
+}
+
 func (a *app) runBatchStage(staged bool) {
-	kind, label, busy := "stage", a.t("stageAll"), busyStageAll
+	kind := "stage"
 	if staged {
-		kind, label, busy = "unstage", a.t("unstageAll"), busyUnstageAll
+		kind = "unstage"
+	}
+	a.runBatchStageKind(kind)
+}
+
+func (a *app) runBatchStageKind(kind string) {
+	label, busy := a.t("stageAll"), busyStageAll
+	staged := kind == "unstage"
+	if staged {
+		label, busy = a.t("unstageAll"), busyUnstageAll
+	} else if kind == "stageTracked" {
+		label, busy = a.t("stageTracked"), busyStageTracked
 	}
 	targets, reason := a.batchFileTargets(kind)
 	if reason != "" {
@@ -64,6 +88,9 @@ func (a *app) runBatchStage(staged bool) {
 		}
 		if staged {
 			return repo.UnstagePaths(ctx, paths)
+		}
+		if kind == "stageTracked" {
+			return repo.StageTrackedPaths(ctx, paths)
 		}
 		return repo.StagePaths(ctx, paths)
 	})

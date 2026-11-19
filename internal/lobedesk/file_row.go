@@ -50,23 +50,31 @@ func fileRowShell(c *ui.Context, tk *theme.Tokens, path string, selected bool) u
 	return row
 }
 
-// fileRowPath draws the row's one line as the path would be written: the file
-// name, then the folder it sits in. The name takes whatever the folder leaves
-// and ends in an ellipsis when that is not enough; the folder is dropped in a
-// pane too narrow to hold both, where it would only take room from the name.
-// The row's label already names the path, so neither text is read again.
+// fileRowPath keeps the current name primary and its directory secondary.
+// When space permits, a rename source precedes the current name with an
+// arrow; it does not replace the destination directory. Narrow rows keep
+// the primary name. The row's label already carries the complete path.
 func fileRowPath(c *ui.Context, row ui.Element, path, originalPath string, selected bool) {
 	name, dir := splitRepoPath(path)
-	if originalPath != "" {
-		dir = originalPath + " →"
-	}
 	room := row.Bounds().W
 	ui.Row(c).Grow(1).Basis(0).MinWidth(0).Gap(6).AlignItems(ui.Center).Children(func() {
+		if originalPath != "" && fileRowShowsFolder(room) {
+			ui.Row(c).Shrink(0).MaxWidthPercent(30).MinWidth(0).Gap(4).AlignItems(ui.Center).Children(func() {
+				display.Text(c, originalPath, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(fileRowDirSize)}).
+					SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
+				display.Text(c, "→", display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(fileRowDirSize)}).
+					SingleLine().Shrink(0).AccessHidden(true)
+			})
+		}
 		display.Text(c, name, display.TextProps{FontSize: scaledFont(fileRowNameSize), Strong: selected}).
 			SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
 		if dir != "" && fileRowShowsFolder(room) {
+			maxWidth := float32(40)
+			if originalPath != "" {
+				maxWidth = 20
+			}
 			display.Text(c, dir, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(fileRowDirSize)}).
-				SingleLine().Shrink(0).MaxWidthPercent(40).AccessHidden(true)
+				SingleLine().Shrink(0).MaxWidthPercent(maxWidth).AccessHidden(true)
 		}
 	})
 }

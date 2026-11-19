@@ -1,5 +1,7 @@
 package lobedesk
 
+import "github.com/egoist/mygo/ui"
+
 // Paths are repository-relative, unmodified Git paths. Index and worktree
 // patches for the same path are separate reading targets.
 type detailFileKey struct {
@@ -21,8 +23,13 @@ type detailTabsState struct {
 	OpenFiles   []detailFileKey
 	Active      detailTabKey
 	Scroll      map[detailTabKey]detailScrollPosition
+	PatchScroll map[detailTabKey]*ui.ScrollState
+	patchWidths historyPatchWidthCache
 	Collapsed   map[detailFileKey]bool
 	FilesScroll detailScrollPosition
+	// Historical membership is independent of the active reading tab. The
+	// surrounding detail context owns its repository and commit lifetime.
+	HistoricalSelection *historicalFileSelection
 }
 
 type detailScrollPosition struct{ X, Y float32 }
@@ -61,6 +68,7 @@ func (s *detailTabsState) Close(file detailFileKey) {
 			continue
 		}
 		s.OpenFiles = append(s.OpenFiles[:i], s.OpenFiles[i+1:]...)
+		delete(s.PatchScroll, detailTabKey{File: file})
 		if !s.Active.Summary && s.Active.File == file {
 			s.Active = detailTabKey{Summary: true}
 			if len(s.OpenFiles) > 0 {

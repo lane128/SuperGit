@@ -7,7 +7,10 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
-const changesFilesPaneMin float32 = 280
+const (
+	changesFilesPaneWidth float32 = 300
+	changesFilesPaneMin   float32 = 280
+)
 
 // Changes uses the existing file/version and patch models, with the commit
 // editor beside the patch rather than mounted only on its first tab.
@@ -16,7 +19,7 @@ func (a *app) changesPage(c *ui.Context) {
 	a.filesSplit.rowWidth = row.Bounds().W
 	row.Children(func() {
 		a.historyFilesPane(c)
-		a.splitHandle(c, &a.filesSplit, shareForWidth(a.filesSplit.rowWidth-splitterWidth, historyFilesPaneWidth), changesFilesPaneMin, historyDiffPaneMin, a.t("resizeFilesPane"))
+		a.splitHandle(c, &a.filesSplit, shareForWidth(a.filesSplit.rowWidth-splitterWidth, changesFilesPaneWidth), changesFilesPaneMin, historyDiffPaneMin, a.t("resizeFilesPane"))
 		a.historyDiffPane(c)
 	})
 }

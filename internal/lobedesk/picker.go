@@ -119,8 +119,8 @@ func pickerRowBase(c *ui.Context, label string, pos, size int, selected bool) ui
 // pickerRows lays the picker's rows out in the capped scroll area both popups
 // use; a list longer than the cap scrolls instead of pushing the dialog past
 // the window.
-func pickerRows(c *ui.Context, rows func()) {
-	layout.ScrollArea(c, layout.ScrollAreaProps{}, func() {
+func pickerRows(c *ui.Context, rows func()) ui.Element {
+	return layout.ScrollArea(c, layout.ScrollAreaProps{}, func() {
 		ui.Column(c).FillWidth().Gap(1).Role(ui.RoleList).Children(rows)
 	}).MaxHeight(pickerListMaxHeight)
 }

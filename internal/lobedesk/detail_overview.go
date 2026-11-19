@@ -23,6 +23,7 @@ func (a *app) worktreeOverview(c *ui.Context) {
 	heading := ui.Row(c).FillWidth().Padding(8, 12).Gap(6).AlignItems(ui.Center).Children(func() {
 		display.Text(c, a.t("overviewChanges"), display.TextProps{Strong: true, FontSize: scaledFont(12)})
 		ui.Row(c).Grow(1).Basis(0)
+		a.patchLayoutButton(c.Key("patch-layout"), nil)
 		if action.ActionIcon(c, lucide.ChevronsDown(), action.ActionIconProps{Title: a.t("expandAllPatches"), Size: theme.Small}).Clicked() {
 			a.setOverviewCollapsed(false)
 		}
@@ -94,12 +95,9 @@ func (a *app) overviewSectionHeight(entry worktreeOverviewEntry) (float32, bool)
 	if entry.Loading || entry.Err != "" || len(entry.Diff.Lines) == 0 {
 		return 0, false
 	}
-	for _, line := range entry.Diff.Lines {
-		if line.Kind == "hunk" {
-			height += diffHunkH
-		} else {
-			height += diffRowH
-		}
+	rows := newPatchRows(entry.Diff.Lines, nil, a.splitDiff)
+	for i := range rows.len() {
+		height += rows.height(a, i)
 	}
 	return height, true
 }
@@ -168,7 +166,7 @@ func (a *app) worktreeOverviewFile(c *ui.Context, tk *theme.Tokens, entry worktr
 			return
 		}
 		if statusEntry, conflict := a.conflictPreviewEntry(key.Path); conflict {
-			a.conflictPreviewGuidance(c, statusEntry)
+			a.conflictPreviewGuidance(c, statusEntry, true)
 		}
 		if entry.Loading {
 			display.Text(c, a.t("diffLoading"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).Padding(12)
@@ -187,25 +185,31 @@ func (a *app) worktreeOverviewFile(c *ui.Context, tk *theme.Tokens, entry worktr
 			display.Text(c, a.t("diffEmpty"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).Padding(12)
 			return
 		}
-		width := diffWidth(entry.Diff)
-		height := float32(0)
-		heights := make([]float32, len(entry.Diff.Lines))
-		for index, line := range entry.Diff.Lines {
-			heights[index] = diffRowH
-			if line.Kind == "hunk" {
-				heights[index] = diffHunkH
-			}
-			height += heights[index]
+		_, conflict := a.conflictPreviewEntry(key.Path)
+		split := a.splitDiff && !conflict
+		var widths patchWidths
+		if split {
+			widths = a.splitPatchWidths(entry.Diff.Lines, a.commitDiffViewport.W)
+		} else {
+			widths.canvas = a.diffWidth(entry.Diff)
 		}
-		layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Horizontal}, func() {
-			ui.Column(c).Width(width).Selectable().Children(func() {
-				target := overviewPatchTarget{Root: root, Generation: seq, File: key, Diff: entry.Diff}
-				reveal := -1
-				if a.revealLine && a.overviewSelectionMatches(target) {
-					reveal = a.lineCursor
-				}
-				virtualPatchRows(c, a.commitDiffViewport, &a.commitInfoScroll, heights, reveal, func(row *ui.Context, index int) {
-					a.overviewPatchLine(row, target, index, width)
+		rows := newPatchRows(entry.Diff.Lines, nil, split)
+		target := overviewPatchTarget{Root: root, Generation: seq, File: key, Diff: entry.Diff}
+		reveal := -1
+		revealTarget := a.revealLine && a.overviewSelectionMatches(target)
+		height := float32(0)
+		heights := make([]float32, rows.len())
+		for i := range heights {
+			heights[i] = rows.height(a, i)
+			height += heights[i]
+			if revealTarget && rowContainsLine(rows.at(i), a.lineCursor) {
+				reveal = i
+			}
+		}
+		layout.ScrollArea(c.Key(split), layout.ScrollAreaProps{Direction: layout.Horizontal}, func() {
+			ui.Column(c).Width(widths.canvas).Selectable().Children(func() {
+				a.paintPatchRows(c, rows, widths, a.commitDiffViewport, &a.commitInfoScroll, heights, reveal, -1, func(cell *ui.Context, index int, cellWidth float32, side patchSide) {
+					a.overviewPatchLineForSide(cell, target, index, cellWidth, side)
 				})
 			})
 		}).FillWidth().Height(height).Shrink(0)
@@ -233,12 +237,12 @@ func (a *app) detailOverview(c *ui.Context) {
 					a.commitInfoContent(c, commit, tk)
 				}
 				if !a.detailsDiffHidden {
-					ui.Column(c).FillWidth().Padding(4).Children(func() { a.commitDiffView(c) })
+					ui.Column(c).FillWidth().Padding(historyPatchInset).Children(func() { a.commitDiffView(c) })
 				}
 			} else {
 				a.detailPlaceholder(c)
 			}
 		})
 	}).Grow(1).Basis(0).MinHeight(0)
-	a.commitDiffViewport = scroll.Bounds()
+	a.recordPatchViewport(c, scroll.Bounds())
 }

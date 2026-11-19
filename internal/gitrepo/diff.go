@@ -79,7 +79,12 @@ func parseDiff(text string) Diff {
 			d.CanStageHunks = false
 		}
 	}
-	for _, marker := range []string{"new file mode ", "deleted file mode ", "rename from ", "copy from ", "Binary files ", "GIT binary patch", "old mode ", "new mode "} {
+	for _, line := range strings.Split(header.String(), "\n") {
+		if strings.HasPrefix(line, "new file mode ") && line != "new file mode 100644" && line != "new file mode 100755" {
+			d.CanStageHunks = false
+		}
+	}
+	for _, marker := range []string{"deleted file mode ", "rename from ", "copy from ", "Binary files ", "GIT binary patch", "old mode ", "new mode "} {
 		if strings.Contains(header.String(), marker) {
 			d.CanStageHunks = false
 		}
@@ -136,7 +141,7 @@ func (r *Repository) Diff(ctx context.Context, path string, staged bool) (Diff, 
 			if info.Size() > 1<<20 {
 				return parseDiff("新文件超过 1 MiB，首版仅支持文件级暂存。\n"), nil
 			}
-			out, err = run(ctx, r.Root, "", "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--no-color", "--", os.DevNull, path)
+			out, err = run(ctx, r.Root, "", "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--", os.DevNull, path)
 			var ee *exec.ExitError
 			if err != nil && !(errors.As(err, &ee) && ee.ExitCode() == 1) {
 				return Diff{}, err

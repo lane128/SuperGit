@@ -55,6 +55,12 @@ func run(ctx context.Context, root string, input string, args ...string) (string
 func runOutput(ctx context.Context, root string, input string, stdout io.Writer, args ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
+	return runOutputContext(ctx, root, input, stdout, args...)
+}
+
+// runOutputContext uses its caller's lifetime. Streaming readers bound each
+// read separately so a healthy traversal can outlive an ordinary command.
+func runOutputContext(ctx context.Context, root string, input string, stdout io.Writer, args ...string) error {
 	// log.showSignature prints verification text into stdout, which every
 	// parser here would read as history: a user with the option set would get
 	// bogus SHAs instead of commits. Signature status is read separately by
@@ -96,6 +102,14 @@ func runOutput(ctx context.Context, root string, input string, stdout io.Writer,
 	}
 	return nil
 }
+
+// WorktreeOpenError wraps the diagnostic from Git while allowing callers to
+// supply their own localized summary.
+type WorktreeOpenError struct{ Cause error }
+
+func (e *WorktreeOpenError) Error() string { return "无法打开 Git 工作区: " + e.Cause.Error() }
+func (e *WorktreeOpenError) Unwrap() error { return e.Cause }
+
 func Open(ctx context.Context, path string) (*Repository, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -103,7 +117,7 @@ func Open(ctx context.Context, path string) (*Repository, error) {
 	}
 	out, err := run(ctx, abs, "", "rev-parse", "--show-toplevel")
 	if err != nil {
-		return nil, fmt.Errorf("无法打开 Git 工作区: %w", err)
+		return nil, &WorktreeOpenError{Cause: err}
 	}
 	root := strings.TrimSuffix(out, "\n")
 	if root == "" {
@@ -153,6 +167,16 @@ const stageChunk = 256
 // fails falls back to one path at a time, so a path that vanished between the
 // status read and the command does not keep the rest out of the index.
 func (r *Repository) StagePaths(ctx context.Context, paths []string) error {
+	return r.stagePaths(ctx, paths, false)
+}
+
+// StageTrackedPaths updates only paths already tracked by the Index. In
+// particular, a tracked file replaced by a directory must not add its children.
+func (r *Repository) StageTrackedPaths(ctx context.Context, paths []string) error {
+	return r.stagePaths(ctx, paths, true)
+}
+
+func (r *Repository) stagePaths(ctx context.Context, paths []string, trackedOnly bool) error {
 	if len(paths) == 0 {
 		return nil
 	}
@@ -163,14 +187,19 @@ func (r *Repository) StagePaths(ctx context.Context, paths []string) error {
 	}
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
+	args := []string{"add"}
+	if trackedOnly {
+		args = append(args, "-u")
+	}
+	args = append(args, "--")
 	var first error
 	for start := 0; start < len(paths); start += stageChunk {
 		chunk := paths[start:min(start+stageChunk, len(paths))]
-		if _, err := run(ctx, r.Root, "", append([]string{"add", "--"}, chunk...)...); err == nil {
+		if _, err := run(ctx, r.Root, "", append(args[:len(args):len(args)], chunk...)...); err == nil {
 			continue
 		}
 		for _, path := range chunk {
-			if _, err := run(ctx, r.Root, "", "add", "--", path); err != nil && first == nil {
+			if _, err := run(ctx, r.Root, "", append(args[:len(args):len(args)], path)...); err != nil && first == nil {
 				first = err
 			}
 		}
@@ -353,6 +382,25 @@ func (r *Repository) ApplyHunk(ctx context.Context, patch string, reverse bool) 
 	}
 	if !allowed {
 		return errors.New("此文件需要文件级暂存，不能按片段操作")
+	}
+	// A status code cannot detect an external content/type change. In
+	// particular, an old new-file patch can still create its old bytes in the
+	// Index after the working file was replaced. Accept only a current hunk.
+	current, err := r.Diff(ctx, path, reverse)
+	if err != nil {
+		return err
+	}
+	matched := false
+	if current.CanStageHunks {
+		for _, hunk := range current.Hunks {
+			if hunk.Patch == patch {
+				matched = true
+				break
+			}
+		}
+	}
+	if !matched {
+		return errors.New("Diff 已在外部变化，请刷新并重新选择片段")
 	}
 	args := []string{"apply", "--cached", "--whitespace=nowarn"}
 	if reverse {

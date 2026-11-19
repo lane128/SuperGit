@@ -8,6 +8,21 @@ import (
 	"supergit/internal/gitrepo"
 )
 
+func TestMergeOperationTagNamesCommit(t *testing.T) {
+	for _, language := range []locale{localeEnglish, localeChinese} {
+		a := &app{locale: language, repo: &gitrepo.Repository{Root: t.TempDir()}, operation: gitrepo.Operation{Kind: "merge"}}
+		tt := pageTester(a, a.titleBar)
+		tag, ok := tt.AccessByRole(ui.RoleButton, a.tf("operation", "merge"))
+		want := "Commit to finish the merge, or abort it in Changes."
+		if language == localeChinese {
+			want = "在「改动」页提交以完成合并，或中止合并。"
+		}
+		if !ok || tag.Description != want {
+			t.Fatalf("merge guidance does not name its actual completion action: %+v", tag)
+		}
+	}
+}
+
 // A cancelled rebase leaves the repository mid-operation, and the page the
 // reader was on used to say only "Cancelled". The title bar is on every page,
 // so it names the operation that is still in progress.

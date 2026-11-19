@@ -39,6 +39,18 @@ func TestUnbrokenErrorDetailsFitLargeFontAtMinimumWindow(t *testing.T) {
 	}
 }
 
+func TestShortErrorDetailsKeepControlsNearTheMessage(t *testing.T) {
+	a := &app{locale: localeEnglish}
+	const text = "Repository /tmp/demo is unavailable.\nSelect its current folder and try again."
+	a.noticeDetails[toastMain] = noticeDetailsState{open: true, notice: &toastNotice{title: "Could not open repository", description: text}}
+	view := ui.NewTester(func(c *ui.Context) { theme.Apply(c); a.noticeDetailsDialog(c, toastMain) }, 980, 640)
+	message, ok := view.Find(text)
+	close, hasClose := view.AccessByRole(ui.RoleButton, "Close")
+	if !ok || !hasClose || close.Bounds.Y < message.Y+message.H || close.Bounds.Y-(message.Y+message.H) > 28 {
+		t.Fatalf("short details leave a gap before the controls: message=%+v close=%+v", message, close.Bounds)
+	}
+}
+
 func TestErrorDetailsActionsUseSharedButtonMetrics(t *testing.T) {
 	before := uiFontScaleValue()
 	setUIFontScale(fontScaleStandard)

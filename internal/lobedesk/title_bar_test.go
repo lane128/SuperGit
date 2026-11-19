@@ -62,7 +62,8 @@ func TestTitleBarPagesStayBesideRepositoryActions(t *testing.T) {
 func TestSidebarNamesRepositoryAndPreservesFullPath(t *testing.T) {
 	a := &app{locale: localeEnglish, repo: &gitrepo.Repository{Root: t.TempDir() + "/a-very-long-repository-checkout-name"}}
 	tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); ui.Column(c).Fill().Children(func() { a.sidebar(c) }) }, 184, 600)
-	name, ok := tt.AccessByRole(ui.RoleText, a.repoName())
+	// Repository identity is now the keyboard-accessible menu trigger.
+	name, ok := tt.AccessByRole(ui.RoleButton, a.repoName())
 	if !ok || name.Description != a.repo.Root || name.Bounds.W <= 0 || name.Bounds.X+name.Bounds.W > 184 {
 		t.Fatalf("sidebar repository identity missing or clipped: %+v", name)
 	}

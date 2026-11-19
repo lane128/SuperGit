@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
@@ -260,7 +259,7 @@ func (a *app) stashDetail(c *ui.Context) {
 		case a.stashDiff.Text == "":
 			a.diffPlaceholder(c, lucide.Archive(), a.t("stashEmpty"))
 		default:
-			width := diffWidth(a.stashDiff)
+			width := a.diffWidth(a.stashDiff)
 			layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Both}, func() {
 				// One selectable scope for the whole patch, as in the other diff
 				// views: a drag across lines copies the text it covers.
@@ -346,8 +345,8 @@ func (a *app) loadStashDiff() {
 	a.stashDiffErr = ""
 	go func() {
 		diff, err := repo.StashDiff(a.ctx, sha)
-		mygo.RunOnMain(func() {
-			if seq != a.stashSeq || a.selectedStash != sha {
+		a.hopToMain(func() {
+			if seq != a.stashSeq || a.repo == nil || a.repo.Root != repo.Root || a.selectedStash != sha {
 				return
 			}
 			a.stashDiffLoading = false

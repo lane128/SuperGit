@@ -1,6 +1,10 @@
 package lobedesk
 
-import "github.com/egoist/mygo/ui"
+import (
+	"runtime"
+
+	"github.com/egoist/mygo/ui"
+)
 
 // shortcutGroup is the card section a binding is listed under. The groups
 // follow the page where the key means something; the global group holds the
@@ -46,6 +50,9 @@ type appShortcut struct {
 	// Field marks a key a text field binds itself (⌘F in the search bars).
 	// The card lists it; the window dispatcher does not register it.
 	Field bool
+	// Local actions are bound by their owning control, never by the window.
+	// Their keys and actions still share this table with the Settings card.
+	Local bool
 	// Available hides the binding while it would mean nothing. A key that
 	// registered but did nothing would swallow the system's own action.
 	Available func(a *app) bool
@@ -58,7 +65,54 @@ type appShortcut struct {
 // than a package-level table so the Run closures below may call methods that
 // in turn read the table, without an initialization cycle.
 func shortcutTable() []appShortcut {
-	return []appShortcut{
+	openKeys, headKeys, unstageKeys, stageTrackedKeys, refreshKeys := "Ctrl+O", "Ctrl+0", "Ctrl+Shift+R", "Ctrl+Shift+A", "Ctrl+R"
+	if runtime.GOOS == "darwin" {
+		openKeys, headKeys, unstageKeys, stageTrackedKeys, refreshKeys = "⌘O", "⌘0", "⌘⇧R", "⌘⇧A", "⌘R"
+	}
+	commitMessageKeys, newTabKeys, closeTabKeys := "Ctrl+9", "Ctrl+T", "Ctrl+W"
+	if runtime.GOOS == "darwin" {
+		commitMessageKeys, newTabKeys, closeTabKeys = "⌘9", "⌘T", "⌘W"
+	}
+	reopenTabKeys := "Ctrl+Shift+T"
+	if runtime.GOOS == "darwin" {
+		reopenTabKeys = "⌘⇧T"
+	}
+	bindings := []appShortcut{
+		{ID: "workspace.focusCommitMessage", Mod: ui.Cmd, Key: ui.Key9, Keys: commitMessageKeys, Group: shortcutGroupGlobal, Label: "shortcutFocusCommitMessage",
+			Available: func(a *app) bool { return a.canFocusCommitMessage() },
+			Run:       func(a *app) { a.focusCommitMessage() }},
+		{ID: "repo.newTab", Mod: ui.Cmd, Key: ui.KeyT, Keys: newTabKeys, Group: shortcutGroupGlobal, Label: "newRepositoryTab",
+			Available: func(a *app) bool {
+				return a.repositoryTabs != nil && a.repositoryTabs.active == a && a.repositoryTabs.canChange()
+			},
+			Run: func(a *app) {
+				if tabs := a.repositoryTabs; tabs != nil && tabs.active == a {
+					tabs.newTab()
+				}
+			}},
+		{ID: "repo.closeTab", Mod: ui.Cmd, Key: ui.KeyW, Keys: closeTabKeys, Group: shortcutGroupGlobal, Label: "closeTab",
+			Available: func(a *app) bool { return a.repositoryTabs != nil && a.repositoryTabs.active == a },
+			Run: func(a *app) {
+				if tabs := a.repositoryTabs; tabs != nil && tabs.active == a {
+					tabs.askClose(a)
+				}
+			}},
+		{ID: "repo.reopenClosedTab", Mod: ui.Cmd | ui.Shift, Key: ui.KeyT, Keys: reopenTabKeys, Group: shortcutGroupGlobal, Label: "reopenClosedTab",
+			Available: func(a *app) bool {
+				tabs := a.repositoryTabs
+				return tabs != nil && tabs.active == a && len(tabs.closed) > 0 && tabs.canChange()
+			},
+			Run: func(a *app) { a.repositoryTabs.reopenClosedRepository() }},
+		{ID: "repo.nextTab", Mod: ui.Ctrl, Key: ui.KeyTab, Keys: "Ctrl+Tab", Group: shortcutGroupGlobal, Label: "nextRepositoryTab",
+			Available: (*app).canCycleRepositoryTabs,
+			Run:       func(a *app) { a.cycleRepositoryTabs(1) }},
+		{ID: "repo.previousTab", Mod: ui.Ctrl | ui.Shift, Key: ui.KeyTab, Keys: "Ctrl+Shift+Tab", Group: shortcutGroupGlobal, Label: "previousRepositoryTab",
+			Available: (*app).canCycleRepositoryTabs,
+			Run:       func(a *app) { a.cycleRepositoryTabs(-1) }},
+		{ID: "repo.open", Mod: ui.Cmd, Key: ui.KeyO, Keys: openKeys, Group: shortcutGroupGlobal, Label: "openRepo",
+			Run: func(a *app) { a.chooseRepository() }},
+		{ID: "history.head", Mod: ui.Cmd, Key: ui.Key0, Keys: headKeys, Group: shortcutGroupGlobal, Label: "jumpToHead",
+			Run: func(a *app) { a.navigateToHead() }},
 		// Pages. The sidebar prints the same Keys text, so the numbers cannot
 		// drift from the bindings. History is the main window and carries the
 		// working-tree row, so it took the first key when the separate
@@ -73,12 +127,19 @@ func shortcutTable() []appShortcut {
 			Run: func(a *app) { a.openPage("worktrees") }},
 		{ID: "window.settings", Mod: ui.Cmd, Key: ui.KeyComma, Keys: "⌘,", Group: shortcutGroupGlobal, Label: "shortcutOpenSettings",
 			Run: func(a *app) { a.openSettingsWindow() }},
-		{ID: "repo.reload", Mod: ui.Cmd, Key: ui.KeyR, Keys: "⌘R", Group: shortcutGroupGlobal, Label: "shortcutReload",
-			Run: func(a *app) {
-				if !a.loading && !a.busy {
-					a.reload()
-				}
-			}},
+		{ID: "repo.reload", Mod: ui.Cmd, Key: ui.KeyR, Keys: refreshKeys, Group: shortcutGroupGlobal, Label: "shortcutReload",
+			Available: func(a *app) bool { return a.canRefreshShortcut() },
+			Run:       func(a *app) { a.refreshFromShortcut() }},
+		{ID: "repo.reloadF5", Key: ui.KeyF5, Keys: "F5", Group: shortcutGroupGlobal, Label: "shortcutReload",
+			Available: func(a *app) bool { return a.canRefreshShortcut() },
+			Run:       func(a *app) { a.refreshFromShortcut() }},
+
+		{ID: "repo.pullF7", Key: ui.KeyF7, Keys: "F7", Group: shortcutGroupGlobal, Label: "pull",
+			Available: func(a *app) bool { return a.canPullShortcut() },
+			Run:       func(a *app) { a.pullFromShortcut() }},
+		{ID: "repo.pushF8", Key: ui.KeyF8, Keys: "F8", Group: shortcutGroupGlobal, Label: "pushButton",
+			Available: func(a *app) bool { return a.canPushShortcut() },
+			Run:       func(a *app) { a.pushFromShortcut() }},
 		// The commit button shows ⌘↩, so the key has to work from the message
 		// field too, not only while the button has the focus.
 		{ID: "repo.commit", Mod: ui.Cmd, Key: ui.KeyEnter, Keys: "⌘↵", Group: shortcutGroupGlobal, Label: "shortcutCommit",
@@ -155,10 +216,53 @@ func shortcutTable() []appShortcut {
 			SkipWhenTyping: true, Run: func(a *app) { a.toggleSelectedStage() }},
 		{ID: "file.stageShift", Mod: ui.Shift, Key: ui.KeyEnter, Keys: "⇧↵", Group: shortcutGroupWorkspace, Label: "shortcutStageFile",
 			SkipWhenTyping: true, Run: func(a *app) { a.toggleSelectedStage() }},
+		{ID: "workspace.stageModified", Mod: ui.Cmd | ui.Shift, Key: ui.KeyA, Keys: stageTrackedKeys, Group: shortcutGroupWorkspace, Label: "stageTracked",
+			Available: func(a *app) bool { return a.canStageTrackedShortcut() },
+			Run: func(a *app) {
+				if a.canStageTrackedShortcut() {
+					a.runBatchStageKind("stageTracked")
+				}
+			}},
+		{ID: "workspace.unstageAll", Mod: ui.Cmd | ui.Shift, Key: ui.KeyR, Keys: unstageKeys, Group: shortcutGroupWorkspace, Label: "unstageAll",
+			Available: func(a *app) bool { return a.canUnstageAllShortcut() },
+			Run: func(a *app) {
+				if a.canUnstageAllShortcut() {
+					a.unstageAll()
+				}
+			}},
+		{ID: "history.parent", Mod: ui.Alt, Key: ui.KeyDown, Keys: "Alt+↓", Group: shortcutGroupHistory, Label: "jumpToParent",
+			SkipWhenTyping: true,
+			Available:      func(a *app) bool { return a.parentNavigationTarget() != "" },
+			Run:            func(a *app) { a.navigateToParent() }},
+		{ID: "history.secondParent", Mod: ui.Alt | ui.Shift, Key: ui.KeyDown, Keys: "Alt+Shift+↓", Group: shortcutGroupHistory, Label: "jumpToSecondParent", Local: true,
+			Available: func(a *app) bool { return a.parentNavigationTargetAt(1) != "" },
+			Run:       func(a *app) { a.navigateToSecondParent() }},
 		// Searches are the fields' own bindings; the card still lists them so the
 		// reader finds ⌘F where the page's other keys are.
 		{ID: "search.history", Mod: ui.Cmd, Key: ui.KeyF, Keys: "⌘F", Group: shortcutGroupHistory, Label: "shortcutSearchHistory", Field: true},
 		{ID: "search.branches", Mod: ui.Cmd, Key: ui.KeyF, Keys: "⌘F", Group: shortcutGroupBranches, Label: "shortcutSearchBranches", Field: true},
+	}
+	for _, binding := range bindings {
+		if binding.ID == "history.parent" {
+			bindings = append(bindings, childNavigationShortcut(binding))
+			bindings = append(bindings, historyNavigationShortcuts(binding)...)
+			break
+		}
+	}
+	bindings = append(bindings, quickRepositorySwitchShortcuts()...)
+	bindings = append(bindings, quickCheckoutShortcut())
+	bindings = append(bindings, commandPaletteShortcutBindings()...)
+	return append(bindings, fileTabShortcutBindings()...)
+}
+
+// Keep manual key requests separate from operation-completion reloads.
+func (a *app) canRefreshShortcut() bool {
+	return a.repo != nil && !a.busy && !a.loading && !a.repositoryChooserOpen && !a.hasPendingDialog(toastMain)
+}
+
+func (a *app) refreshFromShortcut() {
+	if a.canRefreshShortcut() {
+		a.reload()
 	}
 }
 
@@ -166,8 +270,20 @@ func shortcutTable() []appShortcut {
 // bindings are left to their text fields, and an unavailable action is not
 // registered at all, so the system's own handling of the key survives.
 func (a *app) registerShortcuts(c *ui.Context) {
+	a.discardStaleCommitMessageFocus()
+	a.discardStaleDetailTabFocus()
+	a.discardStaleCommandPalette()
+	a.discardStaleQuickCheckout()
+	a.discardStaleChildNavigation()
+	a.discardStaleQuickRepositorySwitch()
+	if a.commandPalette.open || a.quickCheckout.open || a.childNavigation.open || a.quickRepositorySwitch.open {
+		return
+	}
 	typing := c.FocusTakesText()
 	for _, s := range shortcutTable() {
+		if s.Local {
+			continue
+		}
 		if s.Field || (s.SkipWhenTyping && typing) {
 			continue
 		}
@@ -175,7 +291,7 @@ func (a *app) registerShortcuts(c *ui.Context) {
 			continue
 		}
 		run := s.Run
-		c.OnWindowShortcut(s.Mod, s.Key, func() { run(a) })
+		c.OnWindowShortcut(s.Mod, s.Key, func() { a.dispatchWindowShortcut(run) })
 	}
 }
 

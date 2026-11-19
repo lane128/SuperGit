@@ -1,93 +1,90 @@
 package lobedesk
 
 import (
-	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/theme"
-
-	"supergit/internal/gitrepo"
 )
 
-// A file row is a button so it keeps Tab, Shift+F10 and the accessibility
-// role, but a focused button takes Enter and Space for itself, which would
-// only reselect the row. The row's shortcuts claim both keys first and run
-// the page's actions on the current selection.
-func TestFileRowShortcutsTakeEnterAndSpace(t *testing.T) {
-	root := t.TempDir()
-	sentinel := filepath.Join(t.TempDir(), "opened")
-	bin := t.TempDir()
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$SG_OPEN_SENTINEL\"\n"
-	if err := os.WriteFile(filepath.Join(bin, "open"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("SG_OPEN_SENTINEL", sentinel)
-
-	a := &app{locale: localeChinese, page: "history", worktreeSelected: true}
-	a.repo = &gitrepo.Repository{Root: root}
-	a.ctx = context.Background()
-	rows := []gitrepo.Entry{
-		{Path: "dir/a.go", Worktree: 'M'},
-		{Path: "dir/b.go", Worktree: 'M'},
-	}
-	a.status = gitrepo.Status{Entries: rows}
-	tt := ui.NewTester(func(c *ui.Context) {
-		theme.Apply(c)
-		// The page's arrow keys move the selection while the row keeps the
-		// focus, as the real view does.
-		c.OnWindowShortcut(0, ui.KeyDown, func() { a.selectFile("dir/b.go", false) })
-		ui.Column(c).Width(600).Height(400).Children(func() {
-			for _, entry := range rows {
-				a.fileRow(c, entry, false)
+// Sublime Merge Build 2125 binds Enter to stage_file/unstage_file in its
+// table_of_contents controls. The focused row supplies the raw path/version.
+func TestFileRowEnterStagesFocusedVersion(t *testing.T) {
+	for _, staged := range []bool{false, true} {
+		name := "stage"
+		if staged {
+			name = "unstage"
+		}
+		t.Run(name, func(t *testing.T) {
+			a, callbacks := overviewFixture(t)
+			a.page, a.locale = "history", localeEnglish
+			// Avoid launching another application when testing the old Enter behavior.
+			bin := t.TempDir()
+			for _, command := range []string{"open", "xdg-open"} {
+				if err := os.WriteFile(filepath.Join(bin, command), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			readGit := func(args ...string) string {
+				t.Helper()
+				cmd := exec.Command("git", args...)
+				cmd.Dir = a.repo.Root
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					t.Fatalf("git %v: %v: %s", args, err, out)
+				}
+				return string(out)
+			}
+			head := readGit("rev-parse", "HEAD")
+			// Preview the other version, then give keyboard focus to the target
+			// row without activating it, as roving focus in the Files pane does.
+			a.selectFile("same.go", !staged)
+			tt := pageTester(a, func(c *ui.Context) {
+				a.registerShortcuts(c)
+				ui.Column(c).Height(500).FillWidth().Children(func() {
+					for _, version := range []bool{false, true} {
+						row := a.fileRow(c.Key(version), a.status.Entries[0], version)
+						if version == staged {
+							row.Focus()
+						}
+					}
+				})
+			})
+			if a.selectedStaged != !staged {
+				t.Fatal("fixture preview must differ from focused version")
+			}
+			tt.Key(0, ui.KeyEnter)
+			if !a.busy {
+				t.Fatal("Enter did not start the focused file stage action")
+			}
+			timer := time.NewTimer(10 * time.Second)
+			defer timer.Stop()
+			for a.busy || a.loading {
+				select {
+				case fn := <-callbacks:
+					fn()
+				case <-timer.C:
+					t.Fatal("Enter file action did not finish")
+				}
+			}
+			expected := "working version\n"
+			if staged {
+				expected = "original\n"
+			}
+			if got := readGit("show", ":same.go"); got != expected {
+				t.Fatalf("wrong Index version: %q want %q", got, expected)
+			}
+			if got := readGit("rev-parse", "HEAD"); got != head {
+				t.Fatal("file action changed HEAD")
+			}
+			data, err := os.ReadFile(filepath.Join(a.repo.Root, "same.go"))
+			if err != nil || string(data) != "working version\n" {
+				t.Fatalf("file action changed worktree: %q %v", data, err)
 			}
 		})
-	}, 600, 400)
-	r, ok := tt.Find("a.go")
-	if !ok {
-		t.Fatal("the file row is not laid out")
-	}
-	tt.ClickAt(r.X+r.W/2, r.Y+r.H/2)
-	if a.selectedPath != "dir/a.go" {
-		t.Fatalf("clicking the file row selected %q", a.selectedPath)
-	}
-	// The selection moves off the focused row, so a button activation would
-	// pull it back; the row shortcut must run the page's action on the new
-	// selection instead.
-	tt.Key(0, ui.KeyDown)
-	if a.selectedPath != "dir/b.go" {
-		t.Fatalf("the arrow key selected %q", a.selectedPath)
-	}
-
-	tt.Key(0, ui.KeyEnter)
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		data, err := os.ReadFile(sentinel)
-		if err == nil {
-			if !strings.Contains(string(data), filepath.Join("dir", "b.go")) {
-				t.Errorf("Enter opened %q; want the selected file dir/b.go", strings.TrimSpace(string(data)))
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("Enter did not open the selected file")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if a.selectedPath != "dir/b.go" {
-		t.Errorf("Enter activated the focused row button and selected %q; want the page's selection", a.selectedPath)
-	}
-
-	tt.Key(0, ui.KeySpace)
-	if !a.busy {
-		t.Fatal("Space did not start staging the selected file")
-	}
-	if a.selectedPath != "dir/b.go" {
-		t.Errorf("Space activated the focused row button and selected %q; want the page's selection", a.selectedPath)
 	}
 }

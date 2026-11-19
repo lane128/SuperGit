@@ -250,146 +250,160 @@ func (a *app) refGraphColor(palette []ui.Color, name string) ui.Color {
 // sight.
 func (a *app) historyRefMenu(c *ui.Context) {
 	tk := theme.TokensOf(c)
-	anchor := ui.ButtonBase(c).Label(a.historyRefLabel())
+	label := a.historyRefLabel()
+	anchor := ui.ButtonBase(c).Label(label)
 	styleWorkbenchButton(c, anchor, buttonNormal, false, a.historyRefOpen)
-	if len([]rune(a.historyRefLabel())) > 22 {
-		anchor.Tooltip(a.historyRefLabel())
+	if a.historyRef.Kind != "" {
+		anchor.Tooltip(label)
 	}
 	anchor.Gap(6).Children(func() {
 		icon, color := a.historyRefHeaderIcon(tk)
 		ui.Icon(c, icon).FontSize(scaledFont(14)).TextColor(color)
-		ui.Text(c, a.historyRefLabel()).FontSize(scaledFont(12)).SingleLine().MaxWidth(220)
+		ui.Text(c, a.historyRefLabel()).FontSize(scaledFont(12)).SingleLine().MaxWidth(a.historyHeaderLabelWidth())
 		ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(14)).TextColor(tk.TextSecondary)
 	})
+	// The palette phase owns the shared modal; the header remains its normal
+	// anchor without constructing another overlay behind it.
+	if a.historyRefPalette.active {
+		return
+	}
 	wasOpen := a.historyRefOpen
 	overlay.Popover(c, anchor, &a.historyRefOpen, overlay.PopoverProps{Placement: overlay.Bottom}, func() {
-		// The popup is built only while it is open, so the frame it first
-		// appears in is the one that starts with an empty query and focuses
-		// the search field.
-		first := !wasOpen
-		if first {
-			a.historyRefQuery = ""
-			// The first frame of a popup places the highlight on the ref in
-			// use, the way the checkout picker starts on a real choice.
-			a.historyRefCursorPlaced = false
-			a.historyRefReveal = true
+		if !wasOpen {
+			a.initializeHistoryRefPicker()
 		}
-		q := strings.ToLower(strings.TrimSpace(a.historyRefQuery))
-		choices := a.historyRefChoices(tk)
-		matchesQuery := func(label string) bool {
-			return q == "" || strings.Contains(strings.ToLower(label), q)
-		}
-		var filtered []refChoice
-		for _, choice := range choices {
-			if matchesQuery(choice.label) {
-				filtered = append(filtered, choice)
-			}
-		}
-		if placePicker(&a.historyRefCursor, &a.historyRefCursorQuery, &a.historyRefCursorPlaced,
-			a.historyRefQuery, func() int { return refCursorTarget(filtered, a.historyRef) }) {
-			a.historyRefReveal = true
-		}
-		// A refresh can shorten the list under a highlight already placed.
-		// Put it back on a ref that still exists and scroll to it, or Enter
-		// would take a row the reader cannot see.
-		if repairPicker(&a.historyRefCursor, len(filtered), func() int { return refCursorTarget(filtered, a.historyRef) }) {
-			a.historyRefReveal = true
-		}
-		choose := func(ref historyRef) {
+		a.historyRefPickerContent(c, 300, pickerListMaxHeight, true, func(ref historyRef) {
 			a.historyRefOpen = false
 			a.historyRefQuery = ""
 			a.applyHistoryRef(ref)
+		})
+	})
+}
+
+func (a *app) initializeHistoryRefPicker() {
+	a.historyRefQuery = ""
+	a.historyRefCursorPlaced = false
+	a.historyRefReveal = true
+}
+
+// Both entry points use the same search, choices, highlight and error recovery.
+// The caller owns overlay focus so a palette handoff keeps its original opener.
+func (a *app) historyRefPickerContent(c *ui.Context, width, listHeight float32, focus bool, choose func(historyRef)) ui.Element {
+	tk := theme.TokensOf(c)
+	q := strings.ToLower(strings.TrimSpace(a.historyRefQuery))
+	choices := a.historyRefChoices(tk)
+	matchesQuery := func(label string) bool {
+		return q == "" || strings.Contains(strings.ToLower(label), q)
+	}
+	var filtered []refChoice
+	for _, choice := range choices {
+		if matchesQuery(choice.label) {
+			filtered = append(filtered, choice)
 		}
-		shown := 0
-		ui.Column(c).Width(300).Gap(6).Children(func() {
-			// Enter takes the highlighted ref, or the first match when no
-			// row is marked, so a ref can be picked without the mouse.
-			search := a.pickerSearchBar(c, &a.historyRefQuery, a.t("searchRefs"), func() {
-				if choice, ok := refChoiceAt(filtered, a.historyRefCursor); ok {
-					choose(choice.ref)
-				}
-			}, func(delta int) {
-				a.historyRefCursor = stepRefCursor(filtered, a.historyRefCursor, delta)
-				a.historyRefReveal = true
-			})
-			// A failed ref read leaves the list short; say why and offer the
-			// same reload the rest of the app uses, instead of letting the
-			// reader mistake it for a repository without branches.
-			if err := a.historyRefErr(); err != "" {
-				// The rest of the app says when a retry is already running;
-				// this retry is a full reread too, so it must not start a
-				// second one behind the first.
-				retrying := a.loading || a.busy
-				label := a.t("retry")
-				if a.loading {
-					label = a.t("retrying")
-				}
-				ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-					display.Text(c, err, display.TextProps{
-						Type: display.TextDanger, FontSize: scaledFont(10), Rows: 2,
-					}).Grow(1).Basis(0).MinWidth(0)
-					button := workbenchButton(c, label, buttonNormal, retrying)
-					if !retrying && button.Clicked() {
-						a.reload()
-					}
-				})
+	}
+	if placePicker(&a.historyRefCursor, &a.historyRefCursorQuery, &a.historyRefCursorPlaced,
+		a.historyRefQuery, func() int { return refCursorTarget(filtered, a.historyRef) }) {
+		a.historyRefReveal = true
+	}
+	// A refresh can shorten the list under a highlight already placed.
+	// Put it back on a ref that still exists and scroll to it, or Enter
+	// would take a row the reader cannot see.
+	if repairPicker(&a.historyRefCursor, len(filtered), func() int { return refCursorTarget(filtered, a.historyRef) }) {
+		a.historyRefReveal = true
+	}
+	shown := 0
+	var search ui.Element
+	ui.Column(c).Width(width).Gap(6).Children(func() {
+		// Enter takes the highlighted ref, or the first match when no
+		// row is marked, so a ref can be picked without the mouse.
+		search = a.pickerSearchBar(c, &a.historyRefQuery, a.t("searchRefs"), func() {
+			if choice, ok := refChoiceAt(filtered, a.historyRefCursor); ok {
+				choose(choice.ref)
 			}
-			// The box holds the keyboard while the popup is open, so Tab and
-			// row clicks cannot strand the arrows and the typing; asking each
-			// frame outlasts a focus that moves. While the read has failed its
-			// Retry is the only useful control, so the box takes the focus once
-			// and lets Tab reach it; the force returns when the error clears.
+		}, func(delta int) {
+			a.historyRefCursor = stepRefCursor(filtered, a.historyRefCursor, delta)
+			a.historyRefReveal = true
+		})
+		// A failed ref read leaves the list short; say why and offer the
+		// same reload the rest of the app uses, instead of letting the
+		// reader mistake it for a repository without branches.
+		if err := a.historyRefErr(); err != "" {
+			// The rest of the app says when a retry is already running;
+			// this retry is a full reread too, so it must not start a
+			// second one behind the first.
+			retrying := a.loading || a.busy
+			label := a.t("retry")
+			if a.loading {
+				label = a.t("retrying")
+			}
+			ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
+				display.Text(c, err, display.TextProps{
+					Type: display.TextDanger, FontSize: scaledFont(10), Rows: 2,
+				}).Grow(1).Basis(0).MinWidth(0)
+				button := workbenchButton(c, label, buttonNormal, retrying)
+				if !retrying && button.Clicked() {
+					a.reload()
+				}
+			})
+		}
+		// The box holds the keyboard while the popup is open, so Tab and
+		// row clicks cannot strand the arrows and the typing; asking each
+		// frame outlasts a focus that moves. While the read has failed its
+		// Retry is the only useful control, so the box takes the focus once
+		// and lets Tab reach it; the force returns when the error clears.
+		if focus {
 			if a.historyRefErr() != "" {
 				search.AutoFocus()
 			} else {
 				search.Focus()
 			}
-			var active ui.Element
-			hasActive := false
-			pickerRows(c, func() {
-				group := ""
-				for _, choice := range choices {
-					if choice.ref.Kind != group {
-						group = choice.ref.Kind
-						// Headers only help in the unfiltered list; a
-						// search should read as one flat result set.
-						if q == "" && hasRefGroup(choices, group) {
-							if title := refGroupLabel(a.t, group); title != "" {
-								display.Text(c, title, display.TextProps{
-									Type: display.TextSecondary, FontSize: scaledFont(10), Strong: true,
-								}).Padding(6, 8, 2, 8)
-							}
+		}
+		var active ui.Element
+		hasActive := false
+		pickerRows(c, func() {
+			group := ""
+			for _, choice := range choices {
+				if choice.ref.Kind != group {
+					group = choice.ref.Kind
+					// Headers only help in the unfiltered list; a
+					// search should read as one flat result set.
+					if q == "" && hasRefGroup(choices, group) {
+						if title := refGroupLabel(a.t, group); title != "" {
+							display.Text(c, title, display.TextProps{
+								Type: display.TextSecondary, FontSize: scaledFont(10), Strong: true,
+							}).Padding(6, 8, 2, 8)
 						}
 					}
-					if !matchesQuery(choice.label) {
-						continue
-					}
-					highlighted := shown == a.historyRefCursor
-					shown++
-					row := a.historyRefRow(c, choice, shown, len(filtered), a.historyRef == choice.ref, highlighted, choose)
-					// The box keeps the keyboard, so the row under the arrows is
-					// its active descendant; Selected stays with the ref in use.
-					if highlighted {
-						active, hasActive = row, true
-					}
 				}
-				if shown == 0 {
-					empty := "searchBranchesNoMatch"
-					if a.historyRefErr() != "" {
-						// The error above names the failure; blaming the
-						// query for an empty list would hide it.
-						empty = "refsUnavailable"
-					}
-					display.Text(c, a.t(empty), display.TextProps{
-						Type: display.TextSecondary, FontSize: scaledFont(11),
-					}).Padding(6, 8)
+				if !matchesQuery(choice.label) {
+					continue
 				}
-			})
-			if hasActive {
-				search.ActiveDescendant(active)
+				highlighted := shown == a.historyRefCursor
+				shown++
+				row := a.historyRefRow(c, choice, shown, len(filtered), a.historyRef == choice.ref, highlighted, choose)
+				// The box keeps the keyboard, so the row under the arrows is
+				// its active descendant; Selected stays with the ref in use.
+				if highlighted {
+					active, hasActive = row, true
+				}
 			}
-		})
+			if shown == 0 {
+				empty := "searchBranchesNoMatch"
+				if a.historyRefErr() != "" {
+					// The error above names the failure; blaming the
+					// query for an empty list would hide it.
+					empty = "refsUnavailable"
+				}
+				display.Text(c, a.t(empty), display.TextProps{
+					Type: display.TextSecondary, FontSize: scaledFont(11),
+				}).Padding(6, 8)
+			}
+		}).MaxHeight(listHeight)
+		if hasActive {
+			search.ActiveDescendant(active)
+		}
 	})
+	return search
 }
 
 // refGroupLabel names a group in the ref selector; all refs have none.

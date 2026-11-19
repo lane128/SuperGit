@@ -15,7 +15,7 @@ func TestUnicodeDiffRowDoesNotEllipsizeTheTail(t *testing.T) {
 		setUIFontScale(scale)
 		text := "working long patch line 3999" + strings.Repeat(" 中文宽行ＡＢＣ", 16) + " wide-tail-3999"
 		line := gitrepo.DiffLine{Kind: "context", Text: text}
-		width := diffWidth(gitrepo.Diff{Lines: []gitrepo.DiffLine{line}})
+		width := (&app{}).diffWidth(gitrepo.Diff{Lines: []gitrepo.DiffLine{line}})
 		var measured float32
 		a := &app{locale: localeEnglish}
 		tt := ui.NewTester(func(c *ui.Context) {
@@ -46,7 +46,7 @@ func TestUnicodeDiffWidthCoversTheShapedCodeText(t *testing.T) {
 			ui.NewTester(func(c *ui.Context) {
 				measured, _ = c.MeasureText(0, ui.Span{Text: strings.ReplaceAll(text, "\t", "    "), Font: "Menlo", Size: scaledFont(diffCodeSize)})
 			}, 560, 100)
-			got := diffWidth(gitrepo.Diff{Lines: []gitrepo.DiffLine{{Kind: "context", Text: text}}})
+			got := (&app{}).diffWidth(gitrepo.Diff{Lines: []gitrepo.DiffLine{{Kind: "context", Text: text}}})
 			if got < measured+diffCodeReserve {
 				t.Errorf("scale %.2f scroll extent %.1f cuts shaped Unicode code width %.1f plus gutters", scale, got, measured)
 			}
@@ -56,6 +56,32 @@ func TestUnicodeDiffWidthCoversTheShapedCodeText(t *testing.T) {
 				t.Errorf("scale %.2f excess scroll extent %.1f hides the Unicode tail at the right limit", scale, got-measured)
 			}
 		}
+	}
+}
+
+func TestExplicitCodeFontResizesThePatchIndependently(t *testing.T) {
+	defer setUIFontScale(uiFontScaleValue())
+	a := &app{locale: localeEnglish, codeFontSize: 19}
+	text := strings.Repeat("mixed 中文ＡＢＣ ", 25) + "tail"
+	line := gitrepo.DiffLine{Kind: "context", Text: text}
+	diff := gitrepo.Diff{Lines: []gitrepo.DiffLine{line}}
+	setUIFontScale(fontScaleStandard)
+	width := a.diffWidth(diff)
+	setUIFontScale(fontScaleLarge)
+	if a.diffWidth(diff) != width || a.patchFontSize() != 19 || a.patchRowHeight() <= diffRowH {
+		t.Fatal("the fixed code size should control the patch geometry without changing with the interface font")
+	}
+	view := ui.NewTester(func(c *ui.Context) {
+		a.applyTheme(c)
+		a.diffLineFor(c, line, width, true, 0)
+	}, int(math.Ceil(float64(width))), 100)
+	if bounds, ok := view.Find(text); !ok || bounds.H < 19 {
+		t.Fatalf("the large patch text is missing or vertically clipped: %+v", bounds)
+	}
+	line.Text = strings.Repeat("x", 2000) + " tail"
+	diff.Lines[0] = line
+	if width := a.diffWidth(diff); width < float32(len(line.Text))*19*0.60+diffCodeReserve {
+		t.Fatalf("horizontal scroll cannot reach the code tail at 19 pt; width=%g", width)
 	}
 }
 
@@ -70,9 +96,9 @@ func TestDiffWidthFollowsTheFontScale(t *testing.T) {
 	defer setUIFontScale(uiFontScaleValue())
 
 	setUIFontScale(fontScaleStandard)
-	standard := diffWidth(diff)
+	standard := (&app{}).diffWidth(diff)
 	setUIFontScale(fontScaleLarge)
-	large := diffWidth(diff)
+	large := (&app{}).diffWidth(diff)
 
 	want := (standard - diffCodeReserve) * fontScaleLarge
 	if got := large - diffCodeReserve; math.Abs(float64(got-want)) > 1 {

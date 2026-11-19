@@ -9,6 +9,69 @@ import (
 	"supergit/internal/gitrepo"
 )
 
+func TestHistoryDensityKeepsReadingPosition(t *testing.T) {
+	before := uiFontScaleValue()
+	t.Cleanup(func() { setUIFontScale(before) })
+	setUIFontScale(fontScaleStandard)
+	a := &app{showGraph: true, commits: manyLaneHistory(100), locale: localeEnglish, page: "history"}
+	for i := range a.commits {
+		a.commits[i].Subject = fmt.Sprintf("Commit %03d updates the parser", i)
+		a.commits[i].Author = "Fixture author"
+		a.commits[i].Date = "2026-11-19T06:05:37Z"
+	}
+	view := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c)
+		ui.Row(c).Fill().Children(func() {
+			ui.Box(c).Width(190).Shrink(0)
+			ui.Column(c).Grow(1).Basis(0).MinWidth(0).Height(640).Children(func() {
+				a.historyPageAtWidth(c, 790)
+			})
+		})
+	}, 980, 640)
+	settle := func() {
+		for range 4 {
+			view.Frame()
+		}
+	}
+	scroll := func(delta float32) {
+		vp := a.historyViewport
+		view.Scroll(vp.X+vp.W/2, vp.Y+vp.H/2, 0, delta)
+		settle()
+	}
+	visible := func(index int) ui.Rect {
+		t.Helper()
+		row, ok := view.AccessByRole(ui.RoleOption, a.commits[index].Subject)
+		vp := a.historyViewport
+		if !ok || row.Offscreen || row.Bounds.Y < vp.Y || row.Bounds.Y+row.Bounds.H > vp.Y+vp.H {
+			t.Fatalf("commit %d not fully visible: row=%+v viewport=%+v", index, row.Bounds, vp)
+		}
+		return row.Bounds
+	}
+	settle()
+	scroll(82 * 44)
+	const selected = 84
+	row := visible(selected)
+	view.ClickAt(row.X+row.W/2, row.Y+row.H/2)
+	settle()
+	if a.selectedSHA != a.commits[selected].SHA {
+		t.Fatalf("pointer selected %q", a.selectedSHA)
+	}
+	setUIFontScale(fontScaleLarge)
+	settle()
+	visible(selected)
+
+	// Reading further down with a selection should not snap back to that
+	// selection on the next density change.
+	scroll(35 * 50.6)
+	visible(120)
+	setUIFontScale(fontScaleStandard)
+	settle()
+	visible(120)
+	if a.selectedSHA != a.commits[selected].SHA {
+		t.Fatalf("changing text size replaced selection with %q", a.selectedSHA)
+	}
+}
+
 func TestHistoryDensityKeepsTextAndRefsInsideRows(t *testing.T) {
 	before := uiFontScaleValue()
 	t.Cleanup(func() { setUIFontScale(before) })
@@ -55,7 +118,11 @@ func TestHistoryDensityKeepsTextAndRefsInsideRows(t *testing.T) {
 						}
 					}
 					check(commit.Subject, row.Bounds)
-					check("main", row.Bounds)
+					if _, ok := tt.Find("main"); ok {
+						check("main", row.Bounds)
+					} else {
+						check("+3", row.Bounds) // All refs use the overflow when the subject takes priority.
+					}
 					if columns.author {
 						check(commit.Author, row.Bounds)
 					} else if _, ok := tt.Find(commit.Author); ok {

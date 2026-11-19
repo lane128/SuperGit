@@ -18,6 +18,20 @@ func pageTester(a *app, page func(c *ui.Context)) *ui.Tester {
 	}, 900, 650)
 }
 
+// Standalone page fixtures have no outer workbench dividers.
+func (a *app) historyPage(c *ui.Context) {
+	width, _ := c.Size()
+	a.historyPageAtWidth(c, width)
+}
+
+func (a *app) contentCard(c *ui.Context) {
+	width, _ := c.Size()
+	if a.sidebarSplit.rowWidth > 0 {
+		width -= a.workbenchSidebarWidth() + splitterWidth
+	}
+	a.contentCardAtWidth(c, width)
+}
+
 // A failed read leaves the list empty, but that is not the same as "there are
 // no branches": the page has to show the error alone, without an empty state
 // inviting the reader to create what it says could not be read.

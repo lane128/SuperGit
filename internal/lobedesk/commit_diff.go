@@ -3,6 +3,8 @@ package lobedesk
 import (
 	"strings"
 
+	"github.com/egoist/mygo/ui"
+
 	"supergit/internal/gitrepo"
 )
 
@@ -51,6 +53,7 @@ type commitHiddenSel struct {
 func (a *app) resetCommitDiff() {
 	a.commitDiff = gitrepo.Diff{}
 	a.commitSections = nil
+	a.detailContexts.History.patchWidths = historyPatchWidthCache{}
 	// Row indexes only mean anything against the patch they came from, so the
 	// selections a closed section remembers go with it.
 	a.commitCollapsedSel = nil
@@ -110,22 +113,81 @@ func (a *app) visibleCommitSections() []commitDiffSection {
 	return out
 }
 
+type historyPatchWidthCache struct {
+	first *gitrepo.DiffLine
+	font  float32
+	split bool
+	rows  map[int]patchWidths
+}
+
+const historyPatchInset = 4
+
+// Size the canvas from the file sections the active tab actually draws.
+// Ordinary lines use the shared estimate. Measure unusually wide lines so
+// their tails neither clip nor scroll entirely past the right edge.
+func (a *app) historyPatchWidths(c *ui.Context, cache *historyPatchWidthCache, sections []commitDiffSection, lines []gitrepo.DiffLine) patchWidths {
+	font := a.patchFontSize()
+	if cache.first != &lines[0] || cache.font != font || cache.split != a.splitDiff {
+		*cache = historyPatchWidthCache{first: &lines[0], font: font, split: a.splitDiff, rows: make(map[int]patchWidths)}
+	}
+	viewport := a.commitDiffViewport.W - 2*historyPatchInset
+	widths := patchWidths{canvas: viewport}
+	if a.splitDiff {
+		widths.columns = max(280, viewport)
+	} else if viewport <= 0 {
+		widths.canvas = 560 // The first pass has no measured pane yet.
+	}
+	for _, section := range sections {
+		widths.canvas = max(widths.canvas, diffEstimatedAdvance(section.Path)*max(font, scaledFont(10))+diffCodeReserve)
+		if a.commitCollapsed[section.Path] {
+			continue
+		}
+		sectionWidths, found := cache.rows[section.Start]
+		if !found {
+			for _, index := range section.Rows {
+				line := lines[index]
+				advance := diffEstimatedAdvance(line.Text) * font
+				if advance > 4000 {
+					advance, _ = c.MeasureText(0, ui.Span{Text: strings.ReplaceAll(line.Text, "\t", "    "), Font: "Menlo", Size: font})
+				}
+				if a.splitDiff && splitPatchCodeLine(line.Kind) {
+					// History has no staging action at the end of a code row.
+					sectionWidths.columns = max(sectionWidths.columns, 2*(advance+splitPatchReserve-diffHoverActionReserve))
+				} else {
+					sectionWidths.canvas = max(sectionWidths.canvas, advance+diffCodeReserve)
+				}
+			}
+			cache.rows[section.Start] = sectionWidths
+		}
+		widths.canvas = max(widths.canvas, sectionWidths.canvas)
+		widths.columns = max(widths.columns, sectionWidths.columns)
+	}
+	widths.canvas = max(widths.canvas, widths.columns)
+	return widths
+}
+
+func (a *app) commitSectionPatchRows(lines []gitrepo.DiffLine, sec commitDiffSection) patchRows {
+	if a.commitCollapsed[sec.Path] || len(sec.Rows) == 0 {
+		return patchRows{}
+	}
+	return newPatchRows(lines, sec.Rows, a.splitDiff)
+}
+
+func (a *app) commitSectionHeight(sec commitDiffSection) float32 {
+	height := diffFileHeaderH
+	rows := a.commitSectionPatchRows(a.commitDiff.Lines, sec)
+	for i := range rows.len() {
+		height += rows.height(a, i)
+	}
+	return height
+}
+
 // commitDiffHeight is how tall the whole stacked diff draws: a header per file
 // and the rows of every section that is open.
 func (a *app) commitDiffHeight() float32 {
 	height := float32(0)
 	for _, sec := range a.visibleCommitSections() {
-		height += diffFileHeaderH
-		if a.commitCollapsed[sec.Path] {
-			continue
-		}
-		for _, index := range sec.Rows {
-			if a.commitDiff.Lines[index].Kind == "hunk" {
-				height += diffHunkH
-			} else {
-				height += diffRowH
-			}
-		}
+		height += a.commitSectionHeight(sec)
 	}
 	return height
 }
@@ -139,17 +201,7 @@ func (a *app) commitDiffOffset(path string) float32 {
 		if sec.Path == path {
 			return y
 		}
-		y += diffFileHeaderH
-		if a.commitCollapsed[sec.Path] {
-			continue
-		}
-		for _, index := range sec.Rows {
-			if a.commitDiff.Lines[index].Kind == "hunk" {
-				y += diffHunkH
-			} else {
-				y += diffRowH
-			}
-		}
+		y += a.commitSectionHeight(sec)
 	}
 	return -1
 }

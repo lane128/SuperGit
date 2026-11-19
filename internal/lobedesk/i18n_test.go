@@ -72,17 +72,16 @@ func TestChineseHasNoEnglishGitTerms(t *testing.T) {
 	}
 }
 
-// Explain which list rows adjust with the text preset and which patch spacing
-// remains fixed, so the settings help matches the actual density behavior.
-func TestAppearanceHelpNamesRowScalingAndFixedDiffSpacing(t *testing.T) {
+// Explain which settings affect list density and which affect code in patches.
+func TestAppearanceHelpNamesListDensityAndCodeSize(t *testing.T) {
 	zh := messages[localeChinese]["appearanceHelp"]
-	for _, want := range []string{"字号", "行高", "文件列表"} {
+	for _, want := range []string{"界面字号", "行高", "文件列表", "代码字号", "差异行距", "冲突编辑器"} {
 		if !strings.Contains(zh, want) {
 			t.Errorf("zh appearanceHelp = %q does not mention %q", zh, want)
 		}
 	}
 	en := messages[localeEnglish]["appearanceHelp"]
-	for _, want := range []string{"Text size", "spacing", "file rows"} {
+	for _, want := range []string{"Text size", "file rows", "Code font size", "line spacing", "conflict editor"} {
 		if !strings.Contains(en, want) {
 			t.Errorf("en appearanceHelp = %q does not mention %q", en, want)
 		}

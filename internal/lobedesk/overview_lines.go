@@ -98,6 +98,10 @@ func (a *app) overviewSelectionMatches(target overviewPatchTarget) bool {
 }
 
 func (a *app) overviewPatchLine(c *ui.Context, target overviewPatchTarget, index int, width float32) {
+	a.overviewPatchLineForSide(c, target, index, width, patchBoth)
+}
+
+func (a *app) overviewPatchLineForSide(c *ui.Context, target overviewPatchTarget, index int, width float32, side patchSide) {
 	line := target.Diff.Lines[index]
 	if line.Kind == "hunk" {
 		a.overviewHunkLine(c, target, line, width)
@@ -116,18 +120,14 @@ func (a *app) overviewPatchLine(c *ui.Context, target overviewPatchTarget, index
 	if selected && a.lineSel[index] {
 		bg = tk.Blue.Alpha(0.16).Over(bg)
 	}
-	row := ui.Row(c.Key(index)).Width(width).Height(diffRowH).Shrink(0).Background(bg)
+	row := ui.Row(c.Key(index)).Width(width).Height(a.patchRowHeight()).Shrink(0).Background(bg)
 	row.Children(func() {
-		numbers := ui.ButtonBase(c).Label(a.lineGutterLabel(line)).Row().Width(92).Height(diffRowH).Shrink(0).Padding(0, 8).Gap(8).AlignItems(ui.Center)
-		numbers.Children(func() {
-			ui.Text(c, lineNumber(line.Old)).Width(34).Shrink(0).TextAlign(ui.End).Font("Menlo").FontSize(scaledFont(10)).TextColor(gutterInk(tk, bg))
-			ui.Text(c, lineNumber(line.New)).Width(34).Shrink(0).TextAlign(ui.End).Font("Menlo").FontSize(scaledFont(10)).TextColor(gutterInk(tk, bg))
-		})
+		numbers := a.patchGutter(c, line, side, gutterInk(tk, bg))
 		markDiffGutter(numbers, changed && selected && a.lineSel[index], gutterInk(tk, bg))
 		if changed && numbers.Clicked() {
 			a.selectOverviewLine(target, index, numbers.ClickModifiers())
 		}
-		ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(scaledFont(diffCodeSize)).SingleLine().TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
+		ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(a.patchFontSize()).SingleLine().TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
 	})
 	choice := []int{index}
 	if selected && a.lineSel[index] {

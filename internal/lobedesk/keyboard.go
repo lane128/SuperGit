@@ -57,10 +57,11 @@ func (a *app) openSelectedFile() {
 	a.openFile(a.selectedPath, "open")
 }
 
-// canOpenSelectedFile keeps Enter from opening a file while a field takes
-// text, a diff line selection is active, or a dialog waits for an answer.
+// canOpenSelectedFile keeps the window's Enter fallback out of the Diff.
+// A replaced hunk can lose focus before its queued key arrives; that key must
+// not open the file externally. Focused Diff controls handle their own Enter.
 func (a *app) canOpenSelectedFile() bool {
-	if !a.worktreeFilesShown() || a.selectedPath == "" || len(a.lineSel) > 0 || a.repo == nil || a.loading || a.busy {
+	if !a.worktreeFilesShown() || a.worktreeDiffShown() || a.selectedPath == "" || len(a.lineSel) > 0 || a.repo == nil || a.loading || a.busy {
 		return false
 	}
 	return !a.confirm.open && !a.prompt.open && !a.blameOpen && !a.worktreeForm.open && !a.reset.open
@@ -213,7 +214,7 @@ func (a *app) moveFileSelection(delta int) {
 		return
 	}
 	a.revealSelection = true
-	a.selectFile(ref.path, ref.staged)
+	a.selectWorkspaceFile(ref, 0, false)
 }
 
 func (a *app) moveCommitSelection(delta int) {
@@ -228,7 +229,7 @@ func (a *app) moveCommitSelection(delta int) {
 	if a.historyErr != "" {
 		return
 	}
-	commits := filterCommits(a.historySource(), a.historyQuery)
+	commits := a.projectHistoryMerges(a.filteredHistoryRows())
 	// Without rows the page draws a placeholder, so there is nothing for the
 	// arrows to land on: the working tree's row rides with the commits.
 	if len(commits) == 0 {

@@ -9,10 +9,10 @@ import tempfile
 import time
 
 project = pathlib.Path(__file__).resolve().parent.parent
-build = project / "build"
+build = pathlib.Path(os.environ.get("SUPERGIT_NATIVE_BUILD_DIR", project / "build"))
 automation = build / "mygo-automation"
-candidates = list(build.glob("supergit-lobe*e2e"))
-if not automation.is_file() or len(candidates) != 1:
+binary = pathlib.Path(os.environ.get("SUPERGIT_NATIVE_BINARY", build / "supergit-lobe-e2e"))
+if not automation.is_file() or not binary.is_file():
     raise SystemExit("Run make lobe-e2e-build first")
 artifacts = pathlib.Path(tempfile.mkdtemp(prefix="lobe-submodule-", dir=build))
 session = "supergit-lobe-submodule-" + str(os.getpid())
@@ -23,9 +23,9 @@ dirty_guidance = "The submodule has local changes. Commit or stash them inside t
 def run():
     with tempfile.TemporaryDirectory(prefix="supergit-lobe-submodule.") as directory:
         root = pathlib.Path(directory)
-        repo, source, home = root / "workspace", root / "child-source", root / "home"
+        repo, source, config = root / "workspace", root / "child-source", root / "config"
         child = repo / "子 module"
-        settings = home / "Library/Application Support/supergit"
+        settings = config / "supergit"
         settings.mkdir(parents=True)
         (settings / "settings.json").write_text(json.dumps({"language": "en", "theme": "light", "autoFetch": False}))
         git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
@@ -55,9 +55,9 @@ def run():
         git("submodule", "deinit", "--", child.name)
         assert not (child / ".git").exists()
         socket = root / "app.sock"
-        env = {**git_env, "HOME": str(home), "MYGO_AUTOMATION": str(socket), "SUPERGIT_WINDOW_SIZE": "1320x640"}
+        env = {**git_env, "SUPERGIT_TEST_CONFIG_DIR": str(config), "MYGO_AUTOMATION": str(socket), "SUPERGIT_WINDOW_SIZE": "1320x640"}
         with (artifacts / "app.log").open("w") as log, (artifacts / "automation.log").open("w") as trace:
-            app = subprocess.Popen([str(candidates[0]), str(repo)], cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
+            app = subprocess.Popen([str(binary), str(repo)], cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
 
             def auto(*args):
                 result = subprocess.run([str(automation), *args, "--session", session], cwd=project, capture_output=True, text=True, timeout=40)
@@ -145,7 +145,7 @@ def run():
                 wait("Parent fixture target")
                 auto("key", "cmd+4", "--settle")
                 wait("Not initialized")
-                menu("Update submodule")
+                menu("Initialize submodule")
                 wait("Submodule updated")
                 ready()
                 assert (child / ".git").is_file()
@@ -191,7 +191,14 @@ def run():
                 modules_before = (repo / ".gitmodules").read_bytes()
                 dirty_before = (child / "文件 space.txt").read_bytes()
                 menu("Open submodule repository")
+                deadline = time.monotonic() + 25
+                while not any(e[1] == "tab" and e[2] == child.name and " checked" in e[3] for e in controls()):
+                    if time.monotonic() > deadline:
+                        raise AssertionError("Child repository tab did not become active")
+                    time.sleep(.05)
                 ready()
+                auto("key", "cmd+4", "--settle")
+                wait("Worktrees and submodules")
                 no_parent_error(controls())
                 (artifacts / "child-worktrees.snapshot.txt").write_text(auto("snapshot", "--full"))
                 auto("screenshot", str(artifacts / "child-worktrees.png"))
@@ -205,7 +212,7 @@ def run():
                 wait("Child fixture target")
                 ready()
                 entries = controls()
-                assert any(e[1] == "text" and e[2] == child.name and str(child) in e[3] for e in entries), "Open did not switch root to child"
+                assert any(e[1] == "tab" and e[2] == child.name and " checked" in e[3] and str(child) in e[3] for e in entries), "Open did not switch root to child"
                 assert not any(e[1] == "listItem" and e[2] == "Parent fixture target" for e in entries), "Parent history leaked into child"
                 no_parent_error(entries)
                 unchanged()

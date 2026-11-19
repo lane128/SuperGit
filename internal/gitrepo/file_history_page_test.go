@@ -65,6 +65,73 @@ func TestFileHistoryPagesFollowRenamesBeyondTwoThousandAndPinHead(t *testing.T) 
 	}
 }
 
+func TestFileHistoryPagesFollowDeletedRenamedPath(t *testing.T) {
+	dir := fixture(t)
+	seed(t, dir)
+	initial := git(t, dir, "rev-parse", "HEAD")
+	path := ":(glob) renamed 文件.txt"
+	write(t, dir, "base.txt", "before rename\n")
+	git(t, dir, "commit", "-qam", "change old path")
+	beforeRename := git(t, dir, "rev-parse", "HEAD")
+	git(t, dir, "mv", "--", "base.txt", path)
+	git(t, dir, "commit", "-qm", "rename")
+	write(t, dir, path, "after rename\n")
+	git(t, dir, "commit", "-qam", "change new path")
+	write(t, dir, "unrelated.txt", "unrelated\n")
+	git(t, dir, "add", "--", "unrelated.txt")
+	git(t, dir, "commit", "-qm", "unrelated")
+	unrelated := git(t, dir, "rev-parse", "HEAD")
+	git(t, dir, "--literal-pathspecs", "rm", "--", path)
+	git(t, dir, "commit", "-qm", "delete renamed path")
+	tip := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	expected := strings.Fields(git(t, dir, "--literal-pathspecs", "log", "--follow", "--format=%H", tip, "--", path))
+	plain := strings.Fields(git(t, dir, "--literal-pathspecs", "log", "--format=%H", tip, "--", path))
+	if len(expected) != 5 || expected[0] != strings.TrimSpace(tip) || reflect.DeepEqual(expected, plain) {
+		t.Fatal("fixture does not distinguish followed deleted history")
+	}
+	r := openTest(t, dir)
+	page, err := r.FileHistoryPage(context.Background(), path, nil, 0, 2)
+	if err != nil || len(page.Commits) != 2 || !page.HasMore || len(page.Tips) != 1 || page.Tips[0] != strings.TrimSpace(tip) {
+		t.Fatalf("first deleted-path page: %+v %v", page, err)
+	}
+	tips := append([]string(nil), page.Tips...)
+	// Recreate the deleted path at a newer HEAD after the first accepted page.
+	write(t, dir, path, "new HEAD recreation\n")
+	git(t, dir, "--literal-pathspecs", "add", "--", path)
+	git(t, dir, "commit", "-qm", "recreate after snapshot")
+	var got []string
+	for {
+		if !reflect.DeepEqual(page.Tips, tips) || len(page.Commits) > 2 || page.HasMore && len(page.Commits) == 0 {
+			t.Fatal("page lost pinned bounded cursor")
+		}
+		for _, commit := range page.Commits {
+			got = append(got, commit.SHA)
+		}
+		if !page.HasMore {
+			break
+		}
+		if len(got) > len(expected) {
+			t.Fatal("traversal did not finish")
+		}
+		page, err = r.FileHistoryPage(context.Background(), path, tips, len(got), 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("deleted rename sequence: got %v want %v", got, expected)
+	}
+	joined := "|" + strings.Join(got, "|") + "|"
+	for _, sha := range []string{initial, beforeRename} {
+		if !strings.Contains(joined, "|"+strings.TrimSpace(sha)+"|") {
+			t.Fatal("lost old-path ancestry")
+		}
+	}
+	if strings.Contains(joined, "|"+strings.TrimSpace(unrelated)+"|") {
+		t.Fatal("included unrelated commit")
+	}
+}
+
 func TestFileHistoryPagesEmptyArgumentsAndCancellation(t *testing.T) {
 	dir := fixture(t)
 	r := openTest(t, dir)

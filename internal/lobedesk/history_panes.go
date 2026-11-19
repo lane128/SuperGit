@@ -21,10 +21,37 @@ const (
 	// the room for it. Below that it gives width back to the patch, down to
 	// historyFilesPaneMin: a fixed column would leave the patch a sliver on a
 	// narrow window.
-	historyFilesPaneWidth float32 = 300
+	historyFilesPaneWidth float32 = 240
 	historyFilesPaneMin   float32 = 180
 	historyDiffPaneMin    float32 = 300
 )
+
+// historyWidthPressure transitions to a compact Files column at the minimum
+// window width. Base it on the whole window so selection and divider drags
+// cannot move the responsive boundary.
+func (a *app) historyWidthPressure() float32 {
+	const normalWidth = 1160
+	width := a.sidebarSplit.rowWidth
+	if width <= 0 {
+		return 0
+	}
+	return min(1, max(0, (normalWidth-width)/(normalWidth-minWindowWidth)))
+}
+
+func (a *app) historyFilesMinWidth() float32 {
+	const compactFilesMin = 96
+	return historyFilesPaneMin - a.historyWidthPressure()*(historyFilesPaneMin-compactFilesMin)
+}
+
+// historyPatchMinWidth gives wider History windows a more useful reading
+// width even when a saved split heavily favors the Files column.
+func (a *app) historyPatchMinWidth() float32 {
+	const wideWindow = 1600
+	const extraPatchWidth = 120
+	width := a.sidebarSplit.rowWidth
+	progress := min(1, max(0, (width-minWindowWidth)/(wideWindow-minWindowWidth)))
+	return historyDiffPaneMin + progress*extraPatchWidth
+}
 
 // historyFilesWidth is the files column's width this frame, read from the
 // share the row was laid out with.
@@ -33,17 +60,19 @@ func (a *app) historyFilesWidth() float32 {
 	if row <= 0 && a.historySplit.rowWidth > 0 {
 		row = (a.historySplit.rowWidth - splitterWidth) * (1 - a.historyShare())
 	}
+	width, minimum := historyFilesPaneWidth, a.historyFilesMinWidth()
+	patchMin := a.historyPatchMinWidth()
+	if a.page == "changes" {
+		width, minimum = changesFilesPaneWidth, changesFilesPaneMin
+		patchMin = historyDiffPaneMin
+	}
 	if row <= splitterWidth {
-		return historyFilesPaneWidth
+		return width
 	}
 	state := a.filesSplit
 	state.rowWidth = row
-	def := historyFilesPaneWidth / (row - splitterWidth)
-	minimum := historyFilesPaneMin
-	if a.page == "changes" {
-		minimum = changesFilesPaneMin
-	}
-	return max(minimum, (row-splitterWidth)*state.fraction(def, minimum, historyDiffPaneMin))
+	def := width / (row - splitterWidth)
+	return max(minimum, (row-splitterWidth)*state.fraction(def, minimum, patchMin))
 }
 
 const (
@@ -175,14 +204,14 @@ func (a *app) applyDetailTab(previous detailTabKey) {
 // historyDetailsPane is the share right of the commit list: the changed files
 // and the patch side by side. The details toggle in the page header collapses
 // both columns at once.
-func (a *app) historyDetailsPane(c *ui.Context) {
-	row := ui.Row(c).Grow(1 - a.historyShare()).Basis(0).MinWidth(0).AlignSelf(ui.Stretch)
-	a.filesSplit.rowWidth = row.Bounds().W
+func (a *app) historyDetailsPane(c *ui.Context, share, width float32) {
+	row := ui.Row(c).Grow(share).Basis(0).MinWidth(0).AlignSelf(ui.Stretch)
+	a.filesSplit.rowWidth = width
 	row.Children(func() {
 		a.historyFilesPane(c)
 		if !a.detailsChangesHidden {
 			def := shareForWidth(a.filesSplit.rowWidth-splitterWidth, historyFilesPaneWidth)
-			a.splitHandle(c, &a.filesSplit, def, historyFilesPaneMin, historyDiffPaneMin, a.t("resizeFilesPane"))
+			a.splitHandle(c, &a.filesSplit, def, a.historyFilesMinWidth(), a.historyPatchMinWidth(), a.t("resizeFilesPane"))
 		}
 		a.historyDiffPane(c)
 	})
@@ -229,21 +258,25 @@ func (a *app) historyFilesPane(c *ui.Context) {
 	if a.worktreeSelected {
 		count = len(a.status.Entries)
 	}
-	ui.Column(c).Width(a.historyFilesWidth()).Shrink(0).MinHeight(0).AlignSelf(ui.Stretch).
+	width := a.historyFilesWidth()
+	ui.Column(c).Width(width).Shrink(0).MinHeight(0).AlignSelf(ui.Stretch).
 		Children(func() {
-			ui.Row(c).Height(38).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
-				BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary).Children(func() {
-				display.Text(c, a.t("filesTab"), display.TextProps{Strong: true, FontSize: scaledFont(12)})
-				if !a.worktreeSelected && (a.commitFilesLoading || a.commitFilesErr != "") {
-					return
-				}
-				display.Tag(c, fmt.Sprint(count), display.TagProps{Variant: display.TagFilled, Size: theme.Small, Round: true})
-				// The working tree keeps the two bulk stage controls the
-				// workspace header used to carry; a commit's file list has no
-				// index to move files in or out of.
+			header := ui.Row(c).Height(38).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
+				Justify(ui.SpaceBetween).BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
+			if a.worktreeSelected && width < scaledFont(146) {
+				// Keep the same controls in the same parent while the heading
+				// and actions move onto separate lines.
+				header.Column().Height(62).Padding(6, 12).Gap(4).AlignItems(ui.Start).Justify(ui.Center)
+			}
+			header.Children(func() {
+				ui.Row(c.Key("files-heading")).Gap(8).AlignItems(ui.Center).Children(func() {
+					display.Text(c, a.t("filesTab"), display.TextProps{Strong: true, FontSize: scaledFont(12)})
+					if a.worktreeSelected || (!a.commitFilesLoading && a.commitFilesErr == "") {
+						display.Tag(c, fmt.Sprint(count), display.TagProps{Variant: display.TagFilled, Size: theme.Small, Round: true})
+					}
+				})
 				if a.worktreeSelected {
-					ui.Row(c).Grow(1).Basis(0)
-					a.filesToolbar(c)
+					ui.Row(c.Key("files-actions")).Gap(8).Children(func() { a.filesToolbar(c) })
 				}
 			})
 			filesScroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitFilesScroll}, func() {
@@ -277,27 +310,23 @@ func (a *app) historyDiffPane(c *ui.Context) {
 			// The active tab runs the full height of the strip and shares the
 			// page's ground, so it meets the body below with no gray seam; a
 			// bottom border here would cut that join.
-			strip := layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Horizontal, State: &a.detailTabStrip}, func() {
+			// Keep the thumb visible on overflow so a clipped tab can be reached
+			// with a mouse even before the pointer enters the strip.
+			strip := ui.ScrollHorizontal(c).Height(38).Shrink(0).FillWidth().Background(tk.FillTertiary).
+				KeepScrollbars(true).TrackScroll(&a.detailTabStrip)
+			strip.Children(func() {
 				ui.Row(c).Height(38).Gap(2).Padding(0, 8).AlignItems(ui.Center).
 					Background(tk.FillTertiary).Role(ui.RoleTabList).Label(a.t("detailTabs")).FocusGroup(ui.Horizontal).Children(func() {
-					a.detailTabButton(c, tk, detailTabKey{Summary: true}, a.detailSummaryLabel(), "")
+					a.detailTabButton(c, tk, detailTabKey{Summary: true})
 					if a.detailFileShown() {
 						// A close click mutates OpenFiles during this render pass.
 						// Keep the current frame's iteration stable until the next.
 						for _, file := range slices.Clone(a.detailTabs().OpenFiles) {
-							name, _ := splitRepoPath(file.Path)
-							if a.worktreeSelected {
-								stage := "unstaged"
-								if file.Staged {
-									stage = "staged"
-								}
-								name += " · " + a.t(stage)
-							}
-							a.detailTabButton(c, tk, detailTabKey{File: file}, name, file.Path)
+							a.detailTabButton(c, tk, detailTabKey{File: file})
 						}
 					}
 				})
-			}).Height(38).Shrink(0).FillWidth()
+			})
 			previousWidth := ui.Local(strip, "detail-tab-strip-width", func() float32 { return 0 })
 			width := strip.Bounds().W
 			if width > 0 && *previousWidth > 0 && width < *previousWidth-0.5 {
@@ -314,8 +343,22 @@ func (a *app) historyDiffPane(c *ui.Context) {
 
 // detailTabButton draws one tab. It fills the strip and wears the page's
 // surface when active, so it reads as the pane's edge rather than a floating
-// pill; the tooltip carries the full file path the label shortens.
-func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey, label, tooltip string) {
+// pill. The tooltip identifies the full file path and its worktree version.
+func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey) {
+	var name, suffix string
+	path := key.File.Path
+	if key.Summary {
+		name = a.detailSummaryLabel()
+	} else {
+		name, _ = splitRepoPath(path)
+		if a.worktreeSelected {
+			stage := "unstaged"
+			if key.File.Staged {
+				stage = "staged"
+			}
+			suffix = " · " + a.t(stage)
+		}
+	}
 	c = c.Key(key)
 	active := a.detailTabs().Active == key
 	wrapper := ui.Row(c).Height(38).Shrink(0).MaxWidth(260).AlignItems(ui.Center).
@@ -324,11 +367,13 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey,
 		wrapper.Background(tk.BgContainer)
 	}
 	wrapper.Children(func() {
-		tab := ui.ButtonBase(c).Label(label).Row().Height(38).Padding(0, 10).MinWidth(0).
+		const tabPadding, captionWidth = 10, 204
+		tab := ui.ButtonBase(c).Label(name+suffix).Row().Height(38).Padding(0, tabPadding).
+			MinWidth(0).MaxWidth(captionWidth + 2*tabPadding).AlignItems(ui.Center).
 			Role(ui.RoleTab).AccessSelected(active)
 		a.wireDetailTabKeys(tab, key)
-		if tooltip != "" {
-			tab.Tooltip(tooltip)
+		if path != "" {
+			tab.Tooltip(path + suffix)
 		}
 		style := display.TextSecondary
 		if active {
@@ -337,13 +382,18 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey,
 			tab.Background(tk.FillSecondary)
 		}
 		tab.Children(func() {
-			display.Text(c, label, display.TextProps{FontSize: scaledFont(11.5), Strong: active, Type: style}).SingleLine().MaxWidth(204)
+			props := display.TextProps{FontSize: scaledFont(11.5), Strong: active, Type: style}
+			// The file name can shorten, but the two versions must stay distinct.
+			display.Text(c, name, props).SingleLine().MinWidth(0).Shrink(1)
+			if suffix != "" {
+				display.Text(c, suffix, props).SingleLine().Shrink(0)
+			}
 		})
 		if tab.Clicked() {
 			a.activateDetailTab(key)
 		}
 		if !key.Summary {
-			close := ui.ButtonBase(c).Label(a.t("close") + " " + tooltip).Width(26).Height(30).Shrink(0).Center()
+			close := ui.ButtonBase(c).Label(a.t("close") + " " + path).Width(26).Height(30).Shrink(0).Center()
 			a.wireDetailTabKeys(close, key)
 			close.Children(func() { ui.Icon(c, lucide.X()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary) })
 			if close.Clicked() {
@@ -353,7 +403,9 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey,
 		}
 		a.focusRequestedDetailTab(tab, key)
 	})
-	if active && a.detailReveal {
+	// A click inside the wrapper can change the active tab mid-frame.
+	// Only the resulting selection may consume the pending reveal.
+	if a.detailTabs().Active == key && a.detailReveal {
 		wrapper.ScrollIntoView()
 		a.detailReveal = false
 	}
@@ -404,6 +456,14 @@ func (a *app) worktreeDiffHeader(c *ui.Context, tk *theme.Tokens) {
 			display.Text(c, baseline, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).FillWidth().SingleLine().Tooltip(baseline)
 		})
 		entry, ok := a.selectedEntry()
+		if !a.diffLoading && a.diffErr == "" && len(a.diff.Lines) > 0 && (!ok || !entry.Conflict) {
+			a.patchLayoutButton(c.Key("patch-layout"), func() {
+				lines := a.diff.Lines
+				before := newPatchRows(lines, nil, a.splitDiff)
+				after := newPatchRows(lines, nil, !a.splitDiff)
+				a.diffScroll.Y = a.patchOffset(before, after, a.diffScroll.Y)
+			})
+		}
 		if !ok {
 			return
 		}
@@ -441,12 +501,29 @@ func (a *app) historyDiffFile(c *ui.Context, tk *theme.Tokens) {
 			Padding(14)
 		return
 	}
+	if commit, ok := a.selectedCommit(); ok && a.selectedSHA != "" {
+		label := a.t("commitDiffRootBaseline")
+		if len(commit.Parents) > 0 {
+			label = a.tf("commitDiffParentBaseline", shortSHA(commit.Parents[0]), shortSHA(commit.SHA))
+		}
+		ui.Column(c).FillWidth().Shrink(0).Padding(6, 10).Children(func() {
+			display.Text(c, label, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 2}).FillWidth()
+		})
+	}
 	scroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitDiffScroll}, func() {
-		ui.Column(c).FillWidth().Padding(4).Children(func() {
+		ui.Column(c).FillWidth().Padding(historyPatchInset).Children(func() {
 			a.commitDiffView(c)
 		})
 	}).Grow(1).Basis(0).MinHeight(0)
 	// A line drag that leaves the pane scrolls the patch; the box it is
 	// measured against comes from this layout.
-	a.commitDiffViewport = scroll.Bounds()
+	a.recordPatchViewport(c, scroll.Bounds())
+}
+
+func (a *app) recordPatchViewport(c *ui.Context, bounds ui.Rect) {
+	if (!a.worktreeSelected || a.splitDiff) && bounds.W != a.commitDiffViewport.W {
+		// Bounds describe the previous layout. Redraw the patch at the new width.
+		c.After(0)
+	}
+	a.commitDiffViewport = bounds
 }

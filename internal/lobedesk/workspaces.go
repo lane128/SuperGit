@@ -187,7 +187,7 @@ func (a *app) confirmRemoveWorktree(worktree gitrepo.Worktree) {
 // to delete that branch from the success toast. Git keeps a worktree's branch
 // after the checkout goes away, so the branch would otherwise stay behind.
 func (a *app) removeWorktree(worktree gitrepo.Worktree) {
-	if a.repo == nil || a.busy || a.loading {
+	if a.repo == nil || a.busy || a.loading || a.tabSnapshotUnavailable() {
 		return
 	}
 	repo := a.repo
@@ -429,6 +429,10 @@ func (a *app) revealWorkspaceRow(row ui.Element, selected bool) {
 }
 
 func (a *app) submoduleMenu(c *ui.Context, row ui.Element, module gitrepo.Submodule) {
+	updateLabel := a.t("updateSubmodule")
+	if !module.Initialized {
+		updateLabel = a.t("initializeSubmodule")
+	}
 	items := []overlay.MenuItem{}
 	if module.Initialized {
 		items = append(items,
@@ -437,7 +441,7 @@ func (a *app) submoduleMenu(c *ui.Context, row ui.Element, module gitrepo.Submod
 		)
 	}
 	items = append(items,
-		overlay.MenuItem{Key: "update", Label: a.t("updateSubmodule"), Icon: lucide.RefreshCw(), Disabled: a.busy || a.loading},
+		overlay.MenuItem{Key: "update", Label: updateLabel, Icon: lucide.RefreshCw(), Disabled: a.busy || a.loading},
 		overlay.MenuItem{Divider: true},
 		overlay.MenuItem{Key: "reveal", Label: a.t("revealInFinder"), Icon: lucide.FolderOpen()},
 		overlay.MenuItem{Key: "copy", Label: a.t("copyAbsolutePath"), Icon: lucide.Copy()},

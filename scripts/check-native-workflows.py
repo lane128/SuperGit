@@ -25,14 +25,14 @@ fixture_command = [sys.executable, "-I", str(project / "scripts/create-history-d
 root = pathlib.Path(subprocess.check_output(fixture_command, text=True, cwd=project).strip())
 root_file = "workflow-demo-root.txt" if mode == "workflows" else mode + "-demo-root.txt"
 (build / root_file).write_text(str(root) + "\n")
-fixture_home = root / "test-home"
-fixture_home.mkdir(mode=0o700)
+fixture_config = root / "test-config"
+fixture_config.mkdir(mode=0o700)
 socket = root / "automation.sock"
 session = "supergit-workflows-" + str(os.getpid())
 automation = build / "mygo-automation"
-env = {**os.environ, "MYGO_AUTOMATION": str(socket), "HOME": str(fixture_home), "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+env = {**os.environ, "MYGO_AUTOMATION": str(socket), "SUPERGIT_TEST_CONFIG_DIR": str(fixture_config), "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 with (build / (mode + "-native.log")).open("w") as app_log:
-    app = subprocess.Popen([str(build / "supergit-e2e"), str(root / "workspace")], cwd=project, env=env, stdout=app_log, stderr=subprocess.STDOUT)
+    app = subprocess.Popen([str(build / "supergit-desktop-e2e"), str(root / "workspace")], cwd=project, env=env, stdout=app_log, stderr=subprocess.STDOUT)
     try:
         deadline = time.monotonic() + 15
         while not socket.exists():

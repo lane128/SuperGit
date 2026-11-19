@@ -58,7 +58,7 @@ func (a *app) openNoticeDetails(owner toastOwner, notice *toastNotice) {
 
 func (a *app) discardStaleNoticeDetails(owner toastOwner) {
 	// A newly opened Settings window must not inherit its predecessor's modal.
-	if w := a.settingsWin.Load(); w == nil || w.IsDestroyed() {
+	if w := a.settingsWindowSlot().Load(); w == nil || w.IsDestroyed() {
 		a.noticeDetails[toastSettings] = noticeDetailsState{}
 	}
 	state := &a.noticeDetails[owner]
@@ -90,13 +90,20 @@ func (a *app) noticeDetailsDialog(c *ui.Context, owner toastOwner) {
 	}
 	text := noticeDetailText(n)
 	tk := theme.TokensOf(c)
-	ui.Modal(c, &state.open, func() {
-		ui.Column(c).Width(600).MaxWidthPercent(90).Height(420).MaxHeightPercent(90).Padding(20).Gap(12).
-			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).Children(func() {
+	width, height := c.Size()
+	const padding = 20
+	panelWidth := min(float32(600), max(0, width-32))
+	font := scaledFont(12)
+	_, textHeight := c.MeasureText(max(1, panelWidth-2*padding-2), ui.Span{Text: text, Size: font})
+	bodyHeight := min(textHeight+2, 300, max(0, height-160))
+	ui.DialogBase(c, &state.open, func(backdrop, panel ui.Element) {
+		backdrop.Background(ui.RGBA(0, 0, 0, .4))
+		panel.Column().Label(title).Width(panelWidth).MaxHeight(max(0, height-32)).Padding(padding).Gap(12).
+			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
 			display.Text(c, title, display.TextProps{Strong: true, FontSize: scaledFont(14), Rows: 2}).FillWidth().Shrink(0)
 			layout.ScrollArea(c, layout.ScrollAreaProps{State: &state.scroll}, func() {
-				display.Text(c, text, display.TextProps{FontSize: scaledFont(12)}).FillWidth().MinWidth(0)
-			}).Grow(1).Basis(0).MinHeight(0)
+				display.Text(c, text, display.TextProps{FontSize: font}).FillWidth().MinWidth(0)
+			}).FillWidth().Height(bodyHeight).MinHeight(0)
 			ui.Row(c).FillWidth().Gap(8).Justify(ui.End).Shrink(0).Children(func() {
 				if workbenchButton(c, a.t("copyErrorDetails"), buttonNormal, false).Clicked() {
 					a.copyText(text)

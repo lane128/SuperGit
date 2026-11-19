@@ -1,6 +1,26 @@
 # Lobe 试用记录
 
-此记录区分源码原生试用、此前安装的测试包和默认旧 desktop 包。只记录实际执行的场景，不用后端测试替代 UI 验收。
+此记录分别标注标准包、旧桌面回退包及各批次的 Lobe 预览构建。
+
+## 2026-11-19 标准包切换与原生验收
+
+- 未提交源码的 `make app` 已从 `cmd/supergit` 构建标签式工作台。Apple Silicon ZIP 为 `build/supergit-arm64-TWkRZV/SuperGit-macOS-arm64.zip`，已核对解压、arm64、包标识 `dev.supergit.preview` 和 ad-hoc 签名。同目录的 `SuperGit Desktop.app` 是独立回退包。正式分发仍需开发者签名与公证。
+- `make native-check` 使用实际 `make app` 配方构建隔离的自动化测试包。外部保存刷新、精确部分暂存和取消暂存、完整提交、Push 取消及本地 Push / Fetch / 快进 Pull 均通过。Stash 保存 / 应用 / 弹出 / 删除与三方冲突、Merge 整文件取边及双父提交、子模块初始化 / 更新 / 脏目录拒绝 / 打开独立仓库标签均通过。证据在 `build/native-supergit-od56x5sf/`。
+- `go test ./...`、`go vet ./...`、`git diff --check`、偏好与左右 Diff 的定向竞态检查、Windows / Linux amd64 的标准与回退入口交叉构建均通过。`make desktop-native-check` 九组旧桌面检查通过。偏好回归核对新版已设置的值优先，以及旧文件字节保持。
+- 仍待人工验证真实系统目录选择与取消、重启后从系统「最近打开」菜单实际打开、Windows / Linux 实机交互，以及拖动调整窗口时与 Sublime Merge 的布局对照。左右 Diff 尚有配对行方向键顺序、切换布局锚点和 EOF 标记归属侧三个细节。
+
+## 2026-11-19 左右 Diff、代码字号与添加远端
+
+- macOS 在 980×640 和 1320×840 验证工作区总览与文件标签、History 摘要与文件标签的配对行。工作区用鼠标悬停操作暂存再取消暂存同一个右列添加行，实际 Index 内容符合预期，往返后 HEAD、Index 条目、状态和文件字节恢复原始值。History 验证切回统一布局。原生截图和步骤日志位于 `build/lobe-code-font-native-MQZeW4/split-980x640/` 与 `split-1320x840/`。
+- Go 回归覆盖长路径和 hunk 标题的横向范围、同一视觉行的 Shift 选区、同列两行拖选的精确剪贴板内容、工作区切换布局时保留可见 hunk，以及文件末尾无换行时的配对。行级 Git 操作继续使用原补丁索引。
+- 980×640 原生双仓库验证 Add Remote 的取消、添加、重名反馈及改名重试。560×480 Settings 验证中英文调节与重启恢复。记录在 `build/lobe-code-font-native-MQZeW4/remote/`、`en/` 和 `zh/`。
+- Apple Silicon 预览 ZIP 已校验完整性、ARM64 架构和解压后 ad-hoc 签名。文件为 `build/lobe-split-arm64-aJKnr7/SuperGit-Lobe-Preview-macOS-arm64.zip`。
+
+## 2026-11-19 多仓库最近记录与 History Graph 横向轨道
+
+- 最终源码的隔离 macOS 构建在 980×700 和 1320×700 通过 LaunchServices 打开两个仓库、同窗口鼠标切换、退出恢复标签顺序与活动仓库，以及关闭全部标签后从 Welcome 重开。另以独立配置重放旧版最近路径导入，核对启动仍是 Welcome、点击才打开，以及旧偏好文件字节保持。两套临时仓库的 HEAD、引用、索引、配置和文件字节保持。脚本与截图位于 `/private/tmp/sg-final-yJvS4i/`。重启后的 File → Open Recent 条目可定位，但测试窗口未获得焦点，调用未使页面切换。系统目录面板选取和取消仍待验证。
+- 同一构建的 67 提交、32 并行分支测试在 980×640 和 1320×840 显示横向轨道，点击后分支线移动，选中提交及详情保持。五提交单线测试无需轨道。脚本、截图及结果位于 `build/history-rail-native-XkTXoG/`。
+- `go test ./...`、`go vet ./...`、`git diff --check`、最近仓库与 Graph 的定向 race 检查，以及 Windows 和 Linux amd64 交叉构建通过。Windows 与 Linux 待验证实际界面行为。Apple Silicon 本地 ZIP 的完整性、ARM64 架构和解压后的 ad-hoc 签名已核对，路径为 `build/lobe-recents-graph-arm64-0BqgcD/SuperGit-Lobe-Preview-macOS-arm64.zip`。
 
 ## 2026-11-16：子模块内部改动拒绝的当前语言说明
 
@@ -577,6 +597,6 @@
 
 ## 安装与下一次日常试用
 
-此前单独安装的 `SuperGit Lobe.app` 是更早的测试包，没有自动更新本轮工作台、缓存或本地检测修改。`make app` 当前仍打包旧 desktop；最新 Lobe 可通过 `make lobe-run REPO=/path/to/repository` 运行，构建入口见 [打包说明](packaging.md)。本轮没有覆盖安装或发布。
+用本页顶部记录的 Apple Silicon 标准 ZIP 试用仓库标签和 History。此前独立安装的 `SuperGit Lobe.app` 是更早的测试包。本地构建和回退入口见 [打包说明](packaging.md)。
 
 尚无用户真实日常开发会话、Windows / Linux 原生验证、开发者签名 / 公证及真实远端关键流程的新增验收记录。后续日常试用记录应附上构建日期 / 包版本与源码状态、平台、用户选择的场景、实际结果及问题复现步骤；只有执行后才追加为通过。候选主线能力差距仍按 R11 逐项核对。

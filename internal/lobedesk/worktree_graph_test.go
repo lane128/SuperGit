@@ -16,6 +16,7 @@ func TestWorkingChangesUseDashedHeadConnection(t *testing.T) {
 		t.Fatalf("worktree does not target actual HEAD: %+v visible=%v", link, ok)
 	}
 	// Reserve a separate lane: the temporary edge must not pass through 'other'.
+	g.Worktree = &link
 	rect := ui.Rect{X: 0, Y: 100, W: 100, H: 50}
 	points := link.rowPoints(g, 1, rect, 25)
 	if len(points) == 0 {
@@ -68,7 +69,6 @@ func TestWorkingChangesMarkerAlignsWithFirstHeadLane(t *testing.T) {
 	graph := newCommitGraph(commits, nil)
 	link, _ := a.worktreeGraphConnection(commits, graph)
 	graph.Worktree = &link
-	graph.Width += worktreeGraphGutter
 	a.historyGraph = graph
 	tt := pageTester(a, func(c *ui.Context) { a.historyWorktreeRow(c, 0, 2) })
 	r := a.worktreeGraphBounds
@@ -85,6 +85,7 @@ func TestWorktreeEdgeDoesNotDoubleBackAcrossPinnedGap(t *testing.T) {
 	commits := []gitrepo.Commit{{SHA: "actual"}}
 	graph := newCommitGraph(commits, nil)
 	link, _ := a.worktreeGraphConnection(commits, graph)
+	graph.Worktree = &link
 	// 6 DIP padding makes the pinned marker-to-parent distance 56 rather than
 	// exactly one 50-DIP row. The old edge builder emitted overlapping bends.
 	points := link.rowPoints(graph, 0, ui.Rect{Y: 56, H: 50}, 25)

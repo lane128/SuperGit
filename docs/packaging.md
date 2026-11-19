@@ -6,15 +6,20 @@
 
 | 目的 | 命令 | 实际入口 / 产物 |
 | --- | --- | --- |
-| 默认 macOS 应用包 | `make app` | `cmd/supergit` → `internal/desktop`；`build/SuperGit.app` |
-| 最新 Lobe 开发版 | `make lobe-build` | `cmd/supergit-lobe` → `internal/lobedesk`；`build/supergit-lobe` |
+| 默认 macOS 应用包 | `make app` | `cmd/supergit` → `internal/lobedesk`，产物 `build/SuperGit.app`，包标识 `dev.supergit.preview` |
+| 旧桌面回退包 | `make desktop-app` | `cmd/supergit` + `legacydesktop`，产物 `build/SuperGit Desktop.app` |
+| Finder 启动的 Lobe 预览包 | `make lobe-app` | `cmd/supergit-lobe` → `build/SuperGit Lobe Preview.app` |
+| Lobe 开发二进制 | `make lobe-build` | `cmd/supergit-lobe` → `build/supergit-lobe` |
 | 运行 Lobe 开发版 | `make lobe-run REPO=/path/to/repository` | 直接运行源码对应的新版界面 |
-| 旧桌面原生验收 | `make native-check` | 旧 desktop 的构建与工作流脚本 |
-| Lobe 原生验收 | `make lobe-e2e-build`，再运行下方 Lobe 脚本 | 新版自动化构建与隔离 fixture |
+| 默认包原生验收 | `make native-check` | 以 `make app` 构建带自动化的独立测试包，覆盖日常 Git、Stash、冲突及子模块 |
+| 旧桌面原生验收 | `make desktop-native-check` | 独立构建并运行旧桌面的工作流 |
+| Lobe 专项原生验收 | `make lobe-e2e-build`，再运行下方 Lobe 脚本 | 预览构建与隔离 fixture |
 
-Lobe 达到能力核对、原生流程和可回退偏好迁移门槛后才接管默认打包，当前 `make app` 仍使用旧入口。旧 desktop 使用 `SuperGit/preferences.json`，Lobe 使用 `supergit/settings.json`；目前没有自动迁移两份真实偏好。
+默认工作台使用 `supergit/settings.json`。首次读取缺失选项时补入旧版主题与支持范围内的代码字号。最近仓库列表还未创建时，从 `SuperGit/preferences.json` 读取最近路径，等待用户选择后打开。旧偏好原文件保留，可由 `make desktop-app` 的回退包读取。
 
-先前单独安装的 `SuperGit Lobe.app` 测试包不会随源码或 `make lobe-build` 更新。核对安装版时须同时核对打包日期、可执行入口与本次验证记录；最新源码的验证结果不代表较早安装包已经包含这些修改。当前没有常规 Lobe `.app` Makefile 目标；后续打包、覆盖安装和发布分别按用户授权执行。
+`make lobe-app` 用当前源码构建可从 Finder 启动的本地预览包，采用独立的应用标识和 ad-hoc 签名。运行 `open 'build/SuperGit Lobe Preview.app'` 可直接打开。先前单独安装的 `SuperGit Lobe.app` 测试包不会随源码更新。核对安装版时须同时核对打包日期、可执行入口与本次验证记录。
+
+在 macOS 上可用 `open -a 'build/SuperGit Lobe Preview.app' '/path/to/repository'` 把文件夹交给同一个工作台。冷启动时，预览版先恢复已保存的标签，再打开收到的仓库。仓库已经打开时会切到原标签。预览包将自己声明为文件夹的备选应用。
 
 Lobe 当前原生检查：
 
@@ -40,7 +45,7 @@ python3 -I scripts/native-workbench-layout-smoke.py
 | `internal/appicon/icons/app-dark.png` | 深色外观的 Dock 图标（编译时嵌入） |
 | `packaging/SuperGit.icns` | `.app` 在 Finder / 启动台里的包图标 |
 
-运行中的 Dock 图标由共享的 `internal/appicon` 状态机切换：打包版经 `internal/desktop/dockicon.go`，Lobe 预览版经 `internal/lobedesk/dockicon.go`。两边都只在窗口外观变化时调用系统。`.icns` 只含浅色，因为 macOS 的包图标不能随外观变化，一个 bundle 只有一份。
+运行中的 Dock 图标由共享的 `internal/appicon` 状态机切换。标准包和预览包使用 `internal/lobedesk/dockicon.go`，旧桌面回退包使用 `internal/desktop/dockicon.go`。两边都只在窗口外观变化时调用系统。`.icns` 只含浅色，因为 macOS 的包图标不能随外观变化，一个 bundle 只有一份。
 
 成品是 1024×1024 的 PNG：原始画稿是整幅方形，`tools/icongen` 会把它缩进 macOS 图标网格的 824px 圆角方块，加一圈柔和阴影。直接拿整幅方形当图标会顶满画布、硬角，和系统里其它应用不在同一网格。
 
@@ -77,7 +82,7 @@ open build/SuperGit.app
   ```
   再重开 Finder。
 - **Dock 缓存**：Dock 显示的是运行中的图标，退出应用重开即可；只改 `.icns` 不影响运行时的 Dock 图标。
-- **日夜切换**：打开应用后切换明暗，Dock 图标应在下一次重绘时换成另一张；没有变化说明 `internal/appicon` 的嵌入或调用被改坏了。打包版跟随应用内的明暗开关（侧栏按钮或 `preferences.json`），系统外观变化不会改变它；只有 Lobe 预览版在「跟随系统」主题下才随 macOS 外观切换。
+- **日夜切换**：打开应用后切换明暗，Dock 图标应在下一次重绘时换成另一张；没有变化说明 `internal/appicon` 的嵌入或调用被改坏了。标准包和预览包在选择「跟随系统」主题时随 macOS 外观切换。旧桌面回退包跟随应用内的明暗开关。
 
 ## 发布前检查清单
 
@@ -101,6 +106,6 @@ open build/SuperGit.app
    ```
    当前是 ad-hoc 签名（`codesign --force --sign -`），分发前需要开发者签名与公证，这一步尚未接入。
 4. **图标**：按上一节验证成品尺寸、`.icns` 档位与日夜 Dock 切换。
-5. **e2e 冒烟**：默认旧 desktop 使用 `make native-check`，覆盖打开/历史/暂存/提交/标签/工作树/键盘导航等脚本；Lobe 使用本文开头的专用构建和脚本，不能互相代替验收。
+5. **e2e 冒烟**。运行 `make native-check` 验证标准包和 `make desktop-native-check` 验证旧桌面回退入口。系统目录选择框的选择和取消，以及重启后的系统「最近打开」菜单需在 macOS 图形会话中人工核对。
 6. **版本号**：`make app` 调用 `tools/appversion`，只改写 bundle 内的 plist 副本。`CFBundleShortVersionString` 取最近标签，去掉前缀 `v` 后仅接受 1–3 段数字；`CFBundleVersion` 取 `git rev-list --count HEAD`。标签 / 提交数不可用或格式非法时，对应字段沿用 `packaging/Info.plist` 的值；源码 plist 不会被自动修改。相同 HEAD 的未提交构建可能拥有同样的包版本，试用记录还需标明源码日期和未提交状态。
 7. **已知边界复核**：读一遍 `README.md` 的「当前边界与后续」，确认这次改动没有让其中任何一条过期（例如签名状态、预览版能力表）。

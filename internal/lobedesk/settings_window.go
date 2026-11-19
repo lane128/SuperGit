@@ -25,7 +25,7 @@ func (a *app) settingsWindowTitle() string {
 // openSettingsWindow shows the settings panel, or brings the one already open
 // back in front. A closed window is gone, so the next open makes a new one.
 func (a *app) openSettingsWindow() {
-	if w := a.settingsWin.Load(); w != nil && !w.IsDestroyed() {
+	if w := a.settingsWindowSlot().Load(); w != nil && !w.IsDestroyed() {
 		// Show alone does not bring back a minimized panel; Restore does
 		// nothing to one already on screen.
 		w.Restore()
@@ -43,9 +43,9 @@ func (a *app) openSettingsWindow() {
 		MinHeight:       settingsWindowMinH,
 		BackgroundColor: "light-dark(#f7f8fa, #09090b)",
 		StateKey:        "settings",
-		Content:         ui.View(a.settingsRoot),
+		Content:         ui.View(func(c *ui.Context) { a.activeRepositorySession().settingsRoot(c) }),
 	})
-	a.settingsWin.Store(w)
+	a.settingsWindowSlot().Store(w)
 }
 
 // settingsRoot draws the panel in its own window: the same cards as the page
@@ -81,14 +81,14 @@ func (a *app) settingsRoot(c *ui.Context) {
 // settingsFocused reports whether the settings window is the one taking
 // keyboard input. A closed window is not.
 func (a *app) settingsFocused() bool {
-	w := a.settingsWin.Load()
+	w := a.settingsWindowSlot().Load()
 	return w != nil && !w.IsDestroyed() && w.IsFocused()
 }
 
 // retitleSettingsWindow keeps the title in the current language after a
 // language change inside the panel.
 func (a *app) retitleSettingsWindow() {
-	if w := a.settingsWin.Load(); w != nil && !w.IsDestroyed() {
+	if w := a.settingsWindowSlot().Load(); w != nil && !w.IsDestroyed() {
 		w.SetTitle(a.settingsWindowTitle())
 	}
 }

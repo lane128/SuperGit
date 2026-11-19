@@ -25,11 +25,25 @@ type actionCopies struct {
 }
 
 var actionCopyGroups = []actionCopies{
+	{"save repository alias", "保存", "Sav", []string{"saveRepositoryAlias", "saveRepositoryAliasFailed"}},
+	{"jump to message commit", "跳转", "Jump", []string{"jumpMessageCommit", "jumpMessageCommitFailed"}},
+	{"open message link", "打开", "Open", []string{"openMessageLinkFailed"}},
+	{"check file undo", "检查", "Check", []string{"busyCheckUndoFile"}},
+	{"undo file changes", "撤销", "Undo", []string{"undoFile", "undoFileTitle", "undoFileAction", "undoFileFailed", "busyUndoFile"}},
+	{"export file patch", "导出", "Export", []string{
+		"exportFilePatch", "exportFilePatchTitle", "exportFilePatchFailed", "busyExportFilePatch",
+	}},
+	{"create repository", "创建", "Creat", []string{
+		"newRepo", "newRepoTitle", "busyCreateRepo", "createdOpenFailed",
+	}},
+	{"clone", "克隆", "Clon", []string{
+		"cloneRepo", "cloneRepoTitle", "cloneAction", "busyClone", "clonedOpenFailed",
+	}},
 	{"commit", "提交", "Comm", []string{
 		"commit", "commitChanges", "commitTo", "commitFailed", "busyCommit",
 	}},
 	{"stage", "暂存", "Stag", []string{
-		"stageAll", "stageFile", "stageHunk", "stageLine", "stageLines",
+		"stageAll", "stageTracked", "busyStageTracked", "stageFile", "stageHunk", "stageLine", "stageLines",
 		"stageFailed", "stageHunkFailed", "stageLineFailed", "stageLinesFailed", "busyStageAll",
 	}},
 	{"unstage", "取消暂存", "Unstag", []string{
@@ -69,6 +83,7 @@ var actionCopyGroups = []actionCopies{
 	{"pull", "拉取", "Pull", []string{
 		"pull", "pullFailed", "busyPull",
 	}},
+	{"add remote", "添加", "Add", []string{"addRemoteEntry", "addRemote", "addRemoteFailed", "remoteAdded"}},
 	{"fetch", "获取", "Fetch", []string{
 		"fetch", "fetchPrune", "fetchFailed", "fetchPruneFailed", "fetchingNow",
 	}},

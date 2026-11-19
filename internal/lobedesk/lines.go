@@ -32,16 +32,9 @@ func (a *app) clearLineSelection() {
 // the set the keyboard walks and the mouse extends over.
 func (a *app) lineIndices() []int {
 	diff := a.activeWorktreeDiff()
-	if diff.Lines == nil {
-		return nil
-	}
-	var out []int
-	for i, line := range diff.Lines {
-		if line.Kind == "add" || line.Kind == "del" {
-			out = append(out, i)
-		}
-	}
-	return out
+	return newPatchRows(diff.Lines, nil, a.splitDiff).appendSelectionOrder(nil, func(kind string) bool {
+		return kind == "add" || kind == "del"
+	})
 }
 
 // moveLineSelection walks changed rows once a line selection exists. With
@@ -74,20 +67,7 @@ func (a *app) moveLineSelection(delta int, extend bool) bool {
 	}
 	target := indices[position]
 	if extend {
-		lo, hi := a.lineAnchor, target
-		if lo < 0 || lo >= len(a.activeWorktreeDiff().Lines) {
-			lo = target
-		}
-		if lo > hi {
-			lo, hi = hi, lo
-		}
-		next := make(map[int]bool, hi-lo+1)
-		for _, index := range indices {
-			if index >= lo && index <= hi {
-				next[index] = true
-			}
-		}
-		a.lineSel = next
+		a.lineSel = patchSelectionRange(indices, a.lineAnchor, target)
 	} else {
 		a.lineSel = map[int]bool{target: true}
 		a.lineAnchor = target
@@ -245,15 +225,14 @@ func (a *app) dragToLine(index int) {
 	if a.lineAnchor < 0 {
 		a.lineAnchor = index
 	}
-	lo, hi := a.lineAnchor, index
-	if lo > hi {
-		lo, hi = hi, lo
-	}
-	next := make(map[int]bool, hi-lo+1)
-	for i := lo; i <= hi; i++ {
-		switch a.diff.Lines[i].Kind {
-		case "add", "del":
-			next[i] = true
+	// A drag can start on a context row without selecting that row. Include
+	// it when finding the range, then keep only the changes inside it.
+	lines := a.diff.Lines
+	order := newPatchRows(lines, nil, a.splitDiff).appendSelectionOrder(nil, commitSelectable)
+	next := patchSelectionRange(order, a.lineAnchor, index)
+	for at := range next {
+		if lines[at].Kind == "context" {
+			delete(next, at)
 		}
 	}
 	same := len(next) == len(a.lineSel)
@@ -289,17 +268,7 @@ func (a *app) clickLine(index int, mods ui.Modifiers) {
 	}
 	switch {
 	case mods&ui.Shift != 0 && a.lineAnchor >= 0 && a.lineAnchor < len(diff.Lines):
-		lo, hi := a.lineAnchor, index
-		if lo > hi {
-			lo, hi = hi, lo
-		}
-		next := make(map[int]bool, hi-lo+1)
-		for i := lo; i <= hi; i++ {
-			if diff.Lines[i].Kind == "add" || diff.Lines[i].Kind == "del" {
-				next[i] = true
-			}
-		}
-		a.lineSel = next
+		a.lineSel = patchSelectionRange(a.lineIndices(), a.lineAnchor, index)
 	case mods&ui.Cmd != 0 || mods&ui.Super != 0:
 		if a.lineSel[index] {
 			delete(a.lineSel, index)
@@ -327,7 +296,7 @@ func (a *app) discardLinesAllowed() bool {
 		return false
 	}
 	entry, ok := a.selectedEntry()
-	return ok && entry.Worktree != 'D'
+	return ok && entry.Index != '?' && entry.Worktree != 'D'
 }
 
 // applyLines stages or unstages every chosen line through one partial patch.
@@ -382,7 +351,7 @@ func (a *app) confirmDiscardLines(indexes []int) {
 // discardLines runs the worktree discard itself instead of going through
 // perform so the applied patch can be kept for the undo action.
 func (a *app) discardLines(path string, diff gitrepo.Diff, choice []int) {
-	if a.repo == nil || a.busy || a.loading {
+	if a.repo == nil || a.busy || a.loading || a.tabSnapshotUnavailable() {
 		return
 	}
 	repo := a.repo
@@ -417,7 +386,7 @@ func (a *app) discardLines(path string, diff gitrepo.Diff, choice []int) {
 func (a *app) undoLastDiscard() {
 	undo := a.undoDiscard
 	a.undoDiscard = undoDiscardState{}
-	if a.repo == nil || undo.patch == "" || a.busy || a.loading {
+	if a.repo == nil || undo.patch == "" || a.busy || a.loading || a.tabSnapshotUnavailable() {
 		return
 	}
 	repo := a.repo

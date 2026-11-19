@@ -10,6 +10,15 @@ import (
 )
 
 func TestSubmoduleUpdateMenuKeepsDisplayedIndexTarget(t *testing.T) {
+	testSubmoduleUpdateMenuKeepsDisplayedIndexTarget(t, false)
+}
+
+func TestSidebarSubmoduleUpdateKeepsDisplayedIndexTarget(t *testing.T) {
+	testSubmoduleUpdateMenuKeepsDisplayedIndexTarget(t, true)
+}
+
+func testSubmoduleUpdateMenuKeepsDisplayedIndexTarget(t *testing.T, sidebar bool) {
+	t.Helper()
 	t.Setenv("GIT_ALLOW_PROTOCOL", "file")
 	a, _, parent := worktreeApp(t)
 	_, _, child := worktreeApp(t)
@@ -34,8 +43,17 @@ func TestSubmoduleUpdateMenuKeepsDisplayedIndexTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tt := worktreeRowsTester(a)
-	row, ok := tt.AccessByRole(ui.RoleOption, "module")
+	var tt *ui.Tester
+	role := ui.RoleOption
+	if sidebar {
+		a.page = "history"
+		a.sidebarOpen = map[string]bool{"submodules": true}
+		tt = sidebarTester(a)
+		role = ui.RoleButton
+	} else {
+		tt = worktreeRowsTester(a)
+	}
+	row, ok := tt.AccessByRole(role, "module")
 	if !ok {
 		t.Fatal("module row missing")
 	}

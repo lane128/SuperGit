@@ -401,11 +401,11 @@ func TestCommitShortcutReachesTheHistoryCommitBox(t *testing.T) {
 }
 
 // The files column gives width back to the patch when the details are narrow,
-// and never takes more than its own 300.
+// and caps at the default width when there is room.
 func TestTheFilesColumnYieldsToThePatch(t *testing.T) {
 	a := &app{}
 	a.historySplit.rowWidth = 1500
-	if got := a.historyFilesWidth(); got != historyFilesPaneWidth {
+	if got := a.historyFilesWidth(); got < historyFilesPaneWidth-0.01 || got > historyFilesPaneWidth+0.01 {
 		t.Fatalf("wide details give the files %v; want %v", got, historyFilesPaneWidth)
 	}
 	a.historySplit.rowWidth = 700
@@ -420,11 +420,11 @@ func TestTheFilesColumnYieldsToThePatch(t *testing.T) {
 // The file tab shows only the base name, so it has to carry the full path
 // somewhere: the tooltip is what tells two same-named files apart.
 func TestTheFileTabNamesItsFullPath(t *testing.T) {
-	a := &app{worktreeSelected: true, selectedPath: "src/nested/this-file-name-is-long-enough-to-overflow-a-narrow-strip.go"}
+	a := &app{selectedPath: "src/nested/this-file-name-is-long-enough-to-overflow-a-narrow-strip.go"}
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
 		ui.Row(c).Width(300).Height(38).Children(func() {
-			a.detailTabButton(c, theme.TokensOf(c), detailTabKey{File: detailFileKey{Path: a.selectedPath}}, "this-file-name-is-long-enough-to-overflow-a-narrow-strip.go", "src/nested/this-file-name-is-long-enough-to-overflow-a-narrow-strip.go")
+			a.detailTabButton(c, theme.TokensOf(c), detailTabKey{File: detailFileKey{Path: a.selectedPath}})
 		})
 	}, 300, 38)
 	tab, ok := tt.AccessByRole(ui.RoleTab, "this-file-name-is-long-enough-to-overflow-a-narrow-strip.go")
@@ -475,6 +475,30 @@ func TestThePatchKeepsItsWidthAtTheSmallestWindow(t *testing.T) {
 		// guards (the old split left it more than 90 points short).
 		if diff < historyDiffPaneMin-0.5 {
 			t.Errorf("window %v gives the patch %v, under %v", window, diff, historyDiffPaneMin)
+		}
+	}
+}
+
+func TestNarrowHistoryKeepsSpaceForCommitSubjectsAndPatch(t *testing.T) {
+	a := &app{page: "history"}
+	for _, window := range []float32{980, 1320, 1600, 980} {
+		a.sidebarSplit.rowWidth = window
+		a.historySplit.rowWidth = window - a.workbenchSidebarWidth() - splitterWidth
+		list := a.commitListWidth()
+		a.filesSplit.rowWidth = a.historySplit.rowWidth - splitterWidth - list
+		files := a.historyFilesWidth()
+		patch := a.filesSplit.rowWidth - splitterWidth - files
+		if window == 980 && (list < 368 || files < 100 || files > 116) {
+			t.Errorf("window %.0f: commits need at least 368 points and Files a compact usable rail, got commits %.1f and Files %.1f", window, list, files)
+		}
+		if window >= 1320 && (files < historyFilesPaneMin-0.5 || list < 0.44*(a.historySplit.rowWidth-splitterWidth)) {
+			t.Errorf("window %.0f: the wide layout did not expand normally: commits %.1f, Files %.1f", window, list, files)
+		}
+		if patch < a.historyPatchMinWidth()-0.5 {
+			t.Errorf("window %.0f: patch fell to %.1f below its %.1f minimum", window, patch, a.historyPatchMinWidth())
+		}
+		if a.historySplit.share != 0 || a.filesSplit.share != 0 {
+			t.Fatal("temporary resize overwrote preferred pane widths")
 		}
 	}
 }
@@ -557,5 +581,21 @@ func TestTheNarrowCommitRowKeepsRoomForTheSubject(t *testing.T) {
 	if head, ok := tt.Find("HEAD"); ok && head.X < row.Bounds.X+row.Bounds.W {
 		// The details pane has room for the word; the row does not.
 		t.Error("the narrow row still spends a chip on the word HEAD")
+	}
+	graphWidth := a.historyGraph.Width
+	a.historyDetailsHidden = true
+	tt.Frame()
+	tt.Frame()
+	if expanded := a.commitListWidth(); expanded < content-1 || a.historyGraph.Width <= graphWidth || refSlotsForWidth(expanded) != 3 {
+		t.Fatalf("hidden details retained the old width budget: list=%v graph=%v", expanded, a.historyGraph.Width)
+	}
+	if expanded, ok := tt.Find(head.Subject); !ok || expanded.W < rect.W {
+		t.Fatalf("expanded row made the subject less readable: %+v", expanded)
+	}
+	a.historyDetailsHidden = false
+	tt.Frame()
+	tt.Frame()
+	if a.commitListWidth() != list || a.historyGraph.Width != graphWidth {
+		t.Fatal("restoring details discarded the split width")
 	}
 }

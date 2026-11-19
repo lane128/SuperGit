@@ -30,7 +30,7 @@ func (r *Repository) ApplyLines(ctx context.Context, path string, expected Diff,
 	allowed := false
 	for _, entry := range status.Entries {
 		if entry.Path == path {
-			allowed = !entry.Conflict && !entry.IsSubmodule() && entry.Index != '?' && entry.OriginalPath == ""
+			allowed = !entry.Conflict && !entry.IsSubmodule() && entry.OriginalPath == ""
 			break
 		}
 	}
@@ -189,15 +189,43 @@ func selectedPatch(d Diff, selection []int, reverse bool) (string, error) {
 	if len(chosen) == 0 {
 		return "", errors.New("请先选择需要操作的差异行")
 	}
+	// Reversing part of a newly added file modifies an existing Index entry.
+	// Only removing every addition deletes that entry and restores Untracked.
+	newMode := ""
+	allChanges := 0
+	for _, line := range d.Lines {
+		if line.Kind == "meta" && strings.HasPrefix(line.Text, "new file mode ") {
+			newMode = strings.TrimPrefix(line.Text, "new file mode ")
+		}
+		if line.Kind == "add" || line.Kind == "del" {
+			allChanges++
+		}
+	}
+	reverseNew := reverse && newMode != ""
+	removeNew := reverseNew && len(chosen) == allChanges
 	var patch strings.Builder
 	start := 0
 	for start < len(d.Lines) && d.Lines[start].Kind != "hunk" {
-		line := d.Lines[start]
-		// A partial patch has different blob identities from the full diff.
-		if !strings.HasPrefix(line.Text, "index ") {
-			patch.WriteString(line.Text + "\n")
-		}
+		text := d.Lines[start].Text
 		start++
+		// A partial patch has different blob identities from the full diff.
+		if strings.HasPrefix(text, "index ") {
+			continue
+		}
+		if reverseNew {
+			switch {
+			case strings.HasPrefix(text, "new file mode "):
+				if removeNew {
+					patch.WriteString("deleted file mode " + newMode + "\n")
+				}
+				continue
+			case strings.HasPrefix(text, "--- "):
+				text = "--- " + strconv.Quote("a/"+patchPath(d.Text))
+			case strings.HasPrefix(text, "+++ ") && removeNew:
+				text = "+++ /dev/null"
+			}
+		}
+		patch.WriteString(text + "\n")
 	}
 	delta := 0
 	for start < len(d.Lines) {

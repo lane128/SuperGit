@@ -24,10 +24,10 @@ func TestConflictPreviewExplainsExternalResolutionAndDeletion(t *testing.T) {
 						page = a.worktreeOverview
 					}
 					tt := pageTester(a, page)
-					general := "Conflict preview only. Resolve text or binary files with an external tool, then use Mark resolved in the file menu."
+					general := "Compare and edit text conflicts here. For unsupported files, edit and save with an external tool, then use Mark resolved to stage the contents. Finish the pending operation separately."
 					deletion := "This conflict includes a deletion. Choosing a side with no file deletes and stages this path."
 					if language == localeChinese {
-						general = "这里只预览冲突。请用外部工具处理文本或二进制文件，完成后从文件菜单选择「标记为已解决」。"
+						general = "文本冲突可在这里比较并编辑。不支持的文件请用外部工具保存，再选择「标记为已解决」暂存内容。进行中的操作仍需单独完成。"
 						deletion = "此冲突包含删除。选择不存在文件的一侧，会删除并暂存此路径。"
 					}
 					if _, ok := tt.Find(general); !ok {

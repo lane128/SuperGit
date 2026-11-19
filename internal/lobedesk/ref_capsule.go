@@ -20,6 +20,8 @@ const (
 	refCapsuleTint   = 0.14
 	refCapsuleBorder = 0.30
 	refCapsuleHeight = 20
+	refPillPadding   = 8
+	refPillGap       = 4
 	// capsuleBorderMin is the luminance separation a capsule's edge needs from
 	// the row it sits on. A translucent edge in the lane color keeps the pill
 	// quiet on an ordinary row, but on the default light scheme a yellow or
@@ -122,7 +124,7 @@ func capsuleBorder(border, ink, ground ui.Color) ui.Color {
 // context menu, so the same pills serve the history row, the details pane and
 // the HEAD chip.
 func refPill(c *ui.Context, style refCapsuleStyle, icon *ui.SVG, label string) ui.Element {
-	pill := ui.Row(c).Height(refCapsuleHeight).Radius(refCapsuleHeight/2).PaddingX(8).Gap(4).
+	pill := ui.Row(c).Height(refCapsuleHeight).Radius(refCapsuleHeight/2).PaddingX(refPillPadding).Gap(refPillGap).
 		Shrink(0).AlignItems(ui.Center).Background(style.Surface).Border(1, style.Border).
 		TextColor(style.Ink)
 	pill.Children(func() {

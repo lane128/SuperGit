@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/egoist/mygo v0.8.4-0.20261108082913-9233663736ca
 	github.com/lobehub/lobe-mygo v0.0.0-20261110162706-5e5fea5ef9e2
+	golang.org/x/sys v0.48.0
 	golang.org/x/text v0.43.0
 )
 

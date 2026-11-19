@@ -19,13 +19,10 @@ import (
 // The history page shares its width between the commit list and the two
 // columns right of it: the changed files and the patch. The default gives the
 // list the smaller half, as Sublime Merge does; the divider drags any other
-// share, and neither side shrinks below its minimum. The details minimum is
-// the files column's 180 plus the patch's 300, so the patch keeps its own
-// minimum at the smallest window instead of falling back to an even split.
+// share, and neither side shrinks below its minimum.
 const (
-	historySplitDefault   float32 = 0.45
-	historySplitMinList   float32 = 260
-	historySplitMinDetail float32 = 487
+	historySplitDefault float32 = 0.45
+	historySplitMinList float32 = 260
 )
 
 // loadMoreHistory advances the immutable traversal one bounded page at a time.
@@ -37,19 +34,47 @@ func (a *app) loadMoreHistory() {
 	ctx := a.historyTraversalContext()
 	repo, tips, offset, seq := a.repo, append([]string(nil), a.historyTips...), len(a.commits), a.loadSeq
 	reload := a.historyReload
+	stream := a.historyStream
 	a.historyLoadingMore = true
 	a.invalidate()
 	go func() {
-		page, err := repo.HistoryPage(ctx, tips, offset, 200)
+		var err error
+		if stream == nil {
+			stream, err = repo.OpenHistoryStream(ctx, tips, offset)
+		}
+		var page gitrepo.HistoryPage
+		if err == nil {
+			page, err = stream.Next(200)
+		}
 		a.hopToMain(func() {
 			if a.historyPageStale(seq, repo, reload) || a.fileFilter != "" {
+				if stream != nil {
+					stream.Close()
+				}
 				return
+			}
+			a.historyStream = stream
+			if err != nil || !page.HasMore {
+				if stream != nil {
+					stream.Close()
+				}
+				a.historyStream = nil
 			}
 			a.historyLoadingMore = false
 			if err != nil {
 				// Partial results remain browsable. HasMore stays true so an
 				// interrupted read cannot be mistaken for the traversal's end.
 				a.historyPageErr = err.Error()
+				if p := a.historyNavigation.pending; p != nil && p.messageOrigin != nil {
+					a.discardStaleHistoryNavigation()
+					if a.historyNavigationBlocked() {
+						a.cancelPendingHistoryNavigation()
+					}
+				}
+				if a.pendingJumpSHA != "" {
+					a.commitJumpNotice(a.pendingJumpSHA, true)
+					a.pendingJumpSHA = ""
+				}
 				a.invalidate()
 				return
 			}
@@ -64,10 +89,7 @@ func (a *app) loadMoreHistory() {
 					a.loadCommitDetail(true)
 				}
 			}
-			if sha := a.pendingJumpSHA; sha != "" {
-				a.pendingJumpSHA = ""
-				a.jumpToCommit(sha)
-			}
+			a.resumePendingCommitJump()
 			a.invalidate()
 			a.loadMoreHistory()
 		})
@@ -88,6 +110,11 @@ func (a *app) historyTraversalContext() context.Context {
 // resetHistoryTraversal cancels workers as well as rejecting their callbacks.
 // Loaded rows and pinned tips remain available until their replacement arrives.
 func (a *app) resetHistoryTraversal() {
+	a.clearHistoryNavigation()
+	if a.historyStream != nil {
+		a.historyStream.Close()
+		a.historyStream = nil
+	}
 	if a.historyReadCancel != nil {
 		a.historyReadCancel()
 	}
@@ -99,6 +126,13 @@ func (a *app) resetHistoryTraversal() {
 }
 
 func (a *app) pauseHistoryTraversal() {
+	// Report an owned message jump before reset discards its source query and
+	// full target. Replaced views and other navigation commands retain their
+	// existing cancellation behavior.
+	a.discardStaleHistoryNavigation()
+	if p := a.historyNavigation.pending; p != nil && p.messageOrigin != nil && !a.historyNavigationBlocked() {
+		a.commitJumpNotice(p.target, true)
+	}
 	a.resetHistoryTraversal()
 	a.historyPaused = true
 	a.pendingJumpSHA = ""
@@ -154,6 +188,7 @@ func (a *app) jumpToCommit(sha string) {
 	// link look broken. Clearing the query also makes paging report the real
 	// end of history.
 	a.historyQuery = ""
+	a.historyRowsSet = false
 	find := func(commits []gitrepo.Commit) bool {
 		for _, commit := range commits {
 			if commit.SHA == sha {
@@ -175,7 +210,13 @@ func (a *app) jumpToCommit(sha string) {
 	if find(a.historySource()) {
 		a.pendingJumpSHA = ""
 		a.revealSelection = true
-		a.selectCommit(sha)
+		a.selectJumpCommit(sha)
+		a.invalidate()
+		return
+	}
+	if a.historyErr != "" || a.historyPageErr != "" || a.historyPaused {
+		a.pendingJumpSHA = ""
+		a.commitJumpNotice(sha, true)
 		a.invalidate()
 		return
 	}
@@ -185,7 +226,7 @@ func (a *app) jumpToCommit(sha string) {
 	}
 	if !a.historyMore {
 		a.pendingJumpSHA = ""
-		a.queue("warning", a.t("commitNotLoaded"), shortSHA(sha))
+		a.commitJumpNotice(sha, false)
 		a.invalidate()
 		return
 	}
@@ -216,10 +257,34 @@ func (a *app) historyReadStatus(c *ui.Context) {
 	})
 }
 
-func (a *app) historyPage(c *ui.Context) {
+// The sidebar divider also reserves room for the History toolbar when the
+// detail panes are hidden and their own minimum widths no longer apply.
+const historyHeaderMinWidth float32 = 560
+
+func (a *app) historyHeaderWidth() float32 {
+	if a.historySplit.rowWidth > 0 {
+		return a.historySplit.rowWidth
+	}
+	return defaultWindowWidth - sidebarWidth - splitterWidth
+}
+
+func (a *app) historyHeaderLabelWidth() float32 {
+	// Leave room for the search and the fixed title, filter and pane controls.
+	return min(220, max(140, a.historyHeaderWidth()-540))
+}
+
+func (a *app) historyPageAtWidth(c *ui.Context, width float32) {
+	a.historySplit.rowWidth = width
+	rowHeight := a.historyRowHeight()
+	if previous := a.historyRowExtent; previous > 0 && previous != rowHeight && a.historyScroll.Y > historyListPadding {
+		// Keep the same top row and fraction into it across density changes.
+		// Apply this before merge folding interprets the offset in rows.
+		a.historyScroll.Y = historyListPadding + (a.historyScroll.Y-historyListPadding)/previous*rowHeight
+	}
+	a.historyRowExtent = rowHeight
 	source := a.historySource()
 	subtitle := a.commitsLabel(len(source))
-	commits := filterCommits(source, a.historyQuery)
+	commits := a.projectHistoryMerges(a.filteredHistoryRows())
 	// The list, the selection and the details pane all index into these rows;
 	// cache them for the frame instead of walking and filtering three times.
 	a.historyRowsCache, a.historyRowsFrame, a.historyRowsSet = commits, a.frameSeq, true
@@ -246,6 +311,7 @@ func (a *app) historyPage(c *ui.Context) {
 			a.selectCommit(sha)
 		}
 	}
+	toggleDetails := false
 	a.pageHeader(c, a.t("history"), subtitle, func() {
 		if a.fileFilter == "" {
 			a.historyRefMenu(c)
@@ -257,7 +323,7 @@ func (a *app) historyPage(c *ui.Context) {
 			a.statusTag(c, a.fileFilter, display.TagProps{
 				Variant: display.TagFilled, Color: display.TagInfo, Size: theme.Small, Round: true,
 				Icon: lucide.FileDiff(),
-			}).MaxWidth(220).Tooltip(a.fileFilter)
+			}).MaxWidth(a.historyHeaderLabelWidth()).Tooltip(a.fileFilter)
 			clear := action.ActionIcon(c, lucide.X(), action.ActionIconProps{
 				Size: theme.Small, Title: a.t("showAllHistory"),
 			})
@@ -265,55 +331,88 @@ func (a *app) historyPage(c *ui.Context) {
 				a.clearFileFilter()
 			}
 		}
-		a.historyDetailsToggle(c)
-		ui.Box(c).Width(292).Shrink(0).Children(func() {
+		toggleDetails = a.historyDetailsToggle(c)
+		searchWidth := min(292, max(176, a.historyHeaderWidth()-400))
+		ui.Box(c).Width(searchWidth).Shrink(0).Children(func() {
+			queryBefore := a.historyQuery
 			field.SearchBar(c, &a.historyQuery, field.SearchBarProps{
 				Placeholder: a.t("searchHistory"),
 				ShortKey:    "mod+f",
 				Size:        theme.Small,
 				Variant:     field.InputFilled,
-			})
+			}).OnTextKey(a.fileTabTextKey)
+			if a.historyQuery != queryBefore {
+				a.cancelPendingHistoryNavigation()
+			}
 		})
 	})
 	row := ui.Row(c).Grow(1).Basis(0).MinHeight(0).AlignItems(ui.Stretch)
-	// The row has no width on the page's first frame; the panes then take the
-	// stored share of whatever room the row gives them, and from the second
-	// frame the drag can turn pointer movement into a share of the real width.
-	a.historySplit.rowWidth = row.Bounds().W
 	row.Children(func() {
+		share := a.historyShare()
+		detailsWidth := width - splitterWidth - a.commitListWidth()
 		a.commitList(c)
 		// Hiding the details gives the list the whole row: no divider, no
 		// details, and the header's toggle brings the pane back.
 		if a.historyDetailsHidden {
 			return
 		}
-		a.splitHandle(c, &a.historySplit, historySplitDefault,
-			historySplitMinList, historySplitMinDetail, a.t("resizeHistoryPanes"))
-		a.historyDetailsPane(c)
+		a.splitHandle(c, &a.historySplit, a.historyDefaultShare(),
+			a.historyListMinWidth(), a.historyDetailMinWidth(), a.t("resizeHistoryPanes"))
+		// The divider can update the preferred share during the build. Use
+		// the share already allocated to the list for both sides of this frame.
+		a.historyDetailsPane(c, 1-share, detailsWidth)
 	})
+	if toggleDetails {
+		// The sidebar already reserved room for the current visibility. Apply
+		// the toggle after building this row so all panes change together.
+		a.setHistoryDetailsHidden(!a.historyDetailsHidden)
+		a.persistSettings()
+		c.After(0)
+	}
 }
 
 // historyShare is how much of the pane row the commit list takes. The minimum
 // widths win over the stored share when the window is too narrow for both,
 // and the details get the rest.
 func (a *app) historyShare() float32 {
-	return a.historySplit.fraction(historySplitDefault, historySplitMinList, historySplitMinDetail)
+	return a.historySplit.fraction(a.historyDefaultShare(), a.historyListMinWidth(), a.historyDetailMinWidth())
+}
+
+func (a *app) historyDefaultShare() float32 {
+	if a.detailsChangesHidden {
+		return historySplitDefault
+	}
+	const narrowListTarget = 370
+	compact := shareForWidth(a.historySplit.rowWidth-splitterWidth, narrowListTarget)
+	return historySplitDefault + a.historyWidthPressure()*max(0, compact-historySplitDefault)
+}
+
+func (a *app) historyListMinWidth() float32 {
+	if a.detailsChangesHidden || a.sidebarSplit.rowWidth <= 0 {
+		return historySplitMinList
+	}
+	// Keep the same floor as the window widens. Relaxing it would let
+	// a saved sidebar or Files preference take space back from History.
+	return 350
+}
+
+func (a *app) historyDetailMinWidth() float32 {
+	patch := a.historyPatchMinWidth()
+	if a.detailsChangesHidden {
+		return patch
+	}
+	return a.historyFilesMinWidth() + splitterWidth + patch
 }
 
 // historyDetailsToggle collapses or restores the details pane. The control
 // lives in the page header because that is the one strip that exists in both
 // states; a close button on the pane itself would vanish with the pane.
-func (a *app) historyDetailsToggle(c *ui.Context) {
+func (a *app) historyDetailsToggle(c *ui.Context) bool {
 	icon, title := lucide.PanelRightClose(), a.t("hideCommitDetails")
 	if a.historyDetailsHidden {
 		icon, title = lucide.PanelRightOpen(), a.t("showCommitDetails")
 	}
-	button := action.ActionIcon(c, icon, action.ActionIconProps{Size: theme.Small, Title: title})
-	if button.Clicked() {
-		a.setHistoryDetailsHidden(!a.historyDetailsHidden)
-		a.persistSettings()
-		a.invalidate()
-	}
+	return action.ActionIcon(c, icon, action.ActionIconProps{Size: theme.Small, Title: title}).Clicked()
 }
 
 // historyListState tells the commit list what it draws: rows, a placeholder
@@ -363,11 +462,17 @@ func (a *app) commitList(c *ui.Context) {
 		// arrows act once Tab left the search field. The ring sits inside the
 		// pane so the divider to the details keeps its place.
 		list := ui.Column(c).Fill().Focusable()
+		for _, s := range shortcutTable() {
+			if s.ID == "history.secondParent" && s.Local && s.Available(a) {
+				run := s.Run
+				list.OnShortcut(s.Mod, s.Key, func() { run(a) })
+			}
+		}
 		ring := ui.Transparent
 		if list.FocusWithin() {
 			ring = tk.Blue.Alpha(0.35)
 		}
-		list.Border(1, ring)
+		list.Border(historyListBorder, ring)
 		list.Children(func() {
 			if a.historyErr != "" {
 				a.failedWithRetry(c, a.historyErr, 12)
@@ -381,18 +486,7 @@ func (a *app) commitList(c *ui.Context) {
 			// empty graph column is exactly as wide as the commits' lanes.
 			var graph *commitGraph
 			if state == historyListRows && a.showGraph {
-				graph = newCommitGraph(commits, a.lanePalette(tk))
-				if link, ok := a.worktreeGraphConnection(commits, graph); ok {
-					graph.Worktree = &link
-					graph.Width += worktreeGraphGutter
-				}
-				if width := a.commitListWidth(); width > 0 {
-					// The graph keeps a quarter of the list: at 980 the column
-					// is under 310 wide, and eight lanes at their natural 32
-					// points would take almost all of it. Lanes pack closer
-					// before they push the subject out.
-					graph.FitWidth(width * 0.26)
-				}
+				graph = a.cachedCommitGraph(commits, a.lanePalette(tk), a.commitListWidth()*0.26)
 				// The details pane, built after this list in the same frame,
 				// reads the same graph so its badges match.
 				a.historyGraph = graph
@@ -422,12 +516,20 @@ func (a *app) commitList(c *ui.Context) {
 					if state == historyListEmpty {
 						a.diffPlaceholder(c, lucide.History(), a.t("noHistory"), a.t("noHistoryHint"))
 					} else if state == historyListNoMatch {
-						a.diffPlaceholder(c, lucide.SearchSlash(), a.t("searchNoMatch"))
+						message := "searchNoMatch"
+						partial := a.historyMore
+						if a.fileFilter != "" {
+							partial = a.fileHistoryMore || a.fileHistoryLoading || a.fileHistoryPaused || a.fileHistoryErr != ""
+						}
+						if partial {
+							message = "searchNoMatchPartial"
+						}
+						a.diffPlaceholder(c, lucide.SearchSlash(), a.t(message))
 					} else {
 						scroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.historyScroll}, func() {
 							// No gap between rows: the lane lines are drawn row by row,
 							// and a gap would cut them into dashes.
-							ui.Column(c).FillWidth().Padding(6).Gap(0).Children(func() {
+							ui.Column(c).FillWidth().Padding(historyListPadding).Gap(0).Children(func() {
 								heights := make([]float32, len(commits))
 								reveal := -1
 								for i := range commits {
@@ -624,6 +726,9 @@ func (a *app) commitListWidth() float32 {
 	if row <= 0 {
 		return 0
 	}
+	if a.historyDetailsHidden {
+		return row
+	}
 	return (row - splitterWidth) * a.historyShare()
 }
 
@@ -660,21 +765,6 @@ func rowCapsuleWidthForList(width float32) float32 {
 	return min(refCapsuleRowWidth, max(76, width*0.24))
 }
 
-// commitSubjectNeedsTooltip estimates whether the subject has to clip: the
-// graph, the capsule and the row's padding take their share first. A tooltip
-// on every row would cover the next commit, which is why the row itself has
-// none.
-func commitSubjectNeedsTooltip(width float32, subject string) bool {
-	if width <= 0 {
-		return false
-	}
-	available := width - 180
-	if available < 0 {
-		available = 0
-	}
-	return float32(len([]rune(subject)))*6.5 > available
-}
-
 // historyRowHeight is shared by rendered rows, virtual spacers and graph
 // positioning. The 34pt single-line design grows to 44pt when metadata needs
 // a second line; both follow the text preset to preserve vertical breathing room.
@@ -686,6 +776,13 @@ func (a *app) historyRowHeight() float32 {
 	// Leave room for that fixed first line, metadata, the gap and padding.
 	return max(scaledFont(44), refCapsuleHeight+scaledFont(24))
 }
+
+const (
+	historyListBorder  = 1
+	historyListPadding = 6
+	historyRowPadding  = 8
+	historyRowGraphGap = 4
+)
 
 // lead is how many rows sit above the commits in the same list -- the working
 // tree's row -- so the place a reader hears counts that row too.
@@ -701,8 +798,8 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 	// row reports itself as a selectable option rather than a plain button:
 	// only an option can say which row the arrows are on through
 	// aria-selected, as the branch list does.
-	row := ui.ButtonBase(c).Label(commit.Subject).Row().FillWidth().Height(rowHeight).Padding(0, 8).
-		Gap(4).Radius(tk.BorderRadius).AlignItems(ui.Center).
+	row := ui.ButtonBase(c).Label(commit.Subject).Row().FillWidth().Height(rowHeight).Padding(0, historyRowPadding).
+		Gap(historyRowGraphGap).Radius(tk.BorderRadius).AlignItems(ui.Center).
 		Role(ui.RoleOption).AccessSelected(selected).PositionInSet(index+lead+1, total)
 	// A merge commit's shape says it merged two histories, and a screen reader
 	// hears only the title; the description carries that one state the row
@@ -723,135 +820,180 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 	}
 	a.revealIfSelected(row, selected)
 	row.Children(func() {
+		contentWidth := listWidth - 2*(historyListBorder+historyListPadding+historyRowPadding)
 		if a.showGraph {
 			width := graph.Width
 			if width <= 0 {
 				width = 24
 			}
-			ui.Box(c).Width(width).Height(rowHeight).Shrink(0).Draw(func(p *ui.Painter, r ui.Rect) {
-				if index >= len(graph.Spans) || index >= len(graph.Rows) {
+			contentWidth -= width + historyRowGraphGap
+			lane := ui.Box(c).Width(width).Height(rowHeight).Shrink(0).ClipX()
+			if graph.contentWidth() > width {
+				lane.HandleInput(a.panHistoryGraph)
+			}
+			if folds := &a.historyMergeFolds; folds.active && folds.branches[commit.SHA] && index < len(graph.Rows) {
+				x := laneXGap(0, graph.Rows[index].Lane, graph.LaneGap()) + graph.worktreeGutter() - a.historyGraphScroll.X
+				if x >= historyMergeDisclosureInset && x <= width-historyMergeDisclosureInset {
+					lane.Children(func() {
+						a.historyMergeDisclosure(c, commit.SHA, x, rowHeight, rowBg, graphInk(tk, graph.LaneColor(graph.Rows[index].Color)))
+					})
+				}
+			}
+			lane.Draw(func(p *ui.Painter, r ui.Rect) {
+				if index >= len(graph.Rows) {
 					return
 				}
-				center := r.Y + r.H/2
-				x0 := int(r.X + graph.worktreeGutter())
-				if graph.Worktree != nil {
-					sourceY := a.worktreeGraphBounds.Y + a.worktreeGraphBounds.H/2
-					points := graph.Worktree.rowPoints(graph, index, r, sourceY)
-					line, _ := a.graphStyle()
-					strokeWorktreeDash(p, points, line, graphInk(tk, graph.LaneColor(graph.Worktree.Color)))
-				}
-				gap := graph.LaneGap()
-				rowTop, rowBottom := r.Y, r.Y+r.H
-				graphRow := graph.Rows[index]
-				line, node := a.graphStyle()
-				rowStroke := line
-				if selected {
-					rowStroke += 1
-				}
-				for _, span := range graph.Spans[index] {
-					col := graphInk(tk, graph.LaneColor(span.Color))
-					sourceX, parentX, viaX := laneXGap(x0, span.SourceLane, gap), laneXGap(x0, span.ParentLane, gap), laneXGap(x0, span.ViaLane, gap)
-					// Row heights are uniform, so the two nodes sit a whole
-					// number of rows above and below this row's own centre.
-					sourceY := center - float32(index-span.Start)*r.H
-					parentY := center + float32(span.End-index)*r.H
-					points := graphEdgePoints(sourceX, sourceY, viaX, parentX, parentY, r.H, rowTop, rowBottom)
-					if len(points) > 0 {
-						p.StrokePolyline(points, rowStroke, col)
+				p.Clip(r, 0, func() {
+					center := r.Y + r.H/2
+					r.X -= a.historyGraphScroll.X
+					x0 := int(r.X + graph.worktreeGutter())
+					if graph.Worktree != nil {
+						sourceY := a.worktreeGraphBounds.Y + a.worktreeGraphBounds.H/2
+						points := graph.Worktree.rowPoints(graph, index, r, sourceY)
+						line, _ := a.graphStyle()
+						strokeWorktreeDash(p, points, line, graphInk(tk, graph.LaneColor(graph.Worktree.Color)))
 					}
-				}
-				x := laneXGap(x0, graphRow.Lane, gap)
-				col := graphInk(tk, graph.LaneColor(graphRow.Color))
-				shape := graphNodeShape(commit, a.status.Head, graphRow)
-				inner, ring := graphNodeRing(node, line)
-				mergeSize, dot := graphNodeMerge(node, line), graphNodeDot(node, line)
-				if selected {
-					p.Fill(ui.Rect{X: x - ring, Y: center - ring, W: ring * 2, H: ring * 2}, rowBg, ring)
-					p.Stroke(ui.Rect{X: x - inner, Y: center - inner, W: inner * 2, H: inner * 2}, col, inner, 2)
-				}
-				switch shape {
-				case "head", "merge":
-					p.Fill(ui.Rect{X: x - mergeSize, Y: center - mergeSize, W: mergeSize * 2, H: mergeSize * 2}, rowBg, mergeSize)
-					p.Stroke(ui.Rect{X: x - mergeSize, Y: center - mergeSize, W: mergeSize * 2, H: mergeSize * 2}, col, mergeSize, max(2, line))
-					if shape == "merge" {
-						core := max(float32(1), node*1.4)
-						p.Fill(ui.Rect{X: x - core, Y: center - core, W: core * 2, H: core * 2}, col, core)
+					gap := graph.LaneGap()
+					rowTop, rowBottom := r.Y, r.Y+r.H
+					graphRow := graph.Rows[index]
+					line, node := a.graphStyle()
+					for span := range graph.spans(index) {
+						col := graphInk(tk, graph.LaneColor(span.Color))
+						sourceX, parentX, viaX := laneXGap(x0, span.SourceLane, gap), laneXGap(x0, span.ParentLane, gap), laneXGap(x0, span.ViaLane, gap)
+						// Row heights are uniform, so the two nodes sit a whole
+						// number of rows above and below this row's own centre.
+						sourceY := center - float32(index-span.Start)*r.H
+						parentY := center + float32(span.End-index)*r.H
+						points := graphEdgePoints(sourceX, sourceY, viaX, parentX, parentY, r.H, rowTop, rowBottom)
+						if len(points) > 0 {
+							p.StrokePolyline(points, line, col)
+						}
 					}
-				case "fork":
-					diamond := (&ui.Path{}).MoveTo(x, center-mergeSize).
-						LineTo(x+mergeSize, center).LineTo(x, center+mergeSize).
-						LineTo(x-mergeSize, center).Close()
-					p.FillPath(diamond, col)
-				default:
-					p.Fill(ui.Rect{X: x - dot, Y: center - dot, W: dot * 2, H: dot * 2}, col, dot)
-				}
-				if graphRow.Boundary {
-					tail := boundaryInk(tk, rowBg)
-					for n := float32(8); n < r.H/2; n += 6 {
-						p.Line(x, center+n, x, center+n+3, 1, tail)
+					x := laneXGap(x0, graphRow.Lane, gap)
+					col := graphInk(tk, graph.LaneColor(graphRow.Color))
+					shape := graphNodeShape(commit, a.status.Head, graphRow)
+					inner, ring := graphNodeRing(node, line)
+					mergeSize, dot := graphNodeMerge(node, line), graphNodeDot(node, line)
+					if selected {
+						p.Fill(ui.Rect{X: x - ring, Y: center - ring, W: ring * 2, H: ring * 2}, rowBg, ring)
+						p.Stroke(ui.Rect{X: x - inner, Y: center - inner, W: inner * 2, H: inner * 2}, col, inner, 2)
 					}
-				}
+					switch shape {
+					case "head", "merge":
+						p.Fill(ui.Rect{X: x - mergeSize, Y: center - mergeSize, W: mergeSize * 2, H: mergeSize * 2}, rowBg, mergeSize)
+						p.Stroke(ui.Rect{X: x - mergeSize, Y: center - mergeSize, W: mergeSize * 2, H: mergeSize * 2}, col, mergeSize, max(2, line))
+						if shape == "merge" {
+							core := max(float32(1), node*1.4)
+							p.Fill(ui.Rect{X: x - core, Y: center - core, W: core * 2, H: core * 2}, col, core)
+						}
+					case "fork":
+						diamond := (&ui.Path{}).MoveTo(x, center-mergeSize).
+							LineTo(x+mergeSize, center).LineTo(x, center+mergeSize).
+							LineTo(x-mergeSize, center).Close()
+						p.FillPath(diamond, col)
+					default:
+						p.Fill(ui.Rect{X: x - dot, Y: center - dot, W: dot * 2, H: dot * 2}, col, dot)
+					}
+					if graphRow.Boundary {
+						tail := boundaryInk(tk, rowBg)
+						for n := float32(8); n < r.H/2; n += 6 {
+							p.Line(x, center+n, x, center+n+3, 1, tail)
+						}
+					}
+				})
 			})
 		}
+		titleGap := float32(6)
+		if rowRefsNarrow(listWidth) {
+			titleGap = 4
+		}
+		title := ui.Span{Text: commit.Subject, Size: scaledFont(12)}
+		if selected {
+			title.Weight = 700
+		}
+		metadataGap := float32(8)
+		dateSize := scaledFont(11.5)
+		fullDate := formatDateTime(commit.Date)
+		date := fullDate
+		if !a.hideTime && !a.hideAuthor && listWidth > 0 && contentWidth < scaledFont(175) {
+			// Keep the same date format for every row at this width. The
+			// compact stamp leaves room for a recognizable author and refs.
+			date = formatDateTimeLayout(commit.Date, "01-02 15:04")
+		}
+		refs := commitRefs(commit.Refs)
+		head := headBranch(commit.Refs)
+		var refLayout historyRefLayout
+		refsOnTitle := len(refs) > 0 && a.hideAuthor && a.hideTime
+		var overflowOnTitle bool
+		if len(refs) > 0 && !refsOnTitle {
+			metadataWidth := contentWidth
+			if listWidth > 0 && !a.hideTime {
+				dateWidth, _ := c.MeasureText(0, ui.Span{Text: date, Size: dateSize})
+				metadataWidth -= dateWidth + metadataGap
+			}
+			refBudget := metadataWidth
+			var authorWidth float32
+			if listWidth > 0 && !a.hideAuthor {
+				authorWidth, _ = c.MeasureText(0, ui.Span{Text: commit.Author, Size: dateSize})
+				// A ref promoted from +N on widening must not clip an already readable author.
+				refBudget -= authorWidth
+			}
+			refLayout = a.fitHistoryRefs(c, refs, head, listWidth, refBudget, metadataGap, true)
+			if len(refLayout.shown) == 0 {
+				// A folded count can share spare title space. Named badges stay
+				// with the author and time whenever either column is shown.
+				const compactGap = 4
+				wideAuthorRoom := metadataWidth
+				if !a.hideTime {
+					metadataWidth += metadataGap - compactGap
+				}
+				overflowLabel := "+" + itoa(len(refs))
+				authorRoom := metadataWidth - historyRefPillWidth(c, overflowLabel, false, compactGap)
+				overflowOnTitle = authorRoom < 0
+				if !overflowOnTitle && listWidth > 0 && !a.hideAuthor && authorRoom < scaledFont(24) {
+					// Move only an already folded count, and only if the whole subject
+					// and a useful amount of the author can then be shown together.
+					minAuthor := min(authorWidth, scaledFont(24))
+					if authorRoom < minAuthor && wideAuthorRoom >= minAuthor {
+						titleWidth, _ := c.MeasureText(0, title)
+						overflowOnTitle = titleWidth+historyRefPillWidth(c, overflowLabel, false, titleGap) <= contentWidth
+					}
+				}
+				if !overflowOnTitle {
+					metadataGap = compactGap
+				}
+			}
+		}
 		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(scaledFont(2)).Children(func() {
-			titleGap := float32(6)
-			if rowRefsNarrow(listWidth) {
-				titleGap = 4
+			if refsOnTitle {
+				titleBudget := contentWidth
+				if listWidth > 0 {
+					// Reserve room for the selected title in both states so clicking a
+					// row cannot fold or move its refs at the same width.
+					layoutTitle := title
+					layoutTitle.Weight = 700
+					titleWidth, _ := c.MeasureText(0, layoutTitle)
+					titleBudget -= min(scaledFont(84), titleWidth)
+				}
+				refLayout = a.fitHistoryRefs(c, refs, head, listWidth, titleBudget, titleGap, false)
 			}
 			ui.Row(c).FillWidth().Gap(titleGap).AlignItems(ui.Center).Children(func() {
-				titleText := display.Text(c, commit.Subject, display.TextProps{FontSize: scaledFont(12), Strong: selected, Rows: 1}).Grow(1).MinWidth(0).
+				fontSize := scaledFont(12)
+				titleText := display.Text(c, commit.Subject, display.TextProps{FontSize: fontSize, Strong: selected, Rows: 1}).Grow(1).MinWidth(0).
 					AccessHidden(true)
-				if commitSubjectNeedsTooltip(listWidth, commit.Subject) {
-					// The title's own bubble, not the row's: a short subject
-					// still should not cover the next commit.
-					titleText.Tooltip(commit.Subject)
-				}
-				head := headBranch(commit.Refs)
-				compactHead := rowRefsNarrow(listWidth)
-				if !compactHead {
-					a.headTag(c, commit.Refs, rowBg, false)
-				}
-				refs := commitRefs(commit.Refs)
-				shown, folded := rowRefsLimit(refs, a.historyRef, head, refSlotsForWidth(listWidth))
-				for _, ref := range shown {
-					badge := a.refBadge(ref)
-					if compactHead && ref == head {
-						// A narrow row folds the HEAD chip into the branch's
-						// own capsule: the check says which branch HEAD is on,
-						// and the word "HEAD" would have cost the subject a
-						// word. The tooltip keeps the full sentence.
-						pill := refPill(c, refCapsuleColors(tk.Blue, rowBg), lucide.Check(), elideMiddle(badge.Label, refBadgeRunes)).
-							MaxWidth(rowCapsuleWidthForList(listWidth)).Tooltip(a.tf("headBadgeTip", head))
-						a.refBadgeMenu(c, pill, ref)
-						continue
+				// Measure only the hovered title against its laid-out width, after
+				// graph lanes and refs have taken their actual space.
+				if titleText.Hovered() {
+					if textWidth, _ := c.MeasureText(0, title); textWidth > titleText.Bounds().W+0.5 {
+						titleText.Tooltip(commit.Subject)
 					}
-					// The capsule wears the color of the line the ref points at,
-					// so a label can be traced to its lane; a tag shares the
-					// branch's line on that row. HEAD keeps its blue chip beside
-					// the title.
-					kind, name, filterable := a.parseCommitRef(ref)
-					color := tk.TextSecondary
-					if filterable {
-						color = refBadgeColor(a.lanePalette(tk), graph, index, kind, name)
-					} else if family, ok := refColor(tk, badge.Color); ok {
-						color = family
-					}
-					pill := refPill(c, refCapsuleColors(color, rowBg), badge.Icon,
-						elideMiddle(badge.Label, refBadgeRunes)).MaxWidth(rowCapsuleWidthForList(listWidth)).Tooltip(badge.Label)
-					a.refBadgeMenu(c, pill, ref)
 				}
-				if len(folded) > 0 {
-					labels := make([]string, 0, len(folded))
-					for _, ref := range folded {
-						labels = append(labels, a.refBadge(ref).Label)
-					}
-					pill := refPill(c, neutralCapsule(tk, rowBg), nil, "+"+itoa(len(folded))).
-						Tooltip(strings.Join(labels, "\n"))
-					a.foldedRefsMenu(c, pill, folded)
+				if refsOnTitle || overflowOnTitle {
+					a.commitRowRefs(c, commit, graph, index, rowBg, head, refLayout)
 				}
 			})
 			if !a.hideAuthor || !a.hideTime {
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).FillWidth().Gap(metadataGap).AlignItems(ui.Center).Description(fullDate).Children(func() {
 					// The SHA stays out of the row: the details pane shows it, the
 					// row's menu copies it, and printing it here only competed with
 					// the author and date for the reader's eye.
@@ -864,9 +1006,18 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 						display.Text(c, commit.Author, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11.5)}).SingleLine().
 							Grow(1).Basis(0).MinWidth(0)
 					}
+					if !overflowOnTitle && (len(refLayout.shown) > 0 || len(refLayout.folded) > 0) {
+						a.commitRowRefs(c, commit, graph, index, rowBg, head, refLayout)
+					}
 					if !a.hideTime {
-						display.Text(c, formatDateTime(commit.Date), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11.5)}).
-							Shrink(0)
+						stamp := display.Text(c, date, display.TextProps{Type: display.TextSecondary, FontSize: dateSize}).SingleLine().Shrink(0)
+						if date != fullDate {
+							stamp.Description(fullDate).Tooltip(fullDate)
+						}
+						if listWidth > 0 {
+							// Malformed Git dates are displayed verbatim and may be longer.
+							stamp.MaxWidth(max(0, contentWidth-metadataGap))
+						}
 					}
 				})
 			}
@@ -878,18 +1029,72 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 	// right describe the commit the menu acts on, as Sublime Merge does. The
 	// context menu owns the right click, so this reads the menu's open state
 	// rather than target.RightClicked().
-	if *ui.Local(row, "contextMenu", func() bool { return false }) && a.selectedSHA != commit.SHA {
-		a.selectCommit(commit.SHA)
-	}
+	menuOpened := *ui.Local(row, "contextMenu", func() bool { return false })
 	// The arrows move the selection while the row the pointer chose keeps the
 	// focus; activating that row on Enter or Space would snap the selection
 	// back to it. History has no action of its own for either key, so it
 	// claims them and leaves the arrow selection alone.
 	row.OnShortcut(0, ui.KeyEnter, func() {})
 	row.OnShortcut(0, ui.KeySpace, func() {})
-	if row.Clicked() {
+	if row.Clicked() || (menuOpened && a.selectedSHA != commit.SHA) {
+		if a.showGraph {
+			// A deliberate click can recover the node after horizontal panning.
+			// Leave vertical scrolling alone when the pointer chose a visible row.
+			a.revealGraphSelection = true
+			c.After(0)
+		}
 		a.selectCommit(commit.SHA)
 	}
+}
+
+const (
+	historyMergeDisclosureSize  float32 = 18
+	historyMergeDisclosureInset         = historyMergeDisclosureSize / 2
+)
+
+func (a *app) historyMergeDisclosure(c *ui.Context, sha string, x, rowHeight float32, ground, ink ui.Color) {
+	tk := theme.TokensOf(c)
+	expanded := a.historyMergeFolds.expanded[sha]
+	label, icon := a.t("expandMergedCommits"), lucide.ChevronRight()
+	if expanded {
+		label, icon = a.t("collapseMergedCommits"), lucide.ChevronDown()
+	}
+	button := ui.ButtonBase(c.Key("merge-disclosure")).Absolute().Left(x-historyMergeDisclosureInset).Top((rowHeight-historyMergeDisclosureSize)/2).
+		Size(historyMergeDisclosureSize, historyMergeDisclosureSize).AlignItems(ui.Center).Justify(ui.Center).Radius(5).Background(ground).
+		Role(ui.RoleDisclosure).Label(label).Expanded(expanded).Tooltip(label)
+	border := ink
+	if button.Hovered() || button.Focused() {
+		button.Background(tk.PrimaryBg)
+		border = tk.Primary
+	}
+	button.Border(1, border).Children(func() {
+		ui.Icon(c, icon).FontSize(12).TextColor(ink).AccessHidden(true)
+	})
+	if button.Clicked() {
+		a.toggleHistoryMerge(sha)
+		c.After(0)
+	}
+}
+
+// panHistoryGraph moves the pinned row's scroll state, which the commit lanes
+// also read when drawing. Vertical gestures still reach the list scroller.
+func (a *app) panHistoryGraph(ev ui.InputEvent) bool {
+	if ev.Kind != ui.InputScroll {
+		return false
+	}
+	dx, dy := ev.DX, ev.DY
+	if dx == 0 && ev.Mods&ui.Shift != 0 {
+		dx, dy = dy, 0
+	}
+	if dx == 0 || max(dx, -dx) < max(dy, -dy) {
+		return false
+	}
+	scroll := &a.historyGraphScroll
+	if scroll.MaxX <= 0 {
+		return false
+	}
+	scroll.X = min(scroll.MaxX, max(0, scroll.X+dx))
+	return true
 }
 
 // worktreeRow is the list's first row: the working tree itself. Sublime Merge
@@ -912,6 +1117,7 @@ func (a *app) historyWorktreeRow(c *ui.Context, index, total int) {
 	} else if row.Hovered() {
 		row.Background(tk.FillTertiary)
 	}
+	revealNode := selected && a.revealSelection
 	a.revealIfSelected(row, selected)
 	row.Children(func() {
 		if a.showGraph {
@@ -919,18 +1125,42 @@ func (a *app) historyWorktreeRow(c *ui.Context, index, total int) {
 			if a.historyGraph != nil && a.historyGraph.Width > width {
 				width = a.historyGraph.Width
 			}
-			lane := ui.Box(c).Width(width).Height(rowHeight).Shrink(0)
+			contentWidth := width
+			if a.historyGraph != nil {
+				contentWidth = a.historyGraph.contentWidth()
+			}
 			link, dirty := a.worktreeGraphConnection(nil, nil)
 			if a.historyGraph != nil && a.historyGraph.Worktree != nil {
 				link = *a.historyGraph.Worktree
 			}
-			if dirty {
-				if link.HasHead {
-					lane.Tooltip(a.t("worktreeBasedOnHead"))
-					row.Description(a.t("worktreeBasedOnHead"))
-				}
-				lane.Draw(func(p *ui.Painter, r ui.Rect) { a.drawWorktreeNode(p, r, tk, link) })
+			scroller := ui.ScrollHorizontal(c).Width(width).Height(rowHeight).Shrink(0).
+				KeepScrollbars(true).TrackScroll(&a.historyGraphScroll)
+			if contentWidth > width+0.5 {
+				scroller.Role(ui.RoleScroll).Label(a.t("scrollCommitGraph")).Focusable()
+				focused := scroller.Focused()
+				scroller.Draw(func(p *ui.Painter, r ui.Rect) {
+					// Align the rail with MyGo's horizontal thumb. MyGo keeps
+					// ownership of thumb drawing, paging and drag input.
+					height := p.Theme().ScrollbarWidth
+					if height <= 0 {
+						height = 6
+					}
+					p.Fill(ui.Rect{X: r.X + 2, Y: r.Y + r.H - height - 3, W: r.W - 4, H: height}, tk.BorderSecondary, height/2)
+					if focused {
+						p.Stroke(r, tk.Primary, 0, 1)
+					}
+				})
 			}
+			scroller.Children(func() {
+				lane := ui.Box(c).Width(contentWidth).Height(rowHeight).Shrink(0)
+				if dirty {
+					if link.HasHead {
+						lane.Tooltip(a.t("worktreeBasedOnHead"))
+						row.Description(a.t("worktreeBasedOnHead"))
+					}
+					lane.Draw(func(p *ui.Painter, r ui.Rect) { a.drawWorktreeNode(p, r, tk, link) })
+				}
+			})
 		}
 		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(scaledFont(2)).Children(func() {
 			display.Text(c, title, display.TextProps{FontSize: scaledFont(12), Strong: selected, Rows: 1})
@@ -957,6 +1187,18 @@ func (a *app) historyWorktreeRow(c *ui.Context, index, total int) {
 	})
 	if row.Clicked() {
 		a.selectWorktree()
+		revealNode = true
+	}
+	if revealNode && a.showGraph {
+		if graph := a.historyGraph; graph != nil && graph.Worktree != nil {
+			// The square sits near the left edge. Move back only if it is clipped.
+			const margin = 5 // Four-DIP half-width plus raster clearance.
+			left := max(float32(0), graph.Worktree.nodeX(graph, 0)-margin)
+			if a.historyGraphScroll.X > left {
+				a.historyGraphScroll.X = left
+				c.After(0)
+			}
+		}
 	}
 }
 
@@ -996,6 +1238,7 @@ func (a *app) detailsPlaceholderKey() string {
 
 func (a *app) commitFileList(c *ui.Context) {
 	tk := theme.TokensOf(c)
+	a.reconcileHistoricalFileSelection()
 	switch {
 	case a.commitFilesLoading:
 		listEmptyState(c, lucide.LoaderCircle(), tk.TextTertiary, a.t("diffLoading"), "")
@@ -1014,9 +1257,12 @@ func (a *app) commitFileList(c *ui.Context) {
 		listEmptyState(c, lucide.FileDiff(), tk.TextTertiary, a.t("noCommitFiles"), "")
 		return
 	}
-	heights := make([]float32, len(a.commitFiles))
+	// A row's menu can replace commitFiles while this frame is still drawing.
+	// Keep the row count, heights and indexes on the same immutable snapshot.
+	files := a.commitFiles
+	heights := make([]float32, len(files))
 	reveal, remembered := -1, -1
-	for i, file := range a.commitFiles {
+	for i, file := range files {
 		heights[i] = fileRowHeight() + fileRowGap
 		if a.detailFileRemembered != nil && a.detailFileRememberedContext == a.currentDetailContext() && a.detailFileRemembered.Path == file.Path {
 			remembered = i
@@ -1025,14 +1271,20 @@ func (a *app) commitFileList(c *ui.Context) {
 			reveal = i
 		}
 	}
-	ui.Column(c).FillWidth().Role(ui.RoleList).Children(func() {
+	origin := a.historicalFileOrigin()
+	compact := a.page == "history" && a.historyFilesWidth() < scaledFont(130)
+	ui.Column(c).FillWidth().Role(ui.RoleList).Multiselectable(true).Children(func() {
 		virtualPatchRows(c, a.commitFilesViewport, &a.commitFilesScroll, heights, reveal, func(rowContext *ui.Context, i int) {
-			file := a.commitFiles[i]
+			file := files[i]
 			ui.Column(rowContext).FillWidth().Height(heights[i]).Shrink(0).Children(func() {
-				selected := a.detailTabShown() == detailTabFile && a.detailTabs().Active.File.Path == file.Path
+				primary := a.detailTabShown() == detailTabFile && a.detailTabs().Active.File.Path == file.Path
+				selected := a.historicalFileSelected(file.Path)
 				// The original position and full raw path survive virtualization.
 				row := fileRowShell(rowContext, tk, file.Path, selected).
-					PositionInSet(i+1, len(a.commitFiles)).Tooltip(file.Path)
+					PositionInSet(i+1, len(files)).Tooltip(file.Path)
+				if compact {
+					row.Padding(0, 3).Gap(4)
+				}
 				a.wireHistoryFileKeys(row, detailFileKey{Path: file.Path})
 				wasFocused := ui.Local(row, "file-was-focused", func() bool { return false })
 				if row.Focused() {
@@ -1046,17 +1298,26 @@ func (a *app) commitFileList(c *ui.Context) {
 				*wasFocused = row.Focused()
 				row.Children(func() {
 					code := changedFileCode(file.Status)
-					a.statusTag(rowContext, code, display.TagProps{
+					badge := a.statusTag(rowContext, code, display.TagProps{
 						Variant: display.TagFilled,
 						Color:   display.TagColor(changedFileColor(file.Status)),
 						Size:    theme.Small,
 						Round:   true,
 					})
-					fileRowPath(rowContext, row, file.Path, file.OriginalPath, selected)
+					if compact {
+						badge.PaddingX(4)
+					}
+					fileRowPath(rowContext, row, file.Path, file.OriginalPath, primary)
 				})
 				a.fileDetailMenu(rowContext, row, file.Path)
+				menuOpen := *ui.Local(row, "contextMenu", func() bool { return false })
+				wasOpen := ui.Local(row, "historical-file-menu-open", func() bool { return false })
+				if menuOpen && !*wasOpen {
+					a.selectHistoricalFile(origin, file, 0, true)
+				}
+				*wasOpen = menuOpen
 				if row.Clicked() {
-					a.selectCommitFile(file.Path)
+					a.selectHistoricalFile(origin, file, row.ClickModifiers(), false)
 				}
 			})
 		}, remembered)
@@ -1117,13 +1378,31 @@ func (a *app) commitDiffView(c *ui.Context) {
 		a.diffPlaceholder(c, lucide.FileDiff(), a.t("diffEmpty"))
 		return
 	}
-	width := diffWidth(a.commitDiff)
-	layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Horizontal}, func() {
+	ui.Row(c.Key("commit-patch-layout")).FillWidth().Shrink(0).Justify(ui.End).Padding(0, 4, 4, 4).Children(func() {
+		a.patchLayoutButton(c, nil)
+	})
+	// File-history actions in headers or rows can reset the live patch mid-frame.
+	diff := a.commitDiff
+	tabs := a.detailTabs()
+	sections := a.visibleCommitSections()
+	widths := a.historyPatchWidths(c, &tabs.patchWidths, sections, diff.Lines)
+	sectionRows := make([]patchRows, len(sections))
+	for i, section := range sections {
+		sectionRows[i] = a.commitSectionPatchRows(diff.Lines, section)
+	}
+	if tabs.PatchScroll == nil {
+		tabs.PatchScroll = make(map[detailTabKey]*ui.ScrollState)
+	}
+	patchScroll := tabs.PatchScroll[tabs.Active]
+	if patchScroll == nil {
+		patchScroll = &ui.ScrollState{}
+		tabs.PatchScroll[tabs.Active] = patchScroll
+	}
+	layout.ScrollArea(c.Key(patchScroll), layout.ScrollAreaProps{Direction: layout.Horizontal, State: patchScroll}, func() {
 		// The whole stacked diff is one selectable container, so a drag across
 		// rows selects the code as text and Cmd+C copies it. Rows stay plain
 		// for that reason: text inside a button is not selectable.
-		ui.Column(c).Width(width).AlignSelf(ui.Start).Selectable().Children(func() {
-			sections := a.visibleCommitSections()
+		ui.Column(c).Width(widths.canvas).AlignSelf(ui.Start).Selectable().Children(func() {
 			sectionHeights := make([]float32, len(sections))
 			revealSection, pressedSection := -1, -1
 			for at, sec := range sections {
@@ -1131,16 +1410,14 @@ func (a *app) commitDiffView(c *ui.Context) {
 				if a.commitCollapsed[sec.Path] {
 					continue
 				}
-				for _, index := range sec.Rows {
-					if a.commitDragHeld && a.commitPressIndex == index {
+				rows := sectionRows[at]
+				for i := range rows.len() {
+					row := rows.at(i)
+					if a.commitDragHeld && rowContainsLine(row, a.commitPressIndex) {
 						pressedSection = at
 					}
-					height := diffRowH
-					if a.commitDiff.Lines[index].Kind == "hunk" {
-						height = diffHunkH
-					}
-					sectionHeights[at] += height
-					if a.commitReveal && a.commitCursor == index {
+					sectionHeights[at] += rows.height(a, i)
+					if a.commitReveal && rowContainsLine(row, a.commitCursor) {
 						revealSection = at
 					}
 				}
@@ -1152,33 +1429,31 @@ func (a *app) commitDiffView(c *ui.Context) {
 			virtualPatchRows(c, a.commitDiffViewport, scroll, sectionHeights, revealSection, func(section *ui.Context, at int) {
 				sec := sections[at]
 				sectionContext := section.Key(sec.Start)
-				a.commitDiffFileHeader(sectionContext, sec, width)
+				a.commitDiffFileHeader(sectionContext, sec, widths.canvas)
 				if a.commitCollapsed[sec.Path] {
 					return
 				}
-				heights := make([]float32, len(sec.Rows))
+				rows := sectionRows[at]
+				heights := make([]float32, rows.len())
 				reveal, pressed := -1, -1
-				for row, index := range sec.Rows {
-					if a.commitDragHeld && a.commitPressIndex == index {
-						pressed = row
+				for i := range heights {
+					row := rows.at(i)
+					heights[i] = rows.height(a, i)
+					if a.commitDragHeld && rowContainsLine(row, a.commitPressIndex) {
+						pressed = i
 					}
-					heights[row] = diffRowH
-					if a.commitDiff.Lines[index].Kind == "hunk" {
-						heights[row] = diffHunkH
-					}
-					if a.commitReveal && a.commitCursor == index {
-						reveal = row
+					if a.commitReveal && rowContainsLine(row, a.commitCursor) {
+						reveal = i
 					}
 				}
-				virtualPatchRows(sectionContext, a.commitDiffViewport, scroll, heights, reveal, func(row *ui.Context, at int) {
-					index := sec.Rows[at]
-					line := a.commitDiff.Lines[index]
+				a.paintPatchRows(sectionContext, rows, widths, a.commitDiffViewport, scroll, heights, reveal, pressed, func(cell *ui.Context, index int, cellWidth float32, side patchSide) {
+					line := diff.Lines[index]
 					if line.Kind == "hunk" {
-						a.commitHunkLine(row, line, width)
+						a.commitHunkLine(cell, line, cellWidth)
 						return
 					}
-					a.commitDiffLine(row, line, sec.Path, width, index)
-				}, pressed)
+					a.commitDiffLineForSide(cell, line, sec.Path, cellWidth, index, side)
+				})
 			}, pressedSection)
 		})
 	}).FillWidth().Height(a.commitDiffHeight()).Shrink(0)
@@ -1259,6 +1534,10 @@ func diffLineText(line gitrepo.DiffLine) string {
 // any button for a drag to select it. The line numbers are the button and the
 // handle for whole-line selection, which is also how editors behave.
 func (a *app) commitDiffLine(c *ui.Context, line gitrepo.DiffLine, path string, width float32, index int) {
+	a.commitDiffLineForSide(c, line, path, width, index, patchBoth)
+}
+
+func (a *app) commitDiffLineForSide(c *ui.Context, line gitrepo.DiffLine, path string, width float32, index int, side patchSide) {
 	tk := theme.TokensOf(c)
 	bg := tk.BgContainer
 	switch line.Kind {
@@ -1277,27 +1556,20 @@ func (a *app) commitDiffLine(c *ui.Context, line gitrepo.DiffLine, path string, 
 		}
 		bg = tk.Blue.Alpha(alpha).Over(bg)
 	}
-	row := ui.Row(c).Width(width).Height(diffRowH).Shrink(0).Padding(0, 12, 0, 0).Background(bg)
+	row := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0).Padding(0, 12, 0, 0).Background(bg)
 	if row.Hovered() {
 		row.Background(tk.FillTertiary.Alpha(0.35).Over(bg))
 	}
 	gutter := gutterInk(tk, bg)
 	var numbers ui.Element
 	row.Children(func() {
-		numbers = ui.ButtonBase(c).Label(a.lineGutterLabel(line)).Row().Width(92).Height(diffRowH).Shrink(0).
-			Padding(0, 8).Gap(8).AlignItems(ui.Center)
-		numbers.Children(func() {
-			ui.Text(c, lineNumber(line.Old)).Font("Menlo").FontSize(scaledFont(10)).Width(34).Shrink(0).
-				TextAlign(ui.End).TextColor(gutter)
-			ui.Text(c, lineNumber(line.New)).Font("Menlo").FontSize(scaledFont(10)).Width(34).Shrink(0).
-				TextAlign(ui.End).TextColor(gutter)
-		})
-		ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(scaledFont(diffCodeSize)).
+		numbers = a.patchGutter(c, line, side, gutter)
+		ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(a.patchFontSize()).
 			SingleLine().TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
 	})
 	items := []overlay.MenuItem{{Key: "copy-line", Label: a.t("copyLine"), Icon: lucide.Copy()}}
 	if selectable {
-		a.trackCommitPress(c, index, numbers)
+		a.trackCommitPress(c, index, side, numbers)
 		if numbers.Clicked() {
 			if a.commitDragMoved {
 				a.commitDragMoved = false
@@ -1383,17 +1655,7 @@ func (a *app) clickCommitLine(index int, mods ui.Modifiers) {
 	}
 	switch {
 	case mods&ui.Shift != 0 && a.commitAnchor >= 0 && a.commitAnchor < len(a.commitDiff.Lines):
-		lo, hi := a.commitAnchor, index
-		if lo > hi {
-			lo, hi = hi, lo
-		}
-		next := make(map[int]bool, hi-lo+1)
-		for _, i := range a.commitLineIndices() {
-			if i >= lo && i <= hi {
-				next[i] = true
-			}
-		}
-		a.commitSel = next
+		a.commitSel = patchSelectionRange(a.commitSelectionOrder(), a.commitAnchor, index)
 	case mods&ui.Cmd != 0 || mods&ui.Super != 0:
 		if a.commitSel[index] {
 			delete(a.commitSel, index)
@@ -1517,6 +1779,18 @@ func (a *app) commitLineIndices() []int {
 	return out
 }
 
+func (a *app) commitSelectionOrder() []int {
+	if !a.splitDiff {
+		return a.commitLineIndices()
+	}
+	var order []int
+	for _, section := range a.visibleCommitSections() {
+		rows := a.commitSectionPatchRows(a.commitDiff.Lines, section)
+		order = rows.appendSelectionOrder(order, commitSelectable)
+	}
+	return order
+}
+
 // moveCommitLineSelection walks the commit diff's selectable rows once a
 // line selection exists, keeping the anchor when extend is set, as
 // Shift+arrows do in an editor.
@@ -1524,7 +1798,7 @@ func (a *app) moveCommitLineSelection(delta int, extend bool) bool {
 	if !a.commitDiffShown() || len(a.commitSel) == 0 {
 		return false
 	}
-	indices := a.commitLineIndices()
+	indices := a.commitSelectionOrder()
 	if len(indices) == 0 {
 		return false
 	}
@@ -1544,20 +1818,7 @@ func (a *app) moveCommitLineSelection(delta int, extend bool) bool {
 	}
 	target := indices[position]
 	if extend {
-		lo, hi := a.commitAnchor, target
-		if lo < 0 || lo >= len(a.commitDiff.Lines) {
-			lo = target
-		}
-		if lo > hi {
-			lo, hi = hi, lo
-		}
-		next := make(map[int]bool, hi-lo+1)
-		for _, index := range indices {
-			if index >= lo && index <= hi {
-				next[index] = true
-			}
-		}
-		a.commitSel = next
+		a.commitSel = patchSelectionRange(indices, a.commitAnchor, target)
 	} else {
 		a.commitSel = map[int]bool{target: true}
 		a.commitAnchor = target
@@ -1571,10 +1832,11 @@ func (a *app) moveCommitLineSelection(delta int, extend bool) bool {
 // trackCommitPress runs the mouse half of the commit diff's selection: a
 // press arms a row, and crossing other rows while it stays down extends the
 // range from where the press started.
-func (a *app) trackCommitPress(c *ui.Context, index int, body ui.Element) {
+func (a *app) trackCommitPress(c *ui.Context, index int, side patchSide, body ui.Element) {
 	btn, pressed := body.PressedButton()
 	if pressed && btn == 0 && body.PressedInside() {
 		a.commitPressIndex = index
+		a.commitPressSide = side
 		a.commitDragHeld = true
 		a.commitDragging = false
 		a.commitDragMoved = false
@@ -1588,6 +1850,9 @@ func (a *app) trackCommitPress(c *ui.Context, index int, body ui.Element) {
 	}
 	_, py, over := body.PointerPosition()
 	if index == a.commitPressIndex {
+		if side != a.commitPressSide {
+			return
+		}
 		if !pressed {
 			a.commitReleasePress()
 			return
@@ -1665,16 +1930,7 @@ func (a *app) dragToCommitLine(index int) {
 	if a.commitAnchor < 0 {
 		a.commitAnchor = index
 	}
-	lo, hi := a.commitAnchor, index
-	if lo > hi {
-		lo, hi = hi, lo
-	}
-	next := make(map[int]bool, hi-lo+1)
-	for _, i := range a.commitLineIndices() {
-		if i >= lo && i <= hi {
-			next[i] = true
-		}
-	}
+	next := patchSelectionRange(a.commitSelectionOrder(), a.commitAnchor, index)
 	same := len(next) == len(a.commitSel)
 	if same {
 		for i := range next {
@@ -1698,7 +1954,7 @@ func (a *app) dragToCommitLine(index int) {
 func (a *app) commitHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32) {
 	tk := theme.TokensOf(c)
 	row := ui.ButtonBase(c).Label(line.Text).Row().Width(width).Height(24).Shrink(0).
-		Padding(0, 12).AlignItems(ui.Center).
+		Padding(0, 12).AlignItems(ui.Center).Justify(ui.Start).
 		Background(tk.Info.Alpha(0.06).Over(tk.BgContainer))
 	row.Children(func() {
 		ui.Text(c, line.Text).Font("Menlo").FontSize(scaledFont(10.5)).SingleLine().

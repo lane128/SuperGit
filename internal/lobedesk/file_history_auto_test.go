@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -177,8 +178,50 @@ func TestPausedFirstFileHistoryReadDoesNotClaimNoHistory(t *testing.T) {
 	}
 }
 
+func advanceFileHistoryFixtureHead(t *testing.T, root string, old string) string {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, "same.go"), []byte("new HEAD-only file revision\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "--", "same.go"}, {"commit", "-m", "after snapshot", "--only", "--", "same.go"}} {
+		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("advance fixture: %v %s", err, out)
+		}
+	}
+	out, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.TrimSpace(string(out))
+	if sha == old {
+		t.Fatal("fixture HEAD did not move")
+	}
+	return sha
+}
+
+func assertPinnedFileHistorySequence(t *testing.T, a *app, want, tips []string, excluded string) {
+	t.Helper()
+	if a.fileHistoryMore {
+		t.Fatal("recovered history still claims more pages")
+	}
+	if !slices.Equal(a.fileHistoryTips, tips) {
+		t.Fatal("recovery changed pinned tips")
+	}
+	got := make([]string, len(a.fileCommits))
+	for i, commit := range a.fileCommits {
+		got[i] = commit.SHA
+	}
+	if !slices.Equal(got, want) || slices.Contains(got, excluded) {
+		t.Fatal("recovery changed exact pinned SHA order or included new HEAD")
+	}
+}
+
 func TestFileHistoryPauseRejectsQueuedPageAndRetryResumes(t *testing.T) {
 	a, callbacks, want := automaticFileHistoryFixture(t, 420)
+	tips := slices.Clone(a.fileHistoryTips)
+	if len(tips) != 1 || tips[0] != want[0] {
+		t.Fatal("fixture did not pin original HEAD")
+	}
 	a.loadFileHistory()
 	ctx := a.fileHistoryCtx
 	callback := historyCompletion(t, callbacks)
@@ -194,6 +237,7 @@ func TestFileHistoryPauseRejectsQueuedPageAndRetryResumes(t *testing.T) {
 	if a.historyListState(before) != historyListRows {
 		t.Fatal("paused file history hides loaded rows")
 	}
+	newHead := advanceFileHistoryFixtureHead(t, a.repo.Root, tips[0])
 	tt := pageTester(a, a.fileHistoryReadStatus)
 	retry, ok := tt.AccessByRole(ui.RoleButton, a.t("retry"))
 	if !ok {
@@ -206,10 +250,15 @@ func TestFileHistoryPauseRejectsQueuedPageAndRetryResumes(t *testing.T) {
 	if len(a.fileCommits) != len(want) || a.fileHistoryPaused {
 		t.Fatal("retry did not finish pinned history")
 	}
+	assertPinnedFileHistorySequence(t, a, want, tips, newHead)
 }
 
 func TestFileHistoryFailureKeepsRowsAndRetriesPinnedPage(t *testing.T) {
 	a, callbacks, want := automaticFileHistoryFixture(t, 420)
+	tips := slices.Clone(a.fileHistoryTips)
+	if len(tips) != 1 || tips[0] != want[0] {
+		t.Fatal("fixture did not pin original HEAD")
+	}
 	original := a.repo
 	a.repo = &gitrepo.Repository{Root: filepath.Join(t.TempDir(), "missing")}
 	before := len(a.fileCommits)
@@ -222,6 +271,7 @@ func TestFileHistoryFailureKeepsRowsAndRetriesPinnedPage(t *testing.T) {
 		t.Fatal("partial failure hides browsable history")
 	}
 	a.repo = original
+	newHead := advanceFileHistoryFixtureHead(t, original.Root, tips[0])
 	tt := pageTester(a, a.fileHistoryReadStatus)
 	retry, ok := tt.AccessByRole(ui.RoleButton, a.t("retry"))
 	if !ok {
@@ -234,4 +284,5 @@ func TestFileHistoryFailureKeepsRowsAndRetriesPinnedPage(t *testing.T) {
 	if len(a.fileCommits) != len(want) || a.fileHistoryErr != "" {
 		t.Fatal("retry lost pinned traversal")
 	}
+	assertPinnedFileHistorySequence(t, a, want, tips, newHead)
 }

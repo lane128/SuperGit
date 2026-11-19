@@ -116,6 +116,12 @@ func (a *app) discardTargetsCurrent(targets []fileActionTarget, batch bool) bool
 }
 
 func (a *app) prepareDiscardTargets(targets []fileActionTarget, batch bool) {
+	a.prepareScopedDiscardTargets(targets, batch, false)
+}
+
+// A selected subset keeps its captured targets; it is neither a single-file
+// message nor the whole-repository validation used by Discard All.
+func (a *app) prepareScopedDiscardTargets(targets []fileActionTarget, batch, selected bool) {
 	if !a.discardTargetsCurrent(targets, batch) {
 		return
 	}
@@ -132,7 +138,8 @@ func (a *app) prepareDiscardTargets(targets []fileActionTarget, batch bool) {
 	go func() {
 		prepared, err := repo.PrepareDiscard(ctx, requests)
 		a.hopToMain(func() {
-			if request != a.discardPrepareSeq || !a.discardTargetsCurrent(targets, batch) || a.confirm.open || a.prompt.open || a.reset.open {
+			if request != a.discardPrepareSeq || !a.discardTargetsCurrent(targets, batch) || a.confirm.open || a.prompt.open || a.reset.open ||
+				selected && !a.workspaceDiscardSurfaceAllowed() {
 				return
 			}
 			if err != nil {
@@ -147,6 +154,8 @@ func (a *app) prepareDiscardTargets(targets []fileActionTarget, batch bool) {
 				busy, failure, success = busyDeleteFile, a.t("deleteFailed"), a.t("deleteSuccess")
 			} else if batch {
 				title, message, label = a.t("discardAll"), a.tf("discardAllMessage", len(targets)), a.t("discardAll")
+			} else if selected && len(targets) > 1 {
+				title, message, label = a.tf("discardSelectedFiles", len(targets)), a.tf("discardSelectedMessage", len(targets)), a.t("discard")
 			}
 			a.askConfirm(title, message, label, true, func() {
 				if !a.discardTargetsCurrent(targets, batch) {
@@ -158,8 +167,8 @@ func (a *app) prepareDiscardTargets(targets []fileActionTarget, batch bool) {
 					if current.Root != target.Root {
 						return errors.New(stale)
 					}
-					if batch {
-						if err := validateFileActionTargets(ctx, current, targets, true); err != nil {
+					if batch || selected {
+						if err := validateFileActionTargets(ctx, current, targets, batch); err != nil {
 							return err
 						}
 					}

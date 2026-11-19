@@ -146,7 +146,7 @@ func (r *Repository) StashDiff(ctx context.Context, sha string) (Diff, error) {
 		return Diff{}, err
 	}
 	out, err := run(ctx, r.Root, "", "stash", "show", "--include-untracked", "--patch", "--no-ext-diff", "--no-textconv", "--no-color", sha)
-	return parseDiff(out), err
+	return parseStashDiff(out), err
 }
 func (r *Repository) ApplyStash(ctx context.Context, sha string) error {
 	r.writeMu.Lock()

@@ -95,7 +95,8 @@ func (a *app) cancelLocalProbe() {
 
 func (a *app) beginLocalProbe(now time.Time) (localWatchRequest, bool) {
 	w := &a.localWatch
-	if w.closed || a.repo == nil || a.loading || a.busy || w.reading || now.Before(w.next) ||
+	if w.closed || a.repo == nil || a.loading || a.busy || a.repositoryChooserOpen || w.reading || now.Before(w.next) ||
+		(a.repositoryTabs != nil && (a.repositoryTabs.active != a || a.repositoryTabs.opening != nil)) ||
 		a.confirm.open || a.prompt.open || a.worktreeForm.open || a.reset.open {
 		return localWatchRequest{}, false
 	}
@@ -116,6 +117,12 @@ func (a *app) acceptLocalProbe(req localWatchRequest, stamp string, err error, n
 	}
 	w.reading = false
 	w.cancel = nil
+	if a.repositoryChooserOpen {
+		// The native picker keeps pumping events. Retry the probe after it
+		// closes, without starting a refresh that could drop its selection.
+		w.next = time.Time{}
+		return false
+	}
 	if w.closed || a.busy || a.loading {
 		return false
 	}
@@ -151,18 +158,34 @@ func (a *app) pollLocalChanges(now time.Time) {
 }
 
 func (a *app) startLocalWatching() {
-	ctx, cancel := context.WithCancel(a.ctx)
+	parent := a.ctx
+	if a.repositoryTabs != nil {
+		parent = a.repositoryTabs.ctx
+	}
+	ctx, cancel := context.WithCancel(parent)
 	a.localWatch.focused = true
 	a.window.OnFocus(func() {
-		a.localWatch.focused = true
-		a.localWatch.next = time.Time{}
-		a.pollLocalChanges(time.Now())
+		active := a.activeRepositorySession()
+		active.localWatch.focused = true
+		active.localWatch.next = time.Time{}
+		active.pollLocalChanges(time.Now())
 	})
-	a.window.OnBlur(func() { a.localWatch.focused = false })
+	a.window.OnBlur(func() { a.activeRepositorySession().localWatch.focused = false })
 	a.window.OnClosed(func() {
-		a.localWatch.closed = true
-		a.cancelLocalProbe()
+		if a.repositoryTabs != nil {
+			a.repositoryTabs.saveSession()
+			a.repositoryTabs.shutdown()
+		} else {
+			a.localWatch.closed = true
+			a.cancelLocalProbe()
+		}
 		cancel()
+		// Settings uses this workbench's sessions. Close it too so an
+		// open-folder event can relaunch a workbench instead of reaching
+		// a process that only has a Settings window left.
+		if settings := a.settingsWindowSlot().Load(); settings != nil && !settings.IsDestroyed() {
+			settings.Close()
+		}
 	})
 	go func() {
 		ticker := time.NewTicker(localProbeInterval)
@@ -172,7 +195,12 @@ func (a *app) startLocalWatching() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				a.hopToMain(func() { a.pollLocalChanges(time.Now()) })
+				a.hopToMain(func() {
+					if tabs := a.repositoryTabs; tabs != nil && tabs.openNextRepositoryFolder() {
+						return
+					}
+					a.activeRepositorySession().pollLocalChanges(time.Now())
+				})
 			}
 		}
 	}()

@@ -149,8 +149,11 @@ func TestApplyLinesRejectsStaleDiffAndUnsupportedSelection(t *testing.T) {
 	}
 	write(t, dir, "new.txt", "new\n")
 	untracked, _ := r.Diff(ctx, "new.txt", false)
-	if err := r.ApplyLines(ctx, "new.txt", untracked, selectedText(untracked, "+new"), false); err == nil {
-		t.Fatal("new file accepted")
+	if err := r.ApplyLines(ctx, "new.txt", untracked, selectedText(untracked, "+new"), false); err != nil {
+		t.Fatalf("ordinary new text file rejected: %v", err)
+	}
+	if got := git(t, dir, "show", ":new.txt"); got != "new\n" {
+		t.Fatalf("new-file Index = %q", got)
 	}
 }
 func TestApplyLinesRejectsExistingSymlinkInBothDirections(t *testing.T) {

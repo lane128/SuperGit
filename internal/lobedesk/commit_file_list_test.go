@@ -12,6 +12,58 @@ import (
 // The commit's changed files read as a list of options: a screen reader hears
 // each path once, with its place in the list and which one the diff shows.
 // The drawn name and folder used to be read again beside the row's label.
+func TestCommitFileHistoryMenuCanReplaceListDuringRender(t *testing.T) {
+	a := &app{ctx: canceledContext(), runOnMain: func(func()) {}, repo: &gitrepo.Repository{Root: t.TempDir()}, locale: localeEnglish, page: "history", selectedSHA: "selected-commit", commitFilesLoaded: true, commitFiles: []gitrepo.ChangedFile{{Path: "first.txt", Status: "A"}, {Path: "second.txt", Status: "A"}}}
+	t.Cleanup(func() { a.resetFileHistory() })
+	tt := ui.NewTester(func(c *ui.Context) {
+		theme.Apply(c)
+		ui.Column(c).Width(500).Height(250).Children(func() { a.commitFileList(c) })
+	}, 500, 250)
+	first, ok := tt.AccessByRole(ui.RoleOption, "first.txt")
+	if !ok {
+		t.Fatal("missing first file")
+	}
+	tt.RightClickAt(first.Bounds.X+first.Bounds.W/2, first.Bounds.Y+first.Bounds.H/2)
+	item, ok := tt.AccessByRole(ui.RoleMenuItem, a.t("fileHistory"))
+	if !ok {
+		t.Fatal("missing file history action")
+	}
+	tt.ClickAt(item.Bounds.X+item.Bounds.W/2, item.Bounds.Y+item.Bounds.H/2)
+	tt.Frame()
+	if a.fileFilter != "first.txt" || len(a.commitFiles) != 0 || a.selectedSHA != "" {
+		t.Fatal("file history action did not replace selected commit context")
+	}
+}
+
+func TestNarrowHistoryCommitFilesKeepShortBasenamesReadable(t *testing.T) {
+	oldScale := uiFontScaleValue()
+	setUIFontScale(fontScaleLarge)
+	t.Cleanup(func() { setUIFontScale(oldScale) })
+	const name = "fixture.txt"
+	const path = "src/" + name
+	const sha = "selected-commit"
+	a := &app{page: "history", themeMode: "light", locale: localeEnglish,
+		repo: &gitrepo.Repository{Root: t.TempDir()}, selectedSHA: sha, commitFilesLoaded: true,
+		commits:     []gitrepo.Commit{{SHA: sha, Subject: "Update fixture"}},
+		commitFiles: []gitrepo.ChangedFile{{Path: path, Status: "M"}}}
+	var nameWidth float32
+	view := ui.NewTester(func(c *ui.Context) {
+		a.root(c)
+		nameWidth, _ = c.MeasureText(0, ui.Span{Text: name, Size: scaledFont(12)})
+	}, 980, 640)
+	for _, width := range []int{980, 1320, 980} {
+		view.SetSize(width, 640)
+		view.Frame()
+		if file, ok := view.AccessByRole(ui.RoleOption, path); !ok || file.Offscreen {
+			t.Fatalf("width %d: full path missing from the Files list", width)
+		}
+		bounds, ok := view.Find(name)
+		if !ok || bounds.W+0.5 < nameWidth {
+			t.Errorf("width %d: %s has %.1f points, needs %.1f to avoid truncation", width, name, bounds.W, nameWidth)
+		}
+	}
+}
+
 func TestCommitFilesReadAsAListOfOptions(t *testing.T) {
 	a := &app{
 		locale: localeChinese,

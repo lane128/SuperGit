@@ -1,7 +1,6 @@
 package lobedesk
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -43,20 +42,5 @@ func TestANarrowRowCapsItsRefs(t *testing.T) {
 	}
 	if got, want := rowCapsuleWidthForList(1200), float32(refCapsuleRowWidth); got != want {
 		t.Errorf("a wide row caps a capsule at %v; want %v", got, want)
-	}
-}
-
-// The subject's tooltip appears only where the text would clip, so a list of
-// short subjects does not cover the next row with bubbles.
-func TestTheSubjectTooltipOnlyAppearsWhenItWouldClip(t *testing.T) {
-	long := strings.Repeat("x", 40)
-	if commitSubjectNeedsTooltip(0, long) {
-		t.Error("an unmeasured row asks for a tooltip")
-	}
-	if !commitSubjectNeedsTooltip(309, long) {
-		t.Error("a 40-character subject at 309 does not ask for a tooltip")
-	}
-	if commitSubjectNeedsTooltip(309, "short") {
-		t.Error("a short subject at 309 asks for a tooltip")
 	}
 }

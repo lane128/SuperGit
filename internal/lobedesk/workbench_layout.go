@@ -12,12 +12,9 @@ func (a *app) workbenchContentMin() float32 {
 		return 480
 	}
 	if a.historyDetailsHidden {
-		return historySplitMinList
+		return historyHeaderMinWidth
 	}
-	if a.detailsChangesHidden {
-		return historySplitMinList + splitterWidth + historyDiffPaneMin
-	}
-	return historySplitMinList + splitterWidth + historySplitMinDetail
+	return max(historyHeaderMinWidth, a.historyListMinWidth()+splitterWidth+a.historyDetailMinWidth())
 }
 
 func (a *app) workbenchSidebarWidth() float32 {

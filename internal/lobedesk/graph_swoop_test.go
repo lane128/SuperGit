@@ -1,6 +1,7 @@
 package lobedesk
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"testing"
@@ -89,7 +90,7 @@ func TestABranchLineBendsOutOfTheNodeInsteadOfStepping(t *testing.T) {
 	graph := newCommitGraph(commits, lanePalette)
 	var span commitGraphEdge
 	found := false
-	for _, edge := range graph.Spans[0] {
+	for edge := range graph.spans(0) {
 		if edge.SourceLane != edge.ViaLane {
 			span, found = edge, true
 			break
@@ -132,6 +133,91 @@ func TestABranchLineBendsOutOfTheNodeInsteadOfStepping(t *testing.T) {
 	bottomEdge := int(row.Bounds.Y+row.Bounds.H) - 2
 	if lineAt(img, viaX, bottomEdge, background) {
 		t.Errorf("the bend reaches lane %d by the bottom of the source row; it should still be crossing", span.ViaLane)
+	}
+}
+
+func TestHistorySelectionPreservesUnrelatedLaneStroke(t *testing.T) {
+	commits := []gitrepo.Commit{
+		{SHA: "main-tip", Subject: "Main tip", Parents: []string{"main-base"}},
+		{SHA: "topic-tip", Subject: "Topic tip", Parents: []string{"topic-base"}},
+		{SHA: "topic-base", Subject: "Topic base"},
+		{SHA: "main-base", Subject: "Main base"},
+	}
+	dense := append([]gitrepo.Commit{}, commits[:2]...)
+	for lane := range 22 {
+		dense = append(dense, gitrepo.Commit{SHA: fmt.Sprintf("tip-%d", lane), Parents: []string{fmt.Sprintf("base-%d", lane)}})
+	}
+	for lane := range 22 {
+		dense = append(dense, gitrepo.Commit{SHA: fmt.Sprintf("base-%d", lane)})
+	}
+	dense = append(dense, commits[2:]...)
+	for _, mode := range []struct {
+		name  string
+		dark  bool
+		width int
+		dense bool
+	}{
+		{"light", false, 980, false},
+		{"dark", true, 980, false},
+		{"dense-wide", false, 2000, true},
+		{"dense-narrow-light", false, 980, true},
+		{"dense-narrow-dark", true, 980, true},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			a := &app{page: "history", locale: localeEnglish, showGraph: true, commits: commits, historyDetailsHidden: true}
+			lineWidth := graphLineStandard
+			if mode.dense {
+				a.commits, a.historyNode, a.historyLine = dense, graphNodeLarge, graphLineThick
+				lineWidth = graphLineThick
+			}
+			a.historySplit.rowWidth = float32(mode.width)
+			var mainInk ui.Color
+			view := ui.NewTester(func(c *ui.Context) {
+				theme.Apply(c)
+				a.commitList(c)
+				mainInk = graphInk(theme.TokensOf(c), a.historyGraph.LaneColor(a.historyGraph.Rows[0].Color))
+			}, mode.width, 350)
+			const scale = 2
+			view.SetScale(scale)
+			view.SetDark(mode.dark)
+			view.Frame()
+			row, ok := view.AccessByRole(ui.RoleOption, "Topic tip")
+			if !ok || row.Offscreen {
+				t.Fatal("topic row is not visible")
+			}
+			rows := a.historyGraph.Rows
+			if rows[0].Lane != 0 || rows[1].Lane != 1 || rows[len(rows)-1].Lane != 0 {
+				t.Fatal("expected the main edge to pass through the topic row on a separate lane")
+			}
+			bounds := row.Bounds
+			x := int((bounds.X + historyRowPadding + laneX(0, 0)) * scale)
+			centerY := bounds.Y + bounds.H/2
+			y := int(centerY * scale)
+			ink := color.RGBA{R: mainInk.R, G: mainInk.G, B: mainInk.B, A: mainInk.A}
+			strokeWidth := func() int {
+				img := view.Image()
+				width := 0
+				for px := x - 8; px <= x+8; px++ {
+					if img.RGBAAt(px, y) == ink {
+						width++
+					}
+				}
+				return width
+			}
+			before := strokeWidth()
+			if before != int(lineWidth*scale) {
+				t.Fatalf("expected to sample the unselected stroke, got %d ink pixels", before)
+			}
+			view.ClickAt(bounds.X+bounds.W-30, centerY)
+			view.Move(float32(mode.width-22), 340)
+			view.Frame()
+			if a.selectedSHA != commits[1].SHA {
+				t.Fatalf("row click selected %q, want topic tip", a.selectedSHA)
+			}
+			if after := strokeWidth(); before != after {
+				t.Fatalf("selecting the topic row changed the unrelated main stroke from %d to %d pixels", before, after)
+			}
+		})
 	}
 }
 

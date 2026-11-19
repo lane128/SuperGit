@@ -11,6 +11,43 @@ import (
 	"supergit/internal/gitrepo"
 )
 
+func TestReadSettingsSeedsLegacyAppearance(t *testing.T) {
+	profile := t.TempDir()
+	legacy := filepath.Join(profile, "SuperGit", "preferences.json")
+	original := []byte(`{"Dark":true,"FontSize":17,"Recent":[]}`)
+	if err := os.MkdirAll(filepath.Dir(legacy), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(profile, "supergit", "settings.json")
+	loaded := readSettings(path)
+	if loaded.Theme != "dark" || loaded.CodeFontSize == nil || *loaded.CodeFontSize != 17 {
+		t.Fatalf("expected legacy dark appearance and 17 pt code, got %+v", loaded)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("reading legacy preferences should not write a new file: %v", err)
+	}
+	large := fontScaleLarge
+	if err := writeSettings(path, persistedSettings{Theme: "light", FontScale: &large}); err != nil {
+		t.Fatal(err)
+	}
+	loaded = readSettings(path)
+	if loaded.Theme != "light" || loaded.FontScale == nil || *loaded.FontScale != large || loaded.CodeFontSize == nil || *loaded.CodeFontSize != 17 {
+		t.Fatalf("legacy code size should fill only the missing choice: %+v", loaded)
+	}
+	if err := writeSettings(path, defaultSettings()); err != nil {
+		t.Fatal(err)
+	}
+	if got := readSettings(path); got.Theme != "system" || got.CodeFontSize == nil || *got.CodeFontSize != 0 {
+		t.Fatalf("explicit Lobe settings must take precedence, got %+v", got)
+	}
+	if data, err := os.ReadFile(legacy); err != nil || string(data) != string(original) {
+		t.Fatalf("legacy preference bytes changed: %v", err)
+	}
+}
+
 func TestSettingsRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "settings.json")
 	hidden := false

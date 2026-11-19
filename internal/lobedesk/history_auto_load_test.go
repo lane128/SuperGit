@@ -1,7 +1,9 @@
 package lobedesk
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -65,6 +67,37 @@ func TestHistoryLoadsToTraversalEndWithoutMoreButton(t *testing.T) {
 		}
 	}
 	t.Logf("loaded %d commits in %s", len(a.commits), time.Since(started))
+}
+
+func TestAutomaticHistoryContinuesWithOneGitTraversal(t *testing.T) {
+	a, callbacks, want := automaticHistoryFixture(t, 2401)
+	t.Cleanup(a.resetHistoryTraversal)
+	trace := filepath.Join(t.TempDir(), "trace.json")
+	t.Setenv("GIT_TRACE2_EVENT", trace)
+	a.loadMoreHistory()
+	for a.historyMore {
+		historyCompletion(t, callbacks)()
+	}
+	if len(a.commits) != len(want) {
+		t.Fatal("streamed automatic history lost commits")
+	}
+	data, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		var event struct {
+			Event string `json:"event"`
+			Name  string `json:"name"`
+		}
+		if json.Unmarshal([]byte(line), &event) == nil && event.Event == "cmd_name" && event.Name == "log" {
+			logs++
+		}
+	}
+	if logs != 1 {
+		t.Fatalf("automatic continuation started %d Git log traversals; want one", logs)
+	}
 }
 
 func TestAutomaticHistoryStartsWhenRefReloadFinishes(t *testing.T) {

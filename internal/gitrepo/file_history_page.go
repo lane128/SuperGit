@@ -55,13 +55,13 @@ func (r *Repository) FileHistoryPage(ctx context.Context, path string, tips []st
 	if !oidRE.MatchString(tips[0]) {
 		return HistoryPage{}, fmt.Errorf("无效的文件历史起始 SHA")
 	}
-	if offset > int(^uint(0)>>1)-limit-1 || offset > int(^uint(0)>>1)/6 {
+	if offset > int(^uint(0)>>1)-limit-1 || offset > int(^uint(0)>>1)/historyFieldCount {
 		return HistoryPage{}, fmt.Errorf("无效的文件历史分页范围")
 	}
-	output := fileHistoryPageOutput{skipFields: offset * 6, page: limitedBuffer{limit: outputLimit}}
+	output := fileHistoryPageOutput{skipFields: offset * historyFieldCount, page: limitedBuffer{limit: outputLimit}}
 	// Git --skip omits rename processing for skipped records. Replay them and
-	// discard their six NUL-terminated fields without retaining their bytes.
-	err := runOutput(ctx, r.Root, "", &output, "log", "--follow", "-z", "--format=%H%x00%P%x00%s%x00%an%x00%aI%x00%D", "-n", strconv.FormatInt(int64(offset+limit+1), 10), tips[0], "--", path)
+	// discard their NUL-terminated record fields without retaining their bytes.
+	err := runOutput(ctx, r.Root, "", &output, "log", "--follow", "-z", historyFormat, "-n", strconv.FormatInt(int64(offset+limit+1), 10), tips[0], "--", path)
 	if err != nil {
 		return HistoryPage{}, err
 	}

@@ -8,6 +8,62 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestCodeFontCanBeChangedAtMinimumSettingsSize(t *testing.T) {
+	path := isolateSettings(t)
+	before := uiFontScaleValue()
+	t.Cleanup(func() { setUIFontScale(before) })
+	for _, tc := range []struct {
+		language         locale
+		down, up, follow string
+	}{
+		{localeEnglish, "Decrease code font size", "Increase code font size", "Follow interface size"},
+		{localeChinese, "减小代码字号", "增大代码字号", "跟随界面字号"},
+	} {
+		t.Run(string(tc.language), func(t *testing.T) {
+			setUIFontScale(fontScaleLarge)
+			a := &app{locale: tc.language, themeMode: "dark", codeFontSize: 16.5}
+			view := ui.NewTester(func(c *ui.Context) {
+				a.applyTheme(c)
+				a.settingsPage(c)
+			}, settingsWindowMinW, settingsWindowMinH)
+			click := func(label string, disabled bool) {
+				t.Helper()
+				button, ok := view.AccessByRole(ui.RoleButton, label)
+				if !ok || button.Offscreen || button.Disabled != disabled || button.Bounds.X < 132 || button.Bounds.X+button.Bounds.W > settingsWindowMinW || button.Bounds.Y+button.Bounds.H > settingsWindowMinH {
+					t.Fatalf("control %q (want disabled=%v) has unexpected state: %+v", label, disabled, button)
+				}
+				view.ClickAt(button.Bounds.X+button.Bounds.W/2, button.Bounds.Y+button.Bounds.H/2)
+				view.Frame()
+			}
+			checkSize := func(want float32) {
+				t.Helper()
+				var restarted app
+				restarted.applySettings(readSettings(path))
+				if a.codeFontSize != want || restarted.codeFontSize != want {
+					t.Fatalf("want %g pt, got %g pt in the UI and %g pt after reload", want, a.codeFontSize, restarted.codeFontSize)
+				}
+			}
+			click(tc.up, false)
+			checkSize(17)
+			click(tc.up, false)
+			click(tc.up, false)
+			click(tc.up, true)
+			checkSize(19)
+			for range 8 {
+				click(tc.down, false)
+			}
+			click(tc.down, true)
+			checkSize(11)
+			click(tc.follow, false)
+			checkSize(0)
+			click(tc.follow, true)
+			if a.patchFontSize() != 11.5*fontScaleLarge {
+				t.Fatal("the restored automatic code size should follow the large interface scale")
+			}
+		})
+	}
+}
+
 func TestSettingsChoicesFitMinimumWindowAndResetCanBeReached(t *testing.T) {
 	isolateSettings(t)
 	before := uiFontScaleValue()

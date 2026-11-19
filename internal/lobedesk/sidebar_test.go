@@ -56,7 +56,7 @@ func TestASidebarRowOpensItsPage(t *testing.T) {
 	}
 }
 
-func TestSidebarOffersBranchManagementWithoutChangingRef(t *testing.T) {
+func TestSidebarHasNoSeparateBranchManagementPage(t *testing.T) {
 	for _, language := range []locale{localeEnglish, localeChinese} {
 		t.Run(string(language), func(t *testing.T) {
 			a := &app{locale: language, page: "changes", repo: &gitrepo.Repository{Root: t.TempDir()}, historyRef: historyRef{Kind: historyRefLocal, Name: "main"}}
@@ -65,16 +65,11 @@ func TestSidebarOffersBranchManagementWithoutChangingRef(t *testing.T) {
 			if language == localeChinese {
 				label = "管理分支"
 			}
-			row, ok := tt.AccessByRole(ui.RoleButton, label)
-			if !ok {
-				t.Fatal("branch management has no named mouse entry")
+			if _, ok := tt.AccessByRole(ui.RoleButton, label); ok {
+				t.Fatal("sidebar still offers a separate branch management page")
 			}
-			if row.Bounds.W <= 0 || row.Bounds.Y+row.Bounds.H > 620 {
-				t.Fatalf("branch management entry is unreachable: %+v", row.Bounds)
-			}
-			tt.ClickAt(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2)
-			if a.page != "branches" || a.historyRef.Name != "main" {
-				t.Fatalf("management entry did not preserve reference scope: page=%s ref=%+v", a.page, a.historyRef)
+			if a.historyRef.Name != "main" {
+				t.Fatal("rendering sidebar changed reference scope")
 			}
 		})
 	}
@@ -233,12 +228,19 @@ func TestTheSidebarNamesTheCurrentWorktree(t *testing.T) {
 		sidebarOpen: map[string]bool{"worktrees": true},
 	}
 	tt := sidebarTester(a)
-	row, ok := tt.AccessByRole(ui.RoleButton, "app")
-	if !ok {
-		t.Fatal("the current worktree is not in the sidebar")
+	// The repository menu trigger shares the folder name. Identify the
+	// worktree row by its current marker as well as its accessible name.
+	found := false
+	for _, row := range tt.AccessAll() {
+		if row.Role == ui.RoleButton && row.Name == "app" && strings.Contains(row.Description, a.t("current")) {
+			found = true
+			if !strings.Contains(row.Description, current) {
+				t.Errorf("the current worktree is described as %q; want its full path %s", row.Description, current)
+			}
+		}
 	}
-	if !strings.Contains(row.Description, a.t("current")) || !strings.Contains(row.Description, current) {
-		t.Errorf("the current worktree is described as %q; want the current mark and %s", row.Description, current)
+	if !found {
+		t.Fatal("the current worktree row or its current marker is missing")
 	}
 	sibling, ok := tt.AccessByRole(ui.RoleButton, "app-copy")
 	if !ok {

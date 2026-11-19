@@ -173,6 +173,28 @@ func TestLocalWatchSchedulingAndStaleWrites(t *testing.T) {
 	}
 }
 
+func TestLocalWatchDefersInFlightRefreshUntilFolderChooserCloses(t *testing.T) {
+	a, _ := overviewFixture(t)
+	now := time.Now()
+	a.localWatch.stamp = "before"
+	req, ok := a.beginLocalProbe(now)
+	if !ok {
+		t.Fatal("probe unavailable before chooser")
+	}
+	a.repositoryChooserOpen = true
+	if a.acceptLocalProbe(req, "after", nil, now) {
+		t.Fatal("in-flight probe can refresh while the chooser owns the window")
+	}
+	if _, ok := a.beginLocalProbe(now.Add(time.Minute)); ok {
+		t.Fatal("new probe started while choosing a folder")
+	}
+	a.repositoryChooserOpen = false
+	retry, ok := a.beginLocalProbe(now)
+	if !ok || !a.acceptLocalProbe(retry, "after", nil, now) {
+		t.Fatal("closing the chooser did not make the deferred refresh eligible again")
+	}
+}
+
 func TestLocalWatchBackgroundErrorsAndClose(t *testing.T) {
 	a, _ := overviewFixture(t)
 	a.localWatch.stamp = "baseline"

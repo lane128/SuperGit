@@ -24,21 +24,34 @@ type promptState struct {
 	open        bool
 	title       string
 	placeholder string
+	description string
 	value       string
 	actionName  string
 	action      func(string)
+	allowEmpty  bool
 	// selectAll asks the field to select its prefilled value once, in the
 	// first frame after the dialog opens.
 	selectAll bool
+	// Palette handoffs retain the picker's overlay and original opener.
+	paletteHandoff bool
+	paletteFocus   bool
+	paletteCancel  func()
 }
 
 func (a *app) discardStalePrompt() {
 	if a.prompt.root != "" && (a.repo == nil || a.repo.Root != a.prompt.root) {
+		if a.prompt.paletteCancel != nil {
+			a.prompt.paletteCancel()
+		}
 		a.prompt = promptState{}
 	}
 }
 
 func (a *app) askPrompt(title, placeholder, initial, actionName string, action func(string)) {
+	a.askTextPrompt(title, placeholder, initial, actionName, false, action)
+}
+
+func (a *app) askTextPrompt(title, placeholder, initial, actionName string, allowEmpty bool, action func(string)) {
 	a.discardStalePrompt()
 	if a.prompt.open {
 		a.queue("warning", a.t("promptPending"), "")
@@ -68,6 +81,7 @@ func (a *app) askPrompt(title, placeholder, initial, actionName string, action f
 		value:       initial,
 		actionName:  actionName,
 		action:      action,
+		allowEmpty:  allowEmpty,
 		selectAll:   initial != "",
 	}
 	a.invalidate()
@@ -84,12 +98,12 @@ func (a *app) promptDialogFor(c *ui.Context, owner toastOwner) {
 		return
 	}
 	a.discardStalePrompt()
-	if !a.prompt.open {
+	if !a.prompt.open || a.prompt.paletteHandoff {
 		return
 	}
 	tk := theme.TokensOf(c)
 	confirmed := false
-	ui.Modal(c, &a.prompt.open, func() {
+	ui.Modal(c.Key("workbench-prompt"), &a.prompt.open, func() {
 		ui.Column(c).Width(400).Padding(18).Gap(10).
 			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).
 			Children(func() {
@@ -110,7 +124,8 @@ func (a *app) promptDialogFor(c *ui.Context, owner toastOwner) {
 					input.SetTextSelection(0, len([]rune(a.prompt.value)))
 					a.prompt.selectAll = false
 				}
-				if input.Submitted() && strings.TrimSpace(a.prompt.value) != "" {
+				ready := a.prompt.allowEmpty || strings.TrimSpace(a.prompt.value) != ""
+				if input.Submitted() && ready {
 					confirmed = true
 					a.prompt.open = false
 				}
@@ -118,7 +133,6 @@ func (a *app) promptDialogFor(c *ui.Context, owner toastOwner) {
 					if workbenchButton(c, a.t("cancel"), buttonNormal, false).Clicked() {
 						a.prompt.open = false
 					}
-					ready := strings.TrimSpace(a.prompt.value) != ""
 					button := workbenchButton(c, a.prompt.actionName, buttonPrimary, !ready)
 					if ready && button.Clicked() {
 						confirmed = true
@@ -142,14 +156,17 @@ func (a *app) promptDialogFor(c *ui.Context, owner toastOwner) {
 }
 
 type confirmState struct {
-	owner      toastOwner
-	root       string // empty for settings, which are independent of repository
-	open       bool
-	title      string
-	message    string
-	actionName string
-	danger     bool
-	action     func()
+	owner       toastOwner
+	root        string // empty for settings, which are independent of repository
+	open        bool
+	title       string
+	message     string
+	actionName  string
+	danger      bool
+	action      func()
+	patchScope  bool
+	undoFile    bool
+	patchScroll ui.ScrollState
 }
 
 func (a *app) askConfirm(title, message, actionName string, danger bool, action func()) {
@@ -165,7 +182,7 @@ func (a *app) discardStaleConfirmation() {
 		a.confirm = confirmState{}
 	}
 	if a.confirm.owner == toastSettings {
-		if w := a.settingsWin.Load(); w == nil || w.IsDestroyed() {
+		if w := a.settingsWindowSlot().Load(); w == nil || w.IsDestroyed() {
 			a.confirm = confirmState{}
 		}
 	}
@@ -220,30 +237,37 @@ func (a *app) confirmDialogFor(c *ui.Context, owner toastOwner) {
 	// Independent settings confirmations need not wait for repository work.
 	blocked := a.confirm.root != "" && (a.repo == nil || a.loading || a.busy)
 	confirmed := false
-	ui.Modal(c, &a.confirm.open, func() {
-		ui.Column(c).Width(430).Padding(20).Gap(10).
-			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).
-			Children(func() {
-				display.Text(c, a.confirm.title, display.TextProps{Strong: true, FontSize: scaledFont(14)})
-				display.Text(c, a.confirm.message, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12), Rows: 5})
-				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.End).Margin(8, 0, 0, 0).
-					Children(func() {
-						if workbenchButton(c, a.t("cancel"), buttonNormal, false).Clicked() {
-							a.confirm.open = false
-						}
-						label := a.confirm.actionName
-						role := buttonNormal
-						if a.confirm.danger {
-							role = buttonDanger
-						}
-						button := workbenchButton(c, label, role, blocked)
-						if !blocked && button.Clicked() {
-							confirmed = true
-							a.confirm.open = false
-						}
-					})
-			})
-	})
+	if a.confirm.undoFile {
+		confirmed = a.commitFileUndoDialog(c, blocked)
+	} else if a.confirm.patchScope {
+		confirmed = a.commitFilePatchScopeDialog(c, blocked)
+	} else {
+		// Other overlays can come and go while the confirmation is open.
+		ui.Modal(c.Key("workbench-confirmation"), &a.confirm.open, func() {
+			ui.Column(c).Width(430).Padding(20).Gap(10).
+				Background(tk.BgElevated).Radius(12).Border(1, tk.Border).
+				Children(func() {
+					display.Text(c, a.confirm.title, display.TextProps{Strong: true, FontSize: scaledFont(14)})
+					display.Text(c, a.confirm.message, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12), Rows: 5})
+					ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.End).Margin(8, 0, 0, 0).
+						Children(func() {
+							if workbenchButton(c, a.t("cancel"), buttonNormal, false).Clicked() {
+								a.confirm.open = false
+							}
+							label := a.confirm.actionName
+							role := buttonNormal
+							if a.confirm.danger {
+								role = buttonDanger
+							}
+							button := workbenchButton(c, label, role, blocked)
+							if !blocked && button.Clicked() {
+								confirmed = true
+								a.confirm.open = false
+							}
+						})
+				})
+		})
+	}
 	if confirmed {
 		action := a.confirm.action
 		a.confirm = confirmState{}
@@ -326,11 +350,34 @@ func (a *app) fileMenu(c *ui.Context, row ui.Element, entry gitrepo.Entry, stage
 		}
 		return
 	}
-	switch overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: a.fileMenuItems(entry, staged)}) {
-	case "stage":
-		a.toggleStage(entry, false)
-	case "unstage":
-		a.toggleStage(entry, true)
+	open := ui.Local(row, "contextMenu", func() bool { return false })
+	targets := ui.Local(row, "file-stage-targets", func() []fileActionTarget { return nil })
+	if !*open {
+		*targets = a.workspaceStageTargets(entry, staged)
+	}
+	items := a.fileMenuItems(entry, staged)
+	if len(*targets) > 1 {
+		label := "stageSelectedFiles"
+		if staged {
+			label = "unstageSelectedFiles"
+		}
+		items[0].Label = a.tf(label, len(*targets))
+		items[0].Disabled = !a.workspaceStageReady(*targets)
+		for i := range items {
+			switch items[i].Key {
+			case "discard":
+				items[i].Label = a.t("discardThisFile")
+				if isUntracked(entry) {
+					items[i].Label = a.t("deleteThisFile")
+				}
+			case "stash":
+				items[i].Label = a.t("stashThisFile")
+			}
+		}
+	}
+	switch overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: items}) {
+	case "stage", "unstage":
+		a.runWorkspaceStage(*targets)
 	case "discard":
 		a.confirmDiscard(entry)
 	case "stash":
@@ -1050,6 +1097,13 @@ func (a *app) takeConflictSide(path, side string) {
 }
 
 func (a *app) fileDetailMenu(c *ui.Context, row ui.Element, path string) {
+	open := ui.Local(row, "contextMenu", func() bool { return false })
+	target := ui.Local(row, "commit-file-patch-target", func() commitFilePatchTarget { return commitFilePatchTarget{} })
+	undoTarget := ui.Local(row, "commit-file-undo-target", func() commitFileUndoTarget { return commitFileUndoTarget{} })
+	if !*open {
+		*target = a.commitFilePatchTarget(path)
+		*undoTarget = a.commitFileUndoTarget(path)
+	}
 	switch overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: []overlay.MenuItem{
 		{Key: "copy-path", Label: a.t("copyPath"), Icon: lucide.Copy()},
 		{Key: "absolute", Label: a.t("copyAbsolutePath"), Icon: lucide.Copy()},
@@ -1060,7 +1114,14 @@ func (a *app) fileDetailMenu(c *ui.Context, row ui.Element, path string) {
 		// This menu serves the commit details only. Blame reads the selected
 		// commit's version, and a file that commit deleted has none.
 		{Key: "blame", Label: a.blameMenuLabel(path), Icon: lucide.FileSearch(), Disabled: a.commitBlameDisabled(path)},
+		{Divider: true},
+		{Key: "export-patch", Label: a.t("exportFilePatch"), Icon: lucide.Download(), Disabled: !a.commitFilePatchReady(*target)},
+		{Key: "undo-file", Label: a.t("undoFile"), Disabled: !a.commitFileUndoReady(*undoTarget)},
 	}}) {
+	case "undo-file":
+		a.requestCommitFileUndo(*undoTarget)
+	case "export-patch":
+		a.requestCommitFilePatch(*target)
 	case "copy-path":
 		a.copyText(path)
 	case "absolute":

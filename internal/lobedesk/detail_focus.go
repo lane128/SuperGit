@@ -14,6 +14,8 @@ func (a *app) detailNavigationAllowed() bool {
 func (a *app) requestDetailTabFocus() {
 	a.detailFocusPending = true
 	a.detailFocusContext = a.currentDetailContext()
+	a.detailFocusSeq = a.loadSeq
+	a.detailFocusTarget = a.detailTabs().Active
 }
 
 func (a *app) navigateDetailTab(from detailTabKey, key ui.Key) {
@@ -56,11 +58,8 @@ func (a *app) wireDetailTabKeys(tab ui.Element, key detailTabKey) {
 }
 
 func (a *app) focusRequestedDetailTab(tab ui.Element, key detailTabKey) {
+	a.discardStaleDetailTabFocus()
 	if !a.detailFocusPending {
-		return
-	}
-	if a.detailFocusContext != a.currentDetailContext() {
-		a.detailFocusPending = false
 		return
 	}
 	if a.detailTabs().Active == key {
@@ -72,7 +71,7 @@ func (a *app) focusRequestedDetailTab(tab ui.Element, key detailTabKey) {
 // The focused row, rather than a hidden patch or the commit list, owns file
 // navigation. Opening its neighbor also gives that row focus on the next frame.
 func (a *app) navigateHistoryFile(from detailFileKey, delta int) {
-	if !a.detailNavigationAllowed() || a.detailsChangesHidden && a.page != "changes" {
+	if !a.detailNavigationAllowed() || a.detailsChangesHidden && a.page != "changes" || a.worktreeSelected && a.busy {
 		return
 	}
 	var files []detailFileKey
@@ -100,7 +99,7 @@ func (a *app) navigateHistoryFile(from detailFileKey, delta int) {
 	}
 	target := files[clampIndex(at+delta, len(files))]
 	if a.worktreeSelected {
-		a.selectFile(target.Path, target.Staged)
+		a.selectWorkspaceFile(fileRef{target.Path, target.Staged}, 0, false)
 	} else {
 		a.selectCommitFile(target.Path)
 	}

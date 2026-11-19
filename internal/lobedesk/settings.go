@@ -27,6 +27,7 @@ type persistedSettings struct {
 	BranchDetailsSplit *float32 `json:"branchDetailsSplit,omitempty"`
 	HideDetails        *bool    `json:"hideHistoryDetails,omitempty"`
 	FontScale          *float32 `json:"fontScale,omitempty"`
+	CodeFontSize       *float32 `json:"codeFontSize,omitempty"` // 0 explicitly follows the interface scale
 	// The history page's details panes: the commit's message, its files and
 	// its patch are each shown by default and can be hidden from Settings.
 	DetailsInfo    *bool `json:"detailsInfo,omitempty"`
@@ -67,7 +68,7 @@ func defaultSettings() persistedSettings {
 	info, changes, diff := true, true, true
 	hide := false
 	return persistedSettings{
-		Theme: "system", Palette: themePaletteCatppuccin, Language: string(localeChinese),
+		Theme: "system", Palette: themePaletteCatppuccin, Language: string(localeChinese), CodeFontSize: new(float32),
 		ShowGraph: &showGraph, AutoFetch: &autoFetch, AutoFetchPrune: &prune, AutoFetchEvery: &every,
 		DetailsInfo: &info, DetailsChanges: &changes, DetailsDiff: &diff,
 		HistoryLine: "standard", HistoryNode: "standard",
@@ -139,8 +140,10 @@ func (a *app) resetLayout() {
 	a.lastAutoFetch = time.Time{}
 }
 
+var settingsConfigDir = os.UserConfigDir
+
 func settingsPath() (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := settingsConfigDir()
 	if err != nil {
 		return "", err
 	}
@@ -160,11 +163,40 @@ func loadSettings() persistedSettings {
 func readSettings(path string) persistedSettings {
 	var settings persistedSettings
 	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return settings
+	}
+	if err == nil && json.Unmarshal(data, &settings) != nil {
+		return persistedSettings{}
+	}
+	if settings.Theme != "" && settings.CodeFontSize != nil {
+		return settings
+	}
+	legacyData, err := os.ReadFile(legacyDesktopPreferencesPath(path))
 	if err != nil {
 		return settings
 	}
-	_ = json.Unmarshal(data, &settings)
+	var legacy struct {
+		Dark     *bool
+		FontSize float32
+	}
+	if json.Unmarshal(legacyData, &legacy) != nil {
+		return settings
+	}
+	if settings.Theme == "" && legacy.Dark != nil {
+		settings.Theme = "light"
+		if *legacy.Dark {
+			settings.Theme = "dark"
+		}
+	}
+	if settings.CodeFontSize == nil && validCodeFontSize(legacy.FontSize) {
+		settings.CodeFontSize = &legacy.FontSize
+	}
 	return settings
+}
+
+func legacyDesktopPreferencesPath(configFile string) string {
+	return filepath.Join(filepath.Dir(filepath.Dir(configFile)), "SuperGit", "preferences.json")
 }
 
 func (a *app) applySettings(settings persistedSettings) {
@@ -242,19 +274,27 @@ func (a *app) applySettings(settings persistedSettings) {
 		scale = *settings.FontScale
 	}
 	setUIFontScale(scale)
+	a.codeFontSize = 0
+	if settings.CodeFontSize != nil && validCodeFontSize(*settings.CodeFontSize) {
+		a.codeFontSize = *settings.CodeFontSize
+	}
 }
 
 // writeSettings replaces the file atomically, so a half-written settings file
 // is never read back on the next start.
 func writeSettings(path string, settings persistedSettings) error {
+	return writeLocalJSON(path, "settings-*.json", settings)
+}
+
+func writeLocalJSON(path, pattern string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(settings, "", "  ")
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), "settings-*.json")
+	tmp, err := os.CreateTemp(filepath.Dir(path), pattern)
 	if err != nil {
 		return err
 	}
@@ -462,6 +502,7 @@ func (a *app) saveSettingsFor(owner toastOwner) bool {
 			BranchDetailsSplit: splitSetting(a.branchSplit.share),
 			HideDetails:        hideSetting(a.historyDetailsHidden),
 			FontScale:          fontScaleSetting(uiFontScaleValue()),
+			CodeFontSize:       new(a.codeFontSize),
 			DetailsInfo:        showSetting(!a.detailsInfoHidden),
 			DetailsChanges:     showSetting(!a.detailsChangesHidden),
 			DetailsDiff:        showSetting(!a.detailsDiffHidden),

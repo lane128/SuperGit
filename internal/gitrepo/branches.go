@@ -247,6 +247,19 @@ func (r *Repository) deleteBranch(ctx context.Context, name string, force bool, 
 	return err
 }
 func (r *Repository) TrackBranch(ctx context.Context, name, remoteRef string) error {
+	return r.trackBranch(ctx, name, remoteRef, "")
+}
+
+// TrackBranchChecked rejects a remote-tracking ref whose tip no longer matches
+// the displayed candidate. The instance lock does not serialize external Git.
+func (r *Repository) TrackBranchChecked(ctx context.Context, name, remoteRef, expectedSHA string) error {
+	if !oidRE.MatchString(expectedSHA) {
+		return ErrSwitchTargetChanged
+	}
+	return r.trackBranch(ctx, name, remoteRef, expectedSHA)
+}
+
+func (r *Repository) trackBranch(ctx context.Context, name, remoteRef, expectedSHA string) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 	if err := r.branchName(ctx, name); err != nil {
@@ -255,12 +268,19 @@ func (r *Repository) TrackBranch(ctx context.Context, name, remoteRef string) er
 	if strings.HasPrefix(remoteRef, "-") {
 		return errors.New("无效的远端引用")
 	}
-	if _, err := r.resolve(ctx, "refs/remotes/"+remoteRef); err != nil {
+	sha, err := r.resolve(ctx, "refs/remotes/"+remoteRef)
+	if err != nil {
+		if expectedSHA != "" {
+			return errors.Join(ErrSwitchTargetChanged, err)
+		}
 		return err
+	}
+	if expectedSHA != "" && sha != expectedSHA {
+		return ErrSwitchTargetChanged
 	}
 	if err := r.clean(ctx); err != nil {
 		return err
 	}
-	_, err := run(ctx, r.Root, "", "switch", "--no-overwrite-ignore", "-c", name, "--track", "refs/remotes/"+remoteRef)
+	_, err = run(ctx, r.Root, "", "switch", "--no-overwrite-ignore", "-c", name, "--track", "refs/remotes/"+remoteRef)
 	return err
 }

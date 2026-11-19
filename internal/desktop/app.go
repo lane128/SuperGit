@@ -116,10 +116,12 @@ type app struct {
 	dockIcon *appicon.Switcher
 }
 
+var desktopConfigDir = os.UserConfigDir
+
 func Run(initialPath string) error {
 	a := &app{page: "workspace", sidebarWidth: 176, fileWidth: 325, historyWidth: 530, detailsHeight: 340, fontSize: 13, drafts: make(map[string]string), historyIndex: -1, dockIcon: appicon.New(func(png []byte) error { return mygo.App.Dock.SetIcon(png) })}
 	a.historyLimit = 300
-	if config, err := os.UserConfigDir(); err == nil {
+	if config, err := desktopConfigDir(); err == nil {
 		a.prefsPath = filepath.Join(config, "SuperGit", "preferences.json")
 		p, err := loadPreferences(a.prefsPath)
 		a.prefs, a.dark, a.fontSize = p, p.Dark, p.FontSize

@@ -35,7 +35,7 @@ func (a *app) worktreeGraphConnection(commits []gitrepo.Commit, graph *commitGra
 }
 
 func (g *commitGraph) worktreeGutter() float32 {
-	if g != nil && g.Worktree != nil {
+	if g != nil && g.Worktree != nil && g.Worktree.HeadRow != 0 {
 		return worktreeGraphGutter
 	}
 	return 0
@@ -53,7 +53,7 @@ func (link worktreeGraphLink) rowPoints(graph *commitGraph, row int, r ui.Rect, 
 		return nil
 	}
 	parent := graph.Rows[link.HeadRow]
-	parentX := laneXGap(int(r.X+worktreeGraphGutter), parent.Lane, graph.LaneGap())
+	parentX := laneXGap(int(r.X+graph.worktreeGutter()), parent.Lane, graph.LaneGap())
 	parentY := r.Y + r.H/2 + float32(link.HeadRow-row)*r.H
 	if r.H <= 0 || parentY <= sourceY {
 		return nil
