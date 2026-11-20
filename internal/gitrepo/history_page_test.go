@@ -245,3 +245,47 @@ func TestHeadSubjectOfAnEmptyRepositoryIsEmpty(t *testing.T) {
 		t.Errorf("HeadSubject of an empty repository = %q, %v; want empty, no error", got, err)
 	}
 }
+
+// Two branches have commits based directly on main. Moving main ahead of
+// either child would turn its real parent edge into a dashed boundary.
+func TestHistoryKeepsChildrenAboveCheckedOutParent(t *testing.T) {
+	dir := fixture(t)
+	seed(t, dir)
+	head := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	for _, branch := range []string{"future", "feature"} {
+		git(t, dir, "switch", "-c", branch, "main")
+		git(t, dir, "commit", "--allow-empty", "-m", branch)
+	}
+	git(t, dir, "switch", "main")
+	git(t, dir, "branch", "spare")
+	r := openTest(t, dir)
+	for _, hidden := range [][]string{nil, {"refs/heads/spare"}} {
+		page, err := r.ReadVisibleHistory(context.Background(), 10, hidden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Commits) != 3 || page.Commits[2].SHA != head {
+			t.Fatalf("hidden=%v: expected both children above HEAD: %+v", hidden, page.Commits)
+		}
+		for _, child := range page.Commits[:2] {
+			if len(child.Parents) != 1 || child.Parents[0] != head {
+				t.Fatalf("wrong edge from %s to %v", child.SHA, child.Parents)
+			}
+		}
+	}
+}
+
+func TestHistoryPrioritizesIndependentHeadOnly(t *testing.T) {
+	for _, tc := range []struct {
+		rows  []Commit
+		first string
+	}{
+		{[]Commit{{SHA: "side", Parents: []string{"base"}}, {SHA: "head", Parents: []string{"base"}}, {SHA: "base"}}, "head"},
+		{[]Commit{{SHA: "merge", Parents: []string{"base", "head"}}, {SHA: "head"}, {SHA: "base"}}, "merge"},
+	} {
+		prioritizeIndependentHead(tc.rows, "head")
+		if tc.rows[0].SHA != tc.first {
+			t.Fatalf("rows=%v; expected %s first", tc.rows, tc.first)
+		}
+	}
+}

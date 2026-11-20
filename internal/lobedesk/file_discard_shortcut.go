@@ -7,7 +7,7 @@ import (
 
 func (a *app) workspaceDiscardSurfaceAllowed() bool {
 	return a.worktreeFilesShown() && a.detailNavigationAllowed() &&
-		(!a.detailsChangesHidden || a.page == "changes") && !a.repositoryChooserOpen &&
+		(!a.detailsChangesHidden || a.worktreeSelected) && !a.repositoryChooserOpen &&
 		!a.hasPendingDialog(toastMain) && len(a.lineSel) == 0
 }
 

@@ -16,37 +16,48 @@ func titleBarTester(a *app) *ui.Tester {
 	}, 900, 44)
 }
 
-func TestTitleBarPagesStayBesideRepositoryActions(t *testing.T) {
+// History is the window: the title bar names the branch and keeps the
+// repository actions, and no Changes/History/Stash tab splits it up.
+func TestTitleBarKeepsRepositoryActionsWithoutPageTabs(t *testing.T) {
 	for _, language := range []locale{localeChinese, localeEnglish} {
 		for _, scale := range []float32{fontScaleStandard, fontScaleLarge} {
 			setUIFontScale(scale)
-			a := &app{locale: language, page: "changes", repo: &gitrepo.Repository{Root: t.TempDir()},
-				status:   gitrepo.Status{Branch: "feature/a-long-current-branch", Ahead: 12, Behind: 34},
+			a := &app{locale: language, page: "history", repo: &gitrepo.Repository{Root: t.TempDir()},
+				status:   gitrepo.Status{Branch: "feature/a-long-current-branch", Upstream: "origin/main", Ahead: 12, Behind: 34},
 				branches: []gitrepo.Branch{{Name: "feature/a-long-current-branch", Current: true}},
 				remotes:  []gitrepo.Remote{{Name: "origin"}}, busy: true,
 				operation: gitrepo.Operation{Kind: "cherry-pick"}}
-			tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); ui.Column(c).Fill().Children(func() { a.titleBar(c) }) }, 900, 44) // Reserve 80 DIP for native window controls at 980 DIP.
-			var end float32
-			for _, page := range []string{"changes", "history", "stash"} {
-				tab, ok := tt.AccessByRole(ui.RoleTab, a.t(page))
-				if !ok || tab.Bounds.W <= 0 || tab.Bounds.X < end || tab.Bounds.Y+tab.Bounds.H > 44 {
-					t.Fatalf("%s/%v: page tab unavailable in title bar: %s %+v", language, scale, page, tab)
-				}
-				end = tab.Bounds.X + tab.Bounds.W
+			tt := ui.NewTester(func(c *ui.Context) {
+				theme.Apply(c)
+				ui.Column(c).Fill().Children(func() { a.workbenchToolbar(c, false) })
+			}, 900, 44)
+			branch, ok := tt.AccessByRole(ui.RoleButton, a.t("branches"))
+			if !ok {
+				t.Fatal("missing branch selector")
 			}
+			assertCommandControlBounds(t, tt, a, 900)
+			status := "(" + a.tf("aheadBehind", 12, 34) + ")"
+			statusBounds, visible := tt.Find(status)
+			if !visible || statusBounds.X < branch.Bounds.X || statusBounds.X+statusBounds.W > branch.Bounds.X+branch.Bounds.W {
+				t.Errorf("%s/%v: tracking text must fit inside the branch button: %q %+v; branch %+v", language, scale, status, statusBounds, branch.Bounds)
+			}
+			for _, page := range []string{"changes", "history", "stash"} {
+				if tab, ok := tt.AccessByRole(ui.RoleTab, a.t(page)); ok {
+					t.Fatalf("%s/%v: the title bar still offers a %q page tab: %+v", language, scale, page, tab.Bounds)
+				}
+			}
+			var end float32
 			for _, control := range []struct {
 				role  ui.Role
 				label string
 			}{
-				{ui.RoleButton, a.t("branches")},
-				{ui.RoleText, "↑12 ↓34"},
 				{ui.RoleButton, a.tf("operation", "cherry-pick")},
 				{ui.RoleText, a.progressText()},
 				{ui.RoleButton, a.t("cancel")},
-				{ui.RoleButton, a.t("fetch")},
-				{ui.RoleButton, a.t("pull")},
-				{ui.RoleButton, a.t("pushButton")},
-				{ui.RoleButton, a.t("refresh")},
+				{ui.RoleButton, a.t("commandPalette")},
+				{ui.RoleButton, a.t("branches")},
+				{ui.RoleMenuButton, a.t("saveStashAction")},
+				{ui.RoleMenuButton, a.t("syncMenu")},
 			} {
 				item, ok := tt.AccessByRole(control.role, control.label)
 				if !ok || item.Bounds.X < end-0.5 || item.Bounds.X+item.Bounds.W > 900.5 || item.Bounds.W <= 0 {
@@ -57,6 +68,21 @@ func TestTitleBarPagesStayBesideRepositoryActions(t *testing.T) {
 		}
 	}
 	setUIFontScale(fontScaleStandard)
+}
+
+func assertCommandControlBounds(t *testing.T, tt *ui.Tester, a *app, windowWidth float32) {
+	t.Helper()
+	icon, hasIcon := tt.AccessByRole(ui.RoleButton, a.t("commandPalette"))
+	branch, hasBranch := tt.AccessByRole(ui.RoleButton, a.t("branches"))
+	const wantedWidth = 360
+	left := (windowWidth - wantedWidth) / 2
+	withinPixel := func(x, y float32) bool { return x >= y-1 && x <= y+1 }
+	if !hasIcon || !hasBranch || !withinPixel(icon.Bounds.X, left) ||
+		!withinPixel(icon.Bounds.X+icon.Bounds.W, branch.Bounds.X) ||
+		!withinPixel(branch.Bounds.X+branch.Bounds.W, left+wantedWidth) ||
+		icon.Bounds.Y != branch.Bounds.Y || icon.Bounds.H != branch.Bounds.H {
+		t.Fatalf("expected one centered %d pt control, got icon %+v and branch %+v", wantedWidth, icon.Bounds, branch.Bounds)
+	}
 }
 
 func TestSidebarNamesRepositoryAndPreservesFullPath(t *testing.T) {
@@ -82,7 +108,7 @@ func TestTheTitleBarKeepsTheBranchSwitchAndRemoteActions(t *testing.T) {
 		branches: []gitrepo.Branch{{Name: "main", Current: true}, {Name: "feat"}},
 		remotes:  []gitrepo.Remote{{Name: "origin"}},
 	}
-	tt := titleBarTester(a)
+	tt := pageTester(a, a.titleBar)
 	switchRow, ok := tt.AccessByRole(ui.RoleButton, a.t("branches"))
 	if !ok {
 		t.Fatal("the title bar has no branch switch")
@@ -90,9 +116,16 @@ func TestTheTitleBarKeepsTheBranchSwitchAndRemoteActions(t *testing.T) {
 	if switchRow.Description != "main" {
 		t.Errorf("the branch switch describes itself as %q; want the checked-out branch", switchRow.Description)
 	}
-	for _, title := range []string{a.t("fetch"), a.t("pull"), a.t("pushButton")} {
-		if _, ok := tt.AccessByRole(ui.RoleButton, title); !ok {
-			t.Errorf("the title bar lost the %q action", title)
+	for _, title := range []string{a.t("fetch"), a.t("pull"), a.t("pushButton"), a.t("refresh")} {
+		if _, ok := tt.AccessByRole(ui.RoleButton, title); ok {
+			t.Errorf("the title bar still shows the %q button", title)
+		}
+	}
+	clickRepositoryTabsControl(t, tt, ui.RoleMenuButton, a.t("syncMenu"))
+	for _, title := range []string{a.t("fetch"), a.t("pull"), a.t("pushBranchAction"), a.t("fetchPrune"), a.t("forcePushAction")} {
+		item, ok := tt.AccessByRole(ui.RoleMenuItem, title)
+		if !ok || item.Disabled {
+			t.Errorf("no enabled %q in Sync: %+v", title, item)
 		}
 	}
 	// A checkout is the one action the switch cannot undo in place, so the

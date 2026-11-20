@@ -99,6 +99,7 @@ def run():
                 wait("Stash saved")
                 wait(message)
                 press(message, "listItem", contains=True)
+                auto("wait", "--text", "Loading diff…", "--gone", "--timeout", "25s", "--settle")
 
             def fingerprint():
                 return git("rev-parse", "HEAD"), git("ls-files", "--stage"), tracked.read_bytes(), extra.read_bytes() if extra.exists() else None
@@ -112,7 +113,6 @@ def run():
                         raise TimeoutError("Native automation socket unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
-                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 wait("Stash fixture base")
                 auto("key", "cmd+3", "--settle")
@@ -221,7 +221,7 @@ def run():
                     assert not git("ls-files", "-u").strip()
                     assert git("show", ":" + tracked.name) == "externally resolved version\n"
                     assert git("rev-parse", "HEAD") == conflict_head and git("rev-parse", "refs/stash") == conflict_stash
-                    press("Refresh")
+                    auto("key", "cmd+r", "--settle")
                     wait("Native three-way " + action)
                     print(f"PASS native {action} three-way conflict retains stash/HEAD and all stages; external resolution stages exact bytes", flush=True)
                 (artifacts / "final.snapshot.txt").write_text(auto("snapshot", "--full"))

@@ -51,6 +51,10 @@ func (a *app) renderWorkbench(c *ui.Context, repositoryStrip func()) {
 		content := ui.Row(c).Grow(1).Basis(0).MinHeight(0).AlignItems(ui.Stretch)
 		a.sidebarSplit.rowWidth, _ = c.Size()
 		content.Children(func() {
+			if a.sidebarHidden {
+				a.contentCardAtWidth(c, a.sidebarSplit.rowWidth)
+				return
+			}
 			sidebar := a.sidebar(c)
 			def := shareForWidth(a.sidebarSplit.rowWidth-splitterWidth, sidebarWidth)
 			a.splitHandle(c, &a.sidebarSplit, def, sidebarPaneMin, a.workbenchContentMin(), a.t("resizeSidebarPane"))
@@ -70,6 +74,7 @@ func (a *app) renderWorkbench(c *ui.Context, repositoryStrip func()) {
 		a.cloneRepositoryDialog(c)
 		a.newRepositoryDialog(c)
 		a.blameDialog(c)
+		a.snapshotFileDialog(c)
 		a.toastHost(c, toastMain)
 		if !settingsFocused {
 			// A settings notice whose panel closed is not lost: the main
@@ -98,6 +103,20 @@ func (a *app) titleBar(c *ui.Context) {
 	a.workbenchToolbar(c, true)
 }
 
+// windowTitleBar paints through the native title area. The platform reports
+// the space it needs for its own buttons, including changes in full screen.
+func windowTitleBar(c *ui.Context) ui.Element {
+	tk := theme.TokensOf(c)
+	bar := c.TitleBar()
+	inset := float32(8)
+	if bar.Left > 0 {
+		inset = max(bar.Left+8, 80)
+	}
+	return ui.Row(c).FillWidth().Height(max(float32(titleBarHeight), bar.Height)).Shrink(0).
+		Padding(0, max(8, bar.Right+4), 0, inset).AlignItems(ui.Center).DragWindow().
+		Background(tk.BgLayout).BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
+}
+
 func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 	tk := theme.TokensOf(c)
 	height := float32(titleBarHeight)
@@ -111,79 +130,102 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 			inset = max(bar.Left+8, 80) - 12
 		}
 	}
-	toolbar := ui.Row(c).Height(height).Shrink(0).AlignItems(ui.Center).Padding(0, 12, 0, 12)
+	toolbar := ui.Row(c).FillWidth().Height(height).Shrink(0).AlignItems(ui.Center).Gap(8).Padding(0, 12, 0, 12)
 	if nativeChrome {
 		toolbar.DragWindow()
 	}
 	toolbar.Children(func() {
-		left := ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Gap(8).Padding(0, 0, 0, inset)
-		left.Children(func() {
-			a.workbenchNavigation(c)
-			if a.repo != nil && !a.restoredCheckout {
-				// Page tabs keep their width; the branch label yields space to
-				// shared repository actions while retaining its full tooltip.
-				ui.Row(c).Grow(1).Basis(0).MinWidth(0).MaxWidth(180).Children(func() { a.branchSelector(c) })
-				if a.status.Ahead > 0 || a.status.Behind > 0 {
-					display.Text(c, aheadBehind(a.status.Ahead, a.status.Behind), display.TextProps{
-						Type: display.TextSecondary, FontSize: scaledFont(11), Code: true,
-					}).Margin(0, 0, 0, 2).Tooltip(a.tf("aheadBehind", a.status.Ahead, a.status.Behind))
-				}
+		showBranch := a.repo != nil && !a.restoredCheckout
+		progress := a.progressText()
+		// Equal space on each side keeps the branch centered as status changes.
+		ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Children(func() {
+			if inset > 0 {
+				ui.Box(c).Width(inset).Shrink(0)
+			}
+			ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Gap(6).Children(func() {
 				// A merge, rebase or cherry-pick can outlive the command that
 				// started it: a cancelled rebase leaves the repository in the
 				// middle of it, and the page the reader was on says nothing.
 				// The title bar is on every page, so the state is never hidden.
-				if a.operation.Kind != "" {
+				if showBranch && a.operation.Kind != "" {
 					// Changes keeps continue, skip and abort beside the files.
 					guidance := "operationWhere"
 					if a.operation.Kind == "merge" {
 						guidance = "operationWhereMerge"
 					}
 					op := workbenchButton(c, a.tf("operation", a.operation.Kind), buttonNormal, false).
-						TextColor(tk.Warning).Tooltip(a.t(guidance))
+						MinWidth(0).Shrink(1).TextColor(tk.Warning).Tooltip(a.t(guidance))
 					if op.Clicked() {
 						a.openPage("changes")
 						a.selectWorktree()
 						a.invalidate()
 					}
 				}
-			}
-		})
-		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(6).Children(func() {
-			// Background work can outlast the moment a toast would be read,
-			// so the bar says what it is doing while it runs instead of
-			// leaving a disabled button as the only sign. Fetching names
-			// itself; every other long operation shares one general line.
-			if a.loading && a.repo != nil && !a.restoredCheckout && !a.loadSince.IsZero() {
-				if remaining := progressDelay - time.Since(a.loadSince); remaining > 0 {
-					c.After(remaining)
-				}
-			}
-			if text := a.progressText(); text != "" {
-				icon := ui.Icon(c, lucide.LoaderCircle()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary)
-				icon.Rotate(icon.Loop("spin", 900*time.Millisecond, ui.Linear) * 360)
-				display.Text(c, text, display.TextProps{
-					Type: display.TextSecondary, FontSize: scaledFont(11),
-				}).SingleLine().MaxWidth(110).Tooltip(text)
-				// A git command can hang on a network that stopped answering;
-				// without this the only way out is the three-minute timeout.
-				if a.busy || a.fetching {
-					if cancel := workbenchIconButton(c, lucide.X(), a.t("cancel"), buttonNormal, false); cancel.Clicked() {
-						a.cancelOperation()
+				// Background work can outlast the moment a toast would be read,
+				// so the bar says what it is doing while it runs instead of
+				// leaving a disabled button as the only sign. Fetching names
+				// itself; every other long operation shares one general line.
+				if a.loading && showBranch && !a.loadSince.IsZero() {
+					if remaining := progressDelay - time.Since(a.loadSince); remaining > 0 {
+						c.After(remaining)
 					}
 				}
-			}
-			// Fetch, pull and push used to sit in the workspace page header.
-			// They belong to the repository rather than to one page, and the
-			// history page is the main window now, so they moved here.
+				if progress != "" {
+					icon := ui.Icon(c, lucide.LoaderCircle()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary)
+					icon.Rotate(icon.Loop("spin", 900*time.Millisecond, ui.Linear) * 360)
+					display.Text(c, progress, display.TextProps{
+						Type: display.TextSecondary, FontSize: scaledFont(11),
+					}).SingleLine().MinWidth(0).MaxWidth(110).Shrink(1).Tooltip(progress)
+					// A git command can hang on a network that stopped answering;
+					// without this the only way out is the three-minute timeout.
+					if a.busy || a.fetching {
+						if cancel := workbenchIconButton(c, lucide.X(), a.t("cancel"), buttonNormal, false); cancel.Clicked() {
+							a.cancelOperation()
+						}
+					}
+				}
+			})
+		})
+		a.toolbarCommandControl(c, showBranch)
+		ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Justify(ui.End).Gap(6).Children(func() {
 			if a.repo != nil {
-				a.remoteActions(c)
-				layout.Divider(c, layout.DividerProps{Vertical: true}).Margin(0, 3)
-			}
-			refresh := workbenchIconButton(c, lucide.RefreshCw(), a.t("refresh"), buttonNormal, a.loading || a.busy || a.repo == nil)
-			if refresh.Clicked() {
-				a.reload()
+				a.stashSaveMenu(c)
+				a.syncMenu(c)
 			}
 		})
+	})
+}
+
+// Keep one silhouette and two keyboard-accessible targets. The branch and its
+// tracking status stay centered in the whole control, including the icon.
+const toolbarCommandWidth float32 = 360
+
+func (a *app) toolbarCommandControl(c *ui.Context, showBranch bool) {
+	ui.Row(c).Width(toolbarCommandWidth).Shrink(0).AlignItems(ui.Center).Children(func() {
+		label := a.t("commandPalette")
+		keys := shortcutKeys("palette.open")
+		button := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, !a.canOpenCommandPalette(), false).
+			Label(label).Tooltip(label + " (" + keys + ")")
+		iconWidth := scaledFont(32)
+		if showBranch {
+			button.Width(iconWidth).Shrink(0).PaddingX(0).Radius(6, 0, 0, 6)
+		} else {
+			button.FillWidth()
+		}
+		button.Children(func() {
+			ui.Icon(c, lucide.SquareTerminal()).FontSize(scaledFont(14))
+			if !showBranch {
+				ui.Text(c, a.t("toolbarCommands")).SingleLine()
+				ui.Text(c, keys).FontSize(scaledFont(11)).TextColor(theme.TokensOf(c).TextSecondary)
+			}
+		})
+		if button.Clicked() {
+			button.Focus()
+			a.openCommandPalette()
+		}
+		if showBranch {
+			a.branchSelector(c, iconWidth)
+		}
 	})
 }
 
@@ -271,19 +313,6 @@ func (a *app) repoMenu(c *ui.Context, target ui.Element) {
 	}
 }
 
-func aheadBehind(ahead, behind int) string {
-	if ahead == 0 && behind == 0 {
-		return ""
-	}
-	if behind == 0 {
-		return "↑" + itoa(ahead)
-	}
-	if ahead == 0 {
-		return "↓" + itoa(behind)
-	}
-	return "↑" + itoa(ahead) + " ↓" + itoa(behind)
-}
-
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
@@ -306,9 +335,9 @@ func itoa(n int) string {
 //
 // Below History come the repository's own locations: its
 // branches, remote branches, tags, stashes, worktrees and submodules, each a
-// folded list under a counted heading. Picking a ref scopes the history list
-// to it, the way a branch tree in a Git client does, instead of making the
-// reader find the branch again on another page.
+// folded list under a counted heading. Picking a ref locates its commit in
+// the history list and selects it, the way a branch tree in a Git client
+// jumps to the branch's tip, without changing which commits History lists.
 func (a *app) sidebar(c *ui.Context) float32 {
 	tk := a.sidebarTokens(c)
 	width := a.workbenchSidebarWidth()
@@ -329,29 +358,27 @@ func (a *app) sidebar(c *ui.Context) float32 {
 					})
 				}).Grow(1).Basis(0).MinHeight(0)
 			}
-			// The bottom rows sit at the foot of the column, away from the
-			// pages: settings is not a place in the repository.
-			ui.Column(c).FillWidth().Gap(1).Children(func() {
-				a.sidebarItem(c, lucide.Settings(), "settings", a.t("settings"), shortcutKeys("window.settings"))
-				a.sidebarOpenRow(c)
-			})
+			a.sidebarItem(c, lucide.Settings(), "settings", a.t("settings"), shortcutKeys("window.settings"))
 		})
 	return width
 }
 
 func (a *app) sidebarRefGroups(c *ui.Context) {
-	a.sidebarGroup(c, "branches", a.t("branches"), len(a.branches), func() {
+	a.sidebarGroup(c, "branches", a.t("branches"), a.visibleBranchCount(a.branches, "refs/heads/"), func() {
 		a.sidebarBranchItems(c)
 	})
-	remoteHeading := a.sidebarGroup(c, "remotes", a.t("remotes"), len(a.remoteBranches), func() {
+	remoteHeading := a.sidebarGroup(c, "remotes", a.t("remotes"), a.visibleBranchCount(a.remoteBranches, "refs/remotes/"), func() {
 		if a.repo != nil {
 			row := a.sidebarRefRow(c.Key("add-remote"), lucide.Plus(), a.t("addRemoteEntry"), false, false, a.openAddRemote)
 			row.Disabled(!a.canAddRemote())
 		}
 		for _, remote := range a.remoteBranches {
+			if a.branchHidden("refs/remotes/" + remote.Name) {
+				continue
+			}
 			ref := historyRef{Kind: historyRefRemote, Name: remote.Name}
 			a.sidebarRefRow(c, lucide.Cloud(), remote.Name,
-				a.historyRef == ref, false, func() { a.showRefHistory(ref.Kind, ref.Name) })
+				a.historyRef == ref, false, func() { a.locateRef(ref.Kind, ref.Name) })
 		}
 	})
 	if a.repo != nil {
@@ -364,7 +391,7 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 		for _, tag := range a.tags {
 			ref := historyRef{Kind: historyRefTag, Name: tag.Name}
 			a.sidebarRefRow(c, lucide.Tag(), tag.Name,
-				a.historyRef == ref, false, func() { a.showRefHistory(ref.Kind, ref.Name) })
+				a.historyRef == ref, false, func() { a.locateRef(ref.Kind, ref.Name) })
 		}
 	})
 	a.sidebarGroup(c, "stashes", a.t("stashes"), len(a.stashes), func() {
@@ -375,6 +402,9 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 			}
 			a.sidebarRefRow(c, lucide.Archive(), label, a.selectedStash == stash.SHA, false, func() {
 				a.openPage("stash")
+				// The click names one stash, so its row scrolls into view and
+				// takes the selection the details describe.
+				a.revealSelection = true
 				a.selectStash(stash.SHA)
 				a.invalidate()
 			})
@@ -484,9 +514,11 @@ func (a *app) sidebarGroup(c *ui.Context, key, title string, count int, items fu
 	return row
 }
 
-// sidebarRefRow is one ref in a group: its name, and the selection when the
-// history list is scoped to it. current marks the checked-out branch with its
-// own glyph, so a long name that clips still says which branch is live.
+// sidebarRefRow is one ref in a group: its name, and the check that shows the
+// ref selector's filter when it names this ref. Clicking locates the ref's
+// commit in History instead of changing that filter. current marks the
+// checked-out branch with its own glyph, so a long name that clips still says
+// which branch is live.
 func (a *app) sidebarRefRow(c *ui.Context, icon *ui.SVG, label string, selected, current bool, onClick func()) ui.Element {
 	return a.sidebarRefRowWithState(c, icon, label, "", selected, current, onClick)
 }
@@ -545,9 +577,12 @@ func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state s
 // the list is how the sidebar answers "where am I" without another page.
 func (a *app) sidebarBranchItems(c *ui.Context) {
 	for _, branch := range a.branches {
+		if a.branchHidden("refs/heads/" + branch.Name) {
+			continue
+		}
 		ref := historyRef{Kind: historyRefLocal, Name: branch.Name}
 		row := a.sidebarRefRow(c, lucide.GitBranch(), branch.Name, a.historyRef == ref, branch.Current, func() {
-			a.showRefHistory(ref.Kind, ref.Name)
+			a.locateRef(ref.Kind, ref.Name)
 		})
 		a.branchMenu(c, row, branch)
 	}
@@ -570,12 +605,15 @@ func (a *app) toggleSidebarGroup(key string) {
 	a.invalidate()
 }
 
+// sidebarHeader names the open repository and is its switcher. The Welcome
+// window has no repository, so it gets no header: a workspace name above pages
+// that cannot open reads as a checkout that is not there.
 func (a *app) sidebarHeader(c *ui.Context) {
-	tk := a.sidebarTokens(c)
-	name := "SuperGit"
-	if a.repo != nil {
-		name = a.repoName()
+	if a.repo == nil {
+		return
 	}
+	tk := a.sidebarTokens(c)
+	name := a.repoName()
 	ui.Row(c).FillWidth().Padding(2, 6, 2, 8).Gap(8).AlignItems(ui.Center).Children(func() {
 		display.Avatar(c, name, display.AvatarProps{
 			Size:     24,
@@ -584,10 +622,6 @@ func (a *app) sidebarHeader(c *ui.Context) {
 			// Avatar computes its ink from RGB, so use an opaque surface.
 			Background: tk.BgElevated,
 		})
-		if a.repo == nil {
-			display.Text(c, name, display.TextProps{FontSize: scaledFont(12), Strong: true}).TextColor(tk.Text).SingleLine()
-			return
-		}
 		target := ui.ButtonBase(c).Label(name).Description(a.repo.Root).Row().Grow(1).Basis(0).MinWidth(0).Height(26).Gap(4).AlignItems(ui.Center).Radius(tk.BorderRadiusSM)
 		if target.Hovered() {
 			target.Background(tk.FillTertiary)
@@ -657,30 +691,9 @@ func (a *app) sidebarItem(c *ui.Context, icon *ui.SVG, page, title, keys string)
 	}
 }
 
-// sidebarOpenRow opens a repository from the sidebar, where the rail kept the
-// same action at its foot.
-func (a *app) sidebarOpenRow(c *ui.Context) {
-	tk := a.sidebarTokens(c)
-	blocked := a.repositoryChooserBlocked()
-	row := ui.ButtonBase(c).Label(a.t("openRepo")).Row().FillWidth().Height(32).Padding(0, 8).Gap(8).
-		AlignItems(ui.Center).Radius(tk.BorderRadius).Disabled(blocked)
-	color := tk.TextSecondary
-	if blocked {
-		color = tk.TextDisabled
-	}
-	if row.Hovered() && !blocked {
-		row.Background(tk.FillTertiary)
-	}
-	row.Children(func() {
-		ui.Icon(c, lucide.FolderOpen()).FontSize(scaledFont(15)).TextColor(color)
-		display.Text(c, a.t("openRepo"), display.TextProps{FontSize: scaledFont(12)}).
-			TextColor(color).SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
-	})
-	if row.Clicked() {
-		a.chooseRepository()
-	}
-}
-
+// openPage moves the window to a place. History is the window: its list holds
+// the working tree's row and the stash entries, so "changes" and "stash" are
+// selections in that list rather than pages of their own.
 func (a *app) openPage(page string) {
 	// The settings panel is a window of its own, opened from every entry
 	// point that used to switch the main window to the settings page.
@@ -688,15 +701,25 @@ func (a *app) openPage(page string) {
 		a.openSettingsWindow()
 		return
 	}
-	if a.page == page || a.repo == nil {
+	if a.repo == nil {
 		return
 	}
-	if page == "changes" {
-		a.openChanges()
-	} else if page == "history" {
-		a.restoreHistorySelection()
-	} else if a.page == "history" || a.page == "changes" {
-		a.saveDetailScroll()
+	wantWorktree, wantStash := false, false
+	switch page {
+	case "changes":
+		page, wantWorktree = "history", true
+	case "stash":
+		page, wantStash = "history", true
+	}
+	if page == a.page && !wantWorktree && !wantStash {
+		return
+	}
+	if page != a.page {
+		if page == "history" {
+			a.restoreHistorySelection()
+		} else if a.page == "history" {
+			a.saveDetailScroll()
+		}
 	}
 	a.page = page
 	if page != "history" {
@@ -706,6 +729,16 @@ func (a *app) openPage(page string) {
 		// reader comes back.
 		a.historyRefOpen = false
 		a.historyRefQuery = ""
+	}
+	if wantWorktree {
+		a.revealSelection = true
+		a.openChanges()
+	}
+	if wantStash && len(a.stashes) > 0 && a.stashesErr == "" {
+		a.revealSelection = true
+		if a.selectedStash == "" {
+			a.selectStash(a.stashes[0].SHA)
+		}
 	}
 	a.invalidate()
 }
@@ -733,14 +766,10 @@ func (a *app) workbenchPage(c *ui.Context, width float32) {
 		a.loadingPage(c)
 	case a.repo == nil:
 		a.emptyPage(c)
-	case a.page == "changes":
-		a.changesPage(c)
 	case a.page == "history":
 		a.historyPageAtWidth(c, width)
 	case a.page == "branches":
 		a.branchesPage(c)
-	case a.page == "stash":
-		a.stashPage(c)
 	case a.page == "worktrees":
 		a.worktreesPage(c)
 	default:
@@ -763,7 +792,8 @@ func (a *app) loadingPage(c *ui.Context) {
 func (a *app) emptyPage(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	zone := ui.Column(c).Fill().Center().Gap(12).Padding(32)
-	if !a.repositoryChooserBlocked() {
+	blocked := a.repositoryChooserBlocked()
+	if !blocked {
 		if zone.FileDragOver() {
 			zone.Draw(func(p *ui.Painter, r ui.Rect) {
 				const inset = 8
@@ -790,7 +820,7 @@ func (a *app) emptyPage(c *ui.Context) {
 			display.Text(c, a.loadErr, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 3}).
 				MaxWidth(520).TextAlign(ui.Center)
 		}
-		choose := workbenchButton(c, a.t("chooseFolder"), buttonPrimary, false)
+		choose := workbenchButton(c, a.t("chooseFolder"), buttonPrimary, blocked)
 		if choose.Clicked() {
 			a.chooseRepository()
 		}

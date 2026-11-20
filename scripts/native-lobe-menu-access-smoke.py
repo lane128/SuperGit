@@ -204,7 +204,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-menu-access.") as directory:
             git_dir, parked = repo / ".git", root / "parked-git"
             git_dir.rename(parked)
             try:
-                coordinate_click("button", "Refresh")
+                auto("key", "cmd+r", "--settle")
                 auto("wait", "--text", "Could not read the repository", "--timeout", "20s", "--settle")
                 failure = snapshot()
                 assert "Showing the last successful read." in failure
@@ -225,7 +225,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-menu-access.") as directory:
                 while True:
                     text = snapshot()
                     matches = [e for e in entries(text, role) if e[1] == label and "disabled" not in e[2]]
-                    is_ready = any(e[1] == "Refresh" and "disabled" not in e[2] for e in entries(text, "button"))
+                    is_ready = any(e[1] == "Sync" and "disabled" not in e[2] for e in entries(text, "menuButton"))
                     if matches and (not ready or is_ready):
                         return matches[-1]
                     if app.poll() is not None or time.monotonic() > deadline:

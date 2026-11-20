@@ -1,0 +1,154 @@
+--- a/ui/input.go
++++ b/ui/input.go
+@@ -13,6 +13,20 @@
+ // an element takes files dragged over or dropped at the event's position,
+ // the key pressed or the composition (platform.WindowHandler.SurfaceEvent).
+ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
++	// A shortcut/click may open or close an input in the next build. Native
++	// events can arrive before the display refresh; route the next input only
++	// after that transition has committed, rather than to the previous editor.
++	switch ev.Kind {
++	case platform.KeyPressed, platform.TextInput, platform.TextComposition, platform.SurfaceCommand, platform.PointerDown:
++		if rt.inputBarrier && !rt.inFrame && !rt.closed {
++			rt.inputBarrier = false
++			rt.runFrame()
++			if rt.closed {
++				return false
++			}
++		}
++	}
++
+ 	if ev.Kind == platform.SurfaceCommandEnabled {
+ 		// A menu asking about its item changes nothing.
+ 		return rt.commandEnabled(ev.Text)
+@@ -82,6 +96,7 @@
+ 	case platform.PointerUp:
+ 		rt.pointerMove(x, y)
+ 		rt.pointerUp(ev.Button, ev.Clicks, false)
++		rt.inputBarrier = true
+ 	case platform.PointerCancel:
+ 		// Where the pointer went the system may not tell: it stays.
+ 		button := -1
+@@ -108,7 +123,17 @@
+ 	case platform.KeyPressed:
+ 		rt.modsChanged(Modifiers(ev.Mods))
+ 		rt.holdKey(Modifiers(ev.Mods), Key(ev.Key), Key(ev.PhysicalKey))
++		key := ev.Key
++		if platform.KeyByPosition(ev.Key, ev.PhysicalKey, ev.Mods) {
++			key = ev.PhysicalKey
++		}
++		// Drawn menus already order their entire queued key sequence, including
++		// ignoring navigation after a choice. Do not split that transaction.
++		barrier := rt.menu.drawn == nil && (rt.claimed(keyEvent{mods: Modifiers(ev.Mods), key: Key(key), repeat: ev.Repeat}) || key == platform.KeyEnter || key == platform.KeyEscape || key == platform.KeyTab)
+ 		taken = rt.keyDownPhysical(Modifiers(ev.Mods), Key(ev.Key), Key(ev.PhysicalKey), KeyCode(ev.Code), ev.Repeat)
++		if barrier || ev.Key == platform.KeyBackspace && taken {
++			rt.inputBarrier = true
++		}
+ 	case platform.ModifiersChanged:
+ 		rt.modsChanged(Modifiers(ev.Mods))
+ 	case platform.RawKeyPressed, platform.RawKeyReleased:
+--- a/ui/runtime.go
++++ b/ui/runtime.go
+@@ -103,6 +103,7 @@
+ // the view function, lays them out, paints them and routes input to the
+ // elements of the last frame. Main thread only, except where noted.
+ type engine struct {
++	inputBarrier bool // commit deferred focus changes before the next input
+ 	// inlineRects is placeInline's scratch, kept from frame to frame.
+ 	inlineRects []text.Rect
+ 	// byPosition holds the keys whose press stood for its physical key
+@@ -650,6 +651,7 @@
+ 	if rt.inFrame || rt.closed {
+ 		return
+ 	}
++	rt.inputBarrier = false
+ 	rt.inFrame = true
+ 	defer rt.endFrame()
+ 
+--- /dev/null
++++ b/ui/input_barrier_test.go
+@@ -0,0 +1,84 @@
++package ui
++
++import (
++	"github.com/egoist/mygo/internal/platform"
++	"testing"
++)
++
++func TestDeferredInputFocusTransitionPreservesBurstText(t *testing.T) {
++	for _, mods := range []Modifiers{Cmd, Cmd | Shift} {
++		open, focus, namePhase := false, false, false
++		body, query, name := "body", "", ""
++		tt := NewTester(func(c *Context) {
++			Column(c).Fill().Children(func() {
++				TextAreaBase(c, &body).Label("Body").Height(80)
++			})
++			c.OnWindowShortcut(mods, KeyP, func() { open, focus = true, true })
++			var field Element
++			c.Key("one-command-session")
++			DialogBase(c, &open, func(backdrop, panel Element) {
++				panel.Column().Width(260).Children(func() {
++					if namePhase {
++						field = TextInputBase(c.Key("name"), &name).Label("Name")
++						field.OnTextKey(func(k TextKey) bool {
++							if k.Key == KeyBackspace && k.Mods == 0 && k.Text() == "" {
++								namePhase, focus = false, true
++								return true
++							}
++							return false
++						})
++					} else {
++						field = TextInputBase(c.Key("query"), &query).Label("Query")
++						field.OnSubmit(func() { namePhase, focus = true, true })
++					}
++				})
++			})
++			if open && focus {
++				field.Focus()
++				focus = false
++			}
++		}, 400, 260)
++		tt.SetFocused(true)
++		if err := tt.Click("Body"); err != nil {
++			t.Fatal(err)
++		}
++		tt.Key(0, KeyEnd)
++		key := func(m Modifiers, k Key) {
++			tt.rt.event(platform.SurfaceEvent{Kind: platform.KeyPressed, Key: platform.Key(k), Mods: platform.Modifiers(m)})
++			tt.rt.event(platform.SurfaceEvent{Kind: platform.KeyReleased, Key: platform.Key(k), Mods: platform.Modifiers(m)})
++		}
++		text := func(s string) { tt.rt.event(platform.SurfaceEvent{Kind: platform.TextInput, Text: s}) }
++		// No display frames between opening, typing, entering parameters,
++		// returning, cancelling and typing into the restored original editor.
++		key(mods, KeyP)
++		text("crbr")
++		key(0, KeyEnter)
++		key(0, KeyBackspace)
++		key(0, KeyEscape)
++		text("X")
++		tt.Frame()
++		if open || namePhase || query != "crbr" || body != "bodyX" || name != "" {
++			t.Fatalf("mods=%v open=%v parameters=%v query=%q name=%q body=%q", mods, open, namePhase, query, name, body)
++		}
++	}
++}
++
++func TestOrdinaryBurstTextStillBatchesUntilDisplayFrame(t *testing.T) {
++	value := ""
++	frames := 0
++	tt := NewTester(func(c *Context) { frames++; TextInputBase(c, &value).Label("Input") }, 300, 100)
++	tt.SetFocused(true)
++	if err := tt.Click("Input"); err != nil {
++		t.Fatal(err)
++	}
++	before := frames
++	tt.rt.event(platform.SurfaceEvent{Kind: platform.TextInput, Text: "a"})
++	tt.rt.event(platform.SurfaceEvent{Kind: platform.TextInput, Text: "b"})
++	if frames != before {
++		t.Fatal("ordinary typing forced synchronous frames")
++	}
++	tt.Frame()
++	if value != "ab" {
++		t.Fatalf("batched text=%q", value)
++	}
++}

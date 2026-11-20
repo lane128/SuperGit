@@ -1,6 +1,7 @@
 package lobedesk
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -37,7 +38,7 @@ func TestDisabledCommitExplainsWhy(t *testing.T) {
 	a.loading = true
 	tt.Frame()
 	button, _ = tt.AccessByRole(ui.RoleButton, a.t("commit"))
-	if button.Description != a.t("loadingRepo") {
-		t.Fatal("loading reason is missing")
+	if !strings.Contains(button.Description, a.t("loadingRepo")) {
+		t.Fatalf("loading reason is missing: %q", button.Description)
 	}
 }

@@ -80,7 +80,7 @@ func (tabs *repositoryTabs) newSession(source *app) *app {
 	next := &app{
 		repositoryTabs: tabs, ctx: ctx, cancel: cancel, runOnMain: source.runOnMain,
 		openDirectoryDialog: source.openDirectoryDialog, saveFileDialog: source.saveFileDialog,
-		page: "changes", lineAnchor: -1, lineCursor: -1, linePressIndex: -1,
+		page: "history", lineAnchor: -1, lineCursor: -1, linePressIndex: -1,
 		commitAnchor: -1, commitCursor: -1, commitPressIndex: -1,
 	}
 	next.copyWindowPreferences(source)
@@ -91,6 +91,9 @@ func (tabs *repositoryTabs) newSession(source *app) *app {
 // positions remain in their original session.
 func (a *app) copyWindowPreferences(source *app) {
 	a.locale, a.themeMode, a.palette, a.dockIcon = source.locale, source.themeMode, source.palette, source.dockIcon
+	a.sidebarHidden, a.expandMerges = source.sidebarHidden, source.expandMerges
+	a.syncHiddenBranches(source.hiddenBranches)
+	a.setIgnoreDiffWhitespace(source.ignoreDiffWhitespace)
 	a.codeFontSize, a.splitDiff = source.codeFontSize, source.splitDiff
 	a.showGraph, a.historyLine, a.historyNode = source.showGraph, source.historyLine, source.historyNode
 	a.hideAuthor, a.hideTime = source.hideAuthor, source.hideTime
@@ -242,6 +245,7 @@ func (tabs *repositoryTabs) activate(next *app, fresh bool) {
 		return
 	}
 	previous.cancelLocalProbe()
+	previous.syncOpen = false
 	next.copyWindowPreferences(previous)
 	next.window = previous.window
 	next.localWatch.focused = previous.localWatch.focused
@@ -415,14 +419,7 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 	}
 	tabs.stripWidth, tabs.stripButtonWidth, tabs.stripTabCount = width, buttonWidth, len(visibleTabs)
 	tabs.stripOverflowSpace, tabs.stripOpening = space, opening
-	bar := c.TitleBar()
-	height := max(float32(titleBarHeight), bar.Height)
-	inset := float32(8)
-	if bar.Left > 0 {
-		inset = max(bar.Left+8, 80)
-	}
-	ui.Row(c).Height(height).Shrink(0).Padding(0, max(8, bar.Right+4), 0, inset).Gap(gap).AlignItems(ui.Center).DragWindow().
-		BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary).Children(func() {
+	windowTitleBar(c).Gap(gap).Children(func() {
 		var activate, close, alias, dragSource, dragTarget *app
 		names := tabs.checkoutTabNames(c, visibleTabs)
 		viewport := ui.Box(c).Grow(1).Basis(0).MinWidth(0).Height(34)
@@ -481,18 +478,6 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 			if button.Clicked() && canOpen {
 				a.openRepositoryPicker(true)
 				c.After(0)
-			}
-		}
-		if a.repo != nil {
-			label := a.t("chooseFolder")
-			open := styleWorkbenchButton(c, ui.ButtonBase(c.Key("open-repository")), buttonNormal, a.repositoryChooserBlocked(), false).
-				Label(label).Shrink(0)
-			open.Children(func() {
-				ui.Icon(c, lucide.FolderOpen()).FontSize(scaledFont(14))
-				ui.Text(c, label).FontSize(scaledFont(12)).SingleLine()
-			})
-			if open.Clicked() {
-				a.chooseRepository()
 			}
 		}
 		label := a.t("newRepositoryTab")

@@ -18,7 +18,7 @@ func TestMixedChangesSplitIntoTwoCommits(t *testing.T) {
 	a, _, root := worktreeApp(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	a.ctx = ctx
-	a.page, a.locale, a.worktreeSelected = "changes", localeEnglish, true
+	a.page, a.locale, a.worktreeSelected = "history", localeEnglish, true
 	callbacks := make(chan func(), 128)
 	a.runOnMain = func(fn func()) { callbacks <- fn }
 	t.Cleanup(func() {
@@ -243,10 +243,14 @@ func TestMixedChangesSplitIntoTwoCommits(t *testing.T) {
 	if got := splitCommitGit(t, root, "branch", "--show-current"); got != "main\n" {
 		t.Fatalf("branch changed: %q", got)
 	}
-	click(ui.RoleTab, a.t("history"))
+	// There is no History tab any more: choosing the list's first commit is
+	// what leaves the working tree's row.
+	if source := a.historySource(); len(source) > 0 {
+		a.selectCommit(source[0].SHA)
+	}
 	wait()
 	if a.worktreeSelected || a.selectedSHA == "" {
-		t.Fatal("History did not open a committed result")
+		t.Fatal("the commit list did not open a committed result")
 	}
 	snapshot("completed-history")
 	// Read the result in the history model used by the workbench, as well as Git.

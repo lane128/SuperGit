@@ -9,21 +9,27 @@ import (
 // historyMergeFolds is view state. The projection keeps the original commit
 // objects, including all parents for the details pane and commit navigation.
 type historyMergeFolds struct {
-	source      []gitrepo.Commit
-	fullLanes   int
-	head        string
-	branches    map[string]bool
-	mergeOf     map[string]string
-	expanded    map[string]bool // Eligible merges are folded unless opened in this session.
-	projected   []gitrepo.Commit
-	dirty       bool
-	active      bool
-	partialRows bool
-	anchor      string
+	source          []gitrepo.Commit
+	fullLanes       int
+	head            string
+	branches        map[string]bool
+	mergeOf         map[string]string
+	expanded        map[string]bool // Per-merge overrides for the current default.
+	defaultExpanded bool
+	projected       []gitrepo.Commit
+	dirty           bool
+	active          bool
+	partialRows     bool
+	anchor          string
 }
 
 func (a *app) projectHistoryMerges(rows []gitrepo.Commit) []gitrepo.Commit {
 	folds := &a.historyMergeFolds
+	if folds.defaultExpanded != a.expandMerges {
+		folds.defaultExpanded = a.expandMerges
+		folds.expanded = nil
+		folds.dirty = true
+	}
 	canFold := a.showGraph && !a.historyReloading && a.historyErr == "" && a.fileFilter == "" &&
 		a.historyRef.Kind == "" && strings.TrimSpace(a.historyQuery) == ""
 	folds.active = canFold && !a.historyMore
@@ -32,7 +38,7 @@ func (a *app) projectHistoryMerges(rows []gitrepo.Commit) []gitrepo.Commit {
 		folds.partialRows = canFold && a.historyMore && len(rows) > 0
 		return rows
 	}
-	preserveScroll := folds.partialRows && !a.revealSelection && a.historyScroll.Y > historyListPadding
+	preserveScroll := folds.partialRows && !a.revealSelection && a.historyScroll.Y >= historyListPadding+a.historyRowHeight()+a.historyStashExtent
 	folds.partialRows = false
 	if !sameHistorySnapshot(folds.source, rows) || folds.head != a.status.Head {
 		folds.source, folds.head = rows, a.status.Head
@@ -43,8 +49,8 @@ func (a *app) projectHistoryMerges(rows []gitrepo.Commit) []gitrepo.Commit {
 			// Keep its explicit expansion for when that ref goes away.
 			present := make(map[string]bool, len(folds.expanded))
 			for _, commit := range rows {
-				if folds.expanded[commit.SHA] {
-					present[commit.SHA] = true
+				if state, ok := folds.expanded[commit.SHA]; ok {
+					present[commit.SHA] = state
 				}
 			}
 			folds.expanded = present
@@ -53,13 +59,13 @@ func (a *app) projectHistoryMerges(rows []gitrepo.Commit) []gitrepo.Commit {
 	}
 	// Selecting a hidden commit via a parent link, a search, or an outside
 	// jump reveals the containing branch again.
-	if merge := folds.mergeOf[a.selectedSHA]; merge != "" && !folds.expanded[merge] {
+	if merge := folds.mergeOf[a.selectedSHA]; merge != "" && !folds.isExpanded(merge) {
 		folds.expand(merge)
 	}
 	if folds.dirty || preserveScroll {
 		folds.projected = rows
 		for merge := range folds.branches {
-			if !folds.expanded[merge] {
+			if !folds.isExpanded(merge) {
 				folds.projected = a.foldedHistoryRows(rows, preserveScroll)
 				break
 			}
@@ -77,10 +83,10 @@ func (a *app) foldedHistoryRows(rows []gitrepo.Commit, preserveScroll bool) []gi
 	projected := make([]gitrepo.Commit, 0, len(rows))
 	anchor, height := -1, a.historyRowHeight()
 	if preserveScroll {
-		anchor = int((a.historyScroll.Y - historyListPadding) / height)
+		anchor = int((a.historyScroll.Y - historyListPadding - height - a.historyStashExtent) / height)
 	}
 	for i, commit := range rows {
-		if merge := folds.mergeOf[commit.SHA]; merge != "" && !folds.expanded[merge] {
+		if merge := folds.mergeOf[commit.SHA]; merge != "" && !folds.isExpanded(merge) {
 			continue
 		}
 		if anchor >= 0 && i >= anchor {
@@ -175,6 +181,13 @@ func findHistoryMergeBranches(rows []gitrepo.Commit, head string) (map[string]bo
 	return branches, mergeOf
 }
 
+func (folds *historyMergeFolds) isExpanded(merge string) bool {
+	if v, ok := folds.expanded[merge]; ok {
+		return v
+	}
+	return folds.defaultExpanded
+}
+
 func (folds *historyMergeFolds) expand(merge string) {
 	if folds.expanded == nil {
 		folds.expanded = make(map[string]bool)
@@ -189,13 +202,16 @@ func (a *app) toggleHistoryMerge(merge string) {
 		return
 	}
 	folds.anchor = merge
-	if !folds.expanded[merge] {
+	if !folds.isExpanded(merge) {
 		folds.expand(merge)
 		return
 	}
 	if folds.mergeOf[a.selectedSHA] == merge {
 		a.selectCommit(merge)
 	}
-	delete(folds.expanded, merge)
+	if folds.expanded == nil {
+		folds.expanded = make(map[string]bool)
+	}
+	folds.expanded[merge] = false
 	folds.dirty = true
 }

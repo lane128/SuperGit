@@ -21,7 +21,7 @@ func (a *app) revealIfSelected(row ui.Element, selected bool) {
 // on screen. The history page's first row carries the working tree, so
 // selecting it is what makes the files column the live changes.
 func (a *app) worktreeFilesShown() bool {
-	return (a.page == "history" || a.page == "changes") && a.worktreeSelected
+	return a.page == "history" && a.worktreeSelected
 }
 
 // toggleSelectedStage stages or unstages the working tree's selected file, the
@@ -76,13 +76,15 @@ func (a *app) canCommitShortcut() bool {
 	if a.repo == nil || a.busy || a.loading {
 		return false
 	}
-	if a.page != "changes" && (a.historyDetailsHidden || a.historyRefOpen) {
+	if a.historyDetailsHidden || a.historyRefOpen {
 		return false
 	}
 	if a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open {
 		return false
 	}
-	return a.worktreeFilesShown() && (a.page == "changes" || a.detailTabShown() == detailTabSummary)
+	// The commit box is docked under the files column, so it is on screen
+	// whichever detail tab is in front.
+	return a.worktreeFilesShown()
 }
 
 // worktreeDiffShown reports whether the working tree's patch is the one on
@@ -133,10 +135,8 @@ func (a *app) moveSelection(delta int) {
 	switch a.page {
 	case "history":
 		if !a.moveCommitLineSelection(delta, false) {
-			a.moveCommitSelection(delta)
+			a.moveHistorySelection(delta)
 		}
-	case "stash":
-		a.moveStashSelection(delta)
 	case "branches":
 		a.moveBranchSelection(delta)
 		return
@@ -217,7 +217,7 @@ func (a *app) moveFileSelection(delta int) {
 	a.selectWorkspaceFile(ref, 0, false)
 }
 
-func (a *app) moveCommitSelection(delta int) {
+func (a *app) moveHistorySelection(delta int) {
 	// The list draws a placeholder while a new walk is out. Arrows would then
 	// move a selection the reader cannot see, and the row they land on belongs
 	// to the filter that was just replaced.
@@ -230,19 +230,27 @@ func (a *app) moveCommitSelection(delta int) {
 		return
 	}
 	commits := a.projectHistoryMerges(a.filteredHistoryRows())
-	// Without rows the page draws a placeholder, so there is nothing for the
-	// arrows to land on: the working tree's row rides with the commits.
-	if len(commits) == 0 {
+	stashes := a.stashes
+	if len(commits) == 0 && len(stashes) == 0 {
 		return
 	}
-	// The working tree's row sits above the commits, so position 0 is the
-	// working tree and position i+1 is commit i.
-	total := len(commits) + 1
+	// Positions are the rows the list draws: the working tree first, then the
+	// stash entries, then the commits.
+	lead := len(stashes) + 1
+	total := len(commits) + lead
 	position, found := 0, a.worktreeSelected
 	if !found {
+		for i, stash := range stashes {
+			if stash.SHA == a.selectedStash {
+				position, found = i+1, true
+				break
+			}
+		}
+	}
+	if !found && a.selectedStash == "" {
 		for i, commit := range commits {
 			if commit.SHA == a.selectedSHA {
-				position, found = i+1, true
+				position, found = lead+i, true
 				break
 			}
 		}
@@ -252,12 +260,21 @@ func (a *app) moveCommitSelection(delta int) {
 	} else {
 		position = clampIndex(position+delta, total)
 	}
-	if position == 0 {
+	switch {
+	case position == 0:
 		a.revealSelection = true
 		a.selectWorktree()
 		return
+	case position < lead:
+		stash := stashes[position-1]
+		if stash.SHA == a.selectedStash {
+			return
+		}
+		a.revealSelection = true
+		a.selectStash(stash.SHA)
+		return
 	}
-	index := position - 1
+	index := position - lead
 	if commits[index].SHA == a.selectedSHA {
 		// Down on the last loaded row still asks for the next page: the
 		// selection cannot move, but the list can grow under it.
@@ -273,29 +290,6 @@ func (a *app) moveCommitSelection(delta int) {
 	if index+3 >= len(commits) {
 		a.loadMoreHistory()
 	}
-}
-
-func (a *app) moveStashSelection(delta int) {
-	if len(a.stashes) == 0 {
-		return
-	}
-	index := -1
-	for i, stash := range a.stashes {
-		if stash.SHA == a.selectedStash {
-			index = i
-			break
-		}
-	}
-	if index < 0 {
-		index = listStartIndex(delta, len(a.stashes))
-	} else {
-		index = clampIndex(index+delta, len(a.stashes))
-	}
-	if a.stashes[index].SHA == a.selectedStash {
-		return
-	}
-	a.revealSelection = true
-	a.selectStash(a.stashes[index].SHA)
 }
 
 func clampIndex(index, length int) int {

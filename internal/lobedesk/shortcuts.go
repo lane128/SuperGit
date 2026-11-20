@@ -276,7 +276,8 @@ func (a *app) registerShortcuts(c *ui.Context) {
 	a.discardStaleQuickCheckout()
 	a.discardStaleChildNavigation()
 	a.discardStaleQuickRepositorySwitch()
-	if a.commandPalette.open || a.quickCheckout.open || a.childNavigation.open || a.quickRepositorySwitch.open {
+	a.discardStaleSnapshotFile()
+	if a.snapshotView.open || a.commandPalette.open || a.quickCheckout.open || a.childNavigation.open || a.quickRepositorySwitch.open {
 		return
 	}
 	typing := c.FocusTakesText()

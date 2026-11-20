@@ -126,13 +126,13 @@ func TestThePaletteTriggerNamesItself(t *testing.T) {
 func TestTheBranchSelectorNamesItself(t *testing.T) {
 	a := &app{
 		locale: localeChinese,
-		status: gitrepo.Status{Branch: "main"},
+		status: gitrepo.Status{Branch: "main", Upstream: "origin/main"},
 		branches: []gitrepo.Branch{
 			{Name: "main", Current: true},
 			{Name: "dev"},
 		},
 	}
-	tt := pageTester(a, a.branchSelector)
+	tt := pageTester(a, func(c *ui.Context) { a.toolbarCommandControl(c, true) })
 	trigger, ok := tt.AccessByRole(ui.RoleButton, a.t("branches"))
 	if !ok {
 		t.Fatal("the branch selector has no accessible name")

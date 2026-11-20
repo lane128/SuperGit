@@ -144,7 +144,7 @@ def run():
                 check_file_group_tab(staged_row)
                 press("button", "Modified Files")
                 press("tab", "a.go · Unstaged")
-                press("button", "Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait("+working version")
                 auto("wait", "--text", "Loading diff…", "--gone", "--timeout", "20s", "--settle")
                 assert any(e[2] == "a.go · Unstaged" and "checked" in e[3] for e in tabs()), "folded-group refresh redirected active tab"
@@ -233,7 +233,7 @@ def run():
                 assert after_stage[0] == before[0] and after_stage[2] == before[2], "stage changed HEAD or working bytes"
                 for path in paths[1:]:
                     assert git("show", ":" + path) == "historical version\n", "stage touched an unrelated Index entry"
-                press("button", "Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait("+working version")
                 assert fingerprint() == after_stage, "refresh wrote repository data"
                 assert "Draft survives tabs" in auto("snapshot", "--full"), "refresh lost draft"
@@ -245,7 +245,7 @@ def run():
                 # A tracked patch exceeds the existing 4 MiB Git output cap.
                 oversized = paths[2]
                 (repo / oversized).write_text("x" * (5 << 20) + "\n")
-                press("button", "Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait("Git 输出超过 4 MiB")
                 wait("+other working version")
                 (repo / oversized).write_text("recovered patch\n")
@@ -346,7 +346,7 @@ def run():
                 assert committed[0] != before_commit[0] and committed[1:] == before_commit[1:], "commit changed Index or working bytes"
                 git("config", "user.name", "Current Fixture Committer")
                 git("config", "user.email", "committer@example.invalid")
-                press("button", "Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait("Author: Current Fixture Committer <committer@example.invalid>")
                 press("checkBox", "Amend last commit")
                 wait("Author: Fixture <fixture@example.invalid>")
@@ -378,7 +378,7 @@ def run():
                 untracked_name = "new notes.txt"
                 untracked_bytes = b"keep this untracked file\n"
                 (repo / untracked_name).write_bytes(untracked_bytes)
-                press("button", "Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait("Untracked Files")
                 wait_enabled_button("Stage all")
                 batch_before = fingerprint()
@@ -404,7 +404,7 @@ def run():
                 wait_enabled_button("Stage all")
                 git("add", "--", paths[1])
                 (repo / paths[1]).write_text("new unstaged on staged version\n")
-                press("button", "Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait("new unstaged on staged version")
                 discard_before = fingerprint()
                 # Repository confirmations belong to their initiating main
@@ -459,7 +459,7 @@ def run():
                 for i in range(24):
                     git("branch", f"native-ref-{i:02d}", "HEAD")
                 count = int(git("rev-list", "--all", "--count"))
-                press("button", "Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait(f"{count} commits")
                 current = controls()
                 assert not any(e[1] == "button" and e[2] == "Load more commits" for e in current), "history still requires a manual page button"
@@ -490,7 +490,7 @@ def run():
                 file_count = len(git("log", "--follow", "--format=%H", "HEAD", "--", paths[1]).splitlines())
                 file_before = fingerprint()
                 refreshed_count = int(git("rev-list", "--all", "--count"))
-                press("button", "Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait(f"{refreshed_count} commits")
                 wait("Automatic native commit 0000")
                 changes = next(e for e in controls() if e[1] == "listItem" and re.fullmatch(r"\d+ changes?", e[2]))

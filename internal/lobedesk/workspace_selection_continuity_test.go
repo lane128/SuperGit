@@ -23,9 +23,11 @@ func TestWorkspaceArrowThenShiftClickKeepsRangeAnchor(t *testing.T) {
 
 func TestWorkspaceWindowListMoveEstablishesRangeAnchor(t *testing.T) {
 	a, _, tt := workspaceSelectionFixture(t)
-	a.page = "changes"
+	a.page = "history"
 	clickSelectionRow(t, tt, "b.go", filesSectionUnstaged, 0)
-	a.moveSelection(1)
+	// The files column is its own focus group in the History window, so its
+	// list move is the file move rather than the commit list's.
+	a.moveFileSelection(1)
 	tt.Frame()
 	if a.selectedPath != "c.go" {
 		t.Fatalf("page navigation did not preview c.go: %q", a.selectedPath)

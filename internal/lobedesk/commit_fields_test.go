@@ -16,6 +16,23 @@ func focusCommitField(t *testing.T, tt *ui.Tester, name string) {
 	tt.ClickAt(field.Bounds.X+field.Bounds.W/2, field.Bounds.Y+field.Bounds.H/2)
 }
 
+// selectWorktreeRow chooses the History list's working tree row. A repository
+// opens on its newest commit, so the commit editor — docked under the files
+// column — is on screen once that row is chosen.
+func selectWorktreeRow(t *testing.T, tt *ui.Tester, a *app) {
+	t.Helper()
+	label := a.t("noChangesShort")
+	if n := len(a.status.Entries); n > 0 {
+		label = a.changesLabel(n)
+	}
+	row, ok := tt.AccessByRole(ui.RoleOption, label)
+	if !ok || row.Offscreen || row.Bounds.W <= 0 || row.Bounds.H <= 0 {
+		t.Fatalf("unusable working tree row %q: %+v", label, row)
+	}
+	tt.ClickAt(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2)
+	tt.Frame()
+}
+
 func TestCommitFieldsHaveExplicitBoundaries(t *testing.T) {
 	a := &app{locale: localeEnglish}
 	tt := commitFormTester(a)

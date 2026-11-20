@@ -94,7 +94,7 @@ func (a *app) saveConflictEditor(s *conflictEditorState) {
 
 func (a *app) conflictEditorBody(c *ui.Context, s *conflictEditorState) {
 	c = c.Key(s)
-	root := ui.Column(c).Fill().Gap(8).Padding(10, 12)
+	root := ui.Column(c.Key("conflict-body")).Fill().Gap(8).Padding(10, 12)
 	root.Children(func() {
 		ui.Row(c).FillWidth().Gap(6).Shrink(0).Children(func() {
 			if workbenchButton(c, a.t("conflictEditorPatch"), buttonNormal, false).Clicked() {
@@ -123,21 +123,39 @@ func (a *app) conflictEditorBody(c *ui.Context, s *conflictEditorState) {
 		}
 		labels := []string{a.conflictSideText("conflictOurs"), a.conflictSideText("conflictTheirs"), a.t("conflictEditorBase")}
 		sources := []string{s.Original.Ours, s.Original.Theirs, s.Original.Base}
-		ui.Row(c).FillWidth().Gap(6).Shrink(0).Children(func() {
-			for i, label := range labels {
-				kind := buttonNormal
-				if s.Source == i {
-					kind = buttonPrimary
-				}
-				if workbenchButton(c.Key(label), label, kind, false).Clicked() {
-					s.Source = i
-				}
+		sourceButton := func(c *ui.Context, i int, label string) {
+			kind := buttonNormal
+			if s.Source == i {
+				kind = buttonPrimary
 			}
-		})
-		wide := root.Bounds().W >= 660 && s.Source != 2
+			button := workbenchButton(c.Key(label), label, kind, false)
+			if button.Clicked() {
+				s.Source = i
+			}
+		}
+		// Three labels side by side need a little over 330 points. A narrower
+		// details pane stacks them so the choice stays on screen instead of
+		// running past the window's edge.
+		if root.Bounds().W >= 340 {
+			ui.Row(c).FillWidth().Gap(6).Shrink(0).Children(func() {
+				for i, label := range labels {
+					sourceButton(c, i, label)
+				}
+			})
+		} else {
+			ui.Column(c).FillWidth().Gap(4).Shrink(0).Children(func() {
+				for i, label := range labels {
+					sourceButton(c, i, label)
+				}
+			})
+		}
+		wide := root.Bounds().W >= 560 && s.Source != 2
 		sourceHeight := float32(170)
+		// The source panes give up their height first: the result editor and
+		// the save action must stay on screen even when an error message and a
+		// stacked source choice take the room above them.
 		if available := root.Bounds().H; available > 0 {
-			sourceHeight = max(60, min(sourceHeight, available-400))
+			sourceHeight = max(60, min(sourceHeight, available-410))
 		}
 		ui.Row(c.Key("sources")).FillWidth().Height(sourceHeight).Shrink(0).Gap(12).AlignItems(ui.Stretch).Children(func() {
 			for i := range sources {

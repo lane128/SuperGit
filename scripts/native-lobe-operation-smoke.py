@@ -97,7 +97,7 @@ def run():
 
             def ready():
                 deadline = time.monotonic() + 25
-                while not any(e[1] == "button" and e[2] == "Refresh" and "disabled" not in e[3] for e in controls()):
+                while not any(e[1] == "menuButton" and e[2] == "Sync" and "disabled" not in e[3] for e in controls()):
                     if time.monotonic() > deadline:
                         raise AssertionError("Operation/refresh did not finish")
                     time.sleep(0.05)
@@ -140,7 +140,7 @@ def run():
                 print("PASS native conflict Continue disabled; Abort cancel preserves conflict and confirmed Abort restores original state", flush=True)
 
                 start_conflict()
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 ready()
                 wait("In progress: cherry-pick")
                 before_skip = fingerprint()
@@ -157,7 +157,7 @@ def run():
                 start_conflict()
                 path.write_text("resolved main and side\n")
                 git("add", "--", path.name)
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 ready()
                 wait("In progress: cherry-pick")
                 before_continue = fingerprint()
@@ -178,7 +178,7 @@ def run():
                     result = git("rebase", side, check=False)
                     assert result.returncode != 0 and (repo / ".git/rebase-merge").is_dir(), "Fixture did not start rebase"
                     assert git("ls-files", "-u").stdout.strip(), "Rebase did not create conflict stages"
-                    press("Refresh")
+                    auto("key", "cmd+r", "--settle")
                     ready()
                     wait("In progress: rebase")
                     press("In progress: rebase")
@@ -219,7 +219,7 @@ def run():
                 rebase_conflict()
                 path.write_text("resolved rebase main and side\n")
                 git("add", "--", path.name)
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 ready()
                 before_rebase_continue = fingerprint()
                 press("Continue")
@@ -237,7 +237,7 @@ def run():
                     result = git("merge", "--no-edit", side, check=False)
                     assert result.returncode != 0 and (repo / ".git/MERGE_HEAD").is_file()
                     assert git("ls-files", "-u").stdout.strip()
-                    press("Refresh")
+                    auto("key", "cmd+r", "--settle")
                     ready()
                     wait("In progress: merge")
                     press("In progress: merge")
@@ -266,7 +266,7 @@ def run():
                 merge_conflict()
                 path.write_text("resolved merge main and side\n")
                 git("add", "--", path.name)
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 ready()
                 fill_field("Commit summary (required)", "Native merge resolution")
                 fill_field("Description (optional)", "Complete merge resolution body\n\nRefs: native-merge-fixture")
@@ -290,7 +290,7 @@ def run():
                     result = git("revert", "--no-edit", side, check=False)
                     assert result.returncode != 0 and (repo / ".git/REVERT_HEAD").is_file()
                     assert git("ls-files", "-u").stdout.strip()
-                    press("Refresh")
+                    auto("key", "cmd+r", "--settle")
                     ready()
                     wait("In progress: revert")
                     press("In progress: revert")
@@ -313,7 +313,7 @@ def run():
                 revert_conflict()
                 path.write_text("resolved revert main and side\n")
                 git("add", "--", path.name)
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 ready()
                 before_revert_continue = fingerprint()
                 press("Continue")

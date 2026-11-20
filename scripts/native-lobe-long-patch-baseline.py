@@ -144,7 +144,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-long-patch.") as directory:
                 deadline = time.monotonic() + 30
                 while True:
                     current = entries()
-                    ready = any(e[1] == "button" and e[2] == "Refresh" and "disabled" not in e[3] for e in current)
+                    ready = any(e[1] == "menuButton" and e[2] == "Sync" and "disabled" not in e[3] for e in current)
                     reading_patch = any(e[1] == "text" and e[2] == "Loading diff…" for e in current)
                     targets = [e for e in current if e[1] == "button" and "disabled" not in e[3] and (e[2] == label if label is not None else re.fullmatch(r"\d+ (?:Added|Deleted) line", e[2]))]
                     if ready and not reading_patch and targets:
@@ -155,7 +155,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-long-patch.") as directory:
                         if current is not None:
                             auto("focus", current[0], "--settle")
                             after = entries()
-                            if any(e[1] == "button" and e[2] == "Refresh" and "disabled" not in e[3] for e in after) and not any(e[1] == "text" and e[2] == "Loading diff…" for e in after):
+                            if any(e[1] == "menuButton" and e[2] == "Sync" and "disabled" not in e[3] for e in after) and not any(e[1] == "text" and e[2] == "Loading diff…" for e in after):
                                 return
                     if time.monotonic() > deadline:
                         raise AssertionError(f"Patch navigation did not become ready for {label}")

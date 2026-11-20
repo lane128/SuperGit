@@ -53,8 +53,11 @@ def apply(name, module_root, include):
 
 try:
     info = json.loads(run("module", ["go", "list", "-m", "-json", MODULE]).stdout)
-    if info.get("Version") != PINNED or "Replace" in info:
-        raise RuntimeError("This candidate requires the original pinned module, without a replacement")
+    replacement = info.get("Replace")
+    if info.get("Version") != PINNED or replacement and pathlib.Path(replacement["Dir"]).resolve() != (project / "third_party/mygo").resolve():
+        raise RuntimeError("This candidate requires the pinned SDK or its verified SuperGit compatibility snapshot")
+    if replacement:
+        run("verify-input-snapshot", ["python3", "scripts/check-mygo-input-snapshot.py"])
     with tempfile.TemporaryDirectory(prefix="supergit-mygo-frame-") as temporary:
         temporary = pathlib.Path(temporary)
         module_root = temporary / "mygo"

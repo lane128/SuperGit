@@ -18,6 +18,7 @@ Git 的**动作**一律用中文：提交、分支、合并、变基、拣选（
 | 词 | 类别 | 出现位置（示例键） | 为什么保留 |
 | --- | --- | --- | --- |
 | Git | 产品 | `openRepo`、`gitBehavior` | 产品名，不译 |
+| Sublime Text / Git LFS / Git Flow | 产品与 Git 扩展 | 命令面板 | 保留编辑器和扩展的正式名称，便于查找安装和使用文档 |
 | SuperGit | 产品 | `openRepoHint` | 应用名 |
 | Lobe / MyGo / UI | 产品 / 平台 | `paletteDefault`、`settingsAboutText`、`previewNote` | 组件库与界面栈的名字 |
 | Catppuccin / Frappe / Macchiato | 配色方案名 | `paletteCatppuccin*` | 方案原名；译名无法对上社区文档 |

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
+	"time"
 )
 
 const recentRepositoryLimit = 12
@@ -72,7 +74,22 @@ func (tabs *repositoryTabs) saveRecentRepository(root string, local []string) []
 	return roots
 }
 
+// recentStoreMu serializes saves from this process. flock is taken per open
+// file description, so two windows saving at once can see each other as
+// foreign holders even inside one app.
+var recentStoreMu sync.Mutex
+
+// A save waits briefly for another window's write to finish. The lock is held
+// for one small file, so the wait is short; a genuinely stuck writer still
+// surfaces as an error after these attempts.
+const (
+	recentLockAttempts = 5
+	recentLockWait     = 20 * time.Millisecond
+)
+
 func updateStoredRecentRepositories(path, root string, local []string) ([]string, error) {
+	recentStoreMu.Lock()
+	defer recentStoreMu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
@@ -83,8 +100,15 @@ func updateStoredRecentRepositories(path, root string, local []string) ([]string
 		return nil, err
 	}
 	defer lock.Close()
-	if err := lockRepositoryRecents(lock); err != nil {
-		return nil, err
+	var lockErr error
+	for attempt := 0; attempt < recentLockAttempts; attempt++ {
+		if lockErr = lockRepositoryRecents(lock); lockErr == nil {
+			break
+		}
+		time.Sleep(recentLockWait)
+	}
+	if lockErr != nil {
+		return nil, lockErr
 	}
 	saved, err := readRecentRepositories(path)
 	if err != nil {

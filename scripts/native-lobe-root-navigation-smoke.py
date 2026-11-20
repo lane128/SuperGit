@@ -116,7 +116,7 @@ try:
     def wait(text):auto('wait','--text',text,'--timeout','25s','--settle')
     def ready():
         end=time.monotonic()+25
-        while not any(e[1]=='button' and e[2]=='Refresh' and 'disabled' not in e[3] for e in entries()):
+        while not any(e[1]=="menuButton" and e[2]=="Sync" and 'disabled' not in e[3] for e in entries()):
             assert time.monotonic()<end,'Repository did not finish loading'
             time.sleep(.05)
     def evidence(name, text=None):
@@ -154,7 +154,7 @@ try:
         while True:
             changes=snap()
             rows=entries(changes)
-            if (any(e[1]=='button' and e[2]=='Refresh' and 'disabled' not in e[3] for e in rows)
+            if (any(e[1]=="menuButton" and e[2]=="Sync" and 'disabled' not in e[3] for e in rows)
                 and any(e[1]=='button' and e[2]=='Stage file' and 'disabled' not in e[3] for e in rows)):
                 break
             assert time.monotonic()<end,'Current file action did not become available'
@@ -210,7 +210,7 @@ try:
                 assert len(rows)==1,('Linked mouse target ambiguous',rows)
                 bounds=re.search(r'bounds=([\d.]+),([\d.]+),([\d.]+)x([\d.]+)',rows[0][3])
                 x,y,w,h=map(float,bounds.groups())
-                note('OBSERVATION semantic linked press had no root change; Refresh/dialog/tooltip surfaces='+repr([e for e in entries(post) if e[1] in ('dialog','alertDialog','tooltip') or e[2]=='Refresh']))
+                note('OBSERVATION semantic linked press had no root change; Sync/dialog/tooltip surfaces='+repr([e for e in entries(post) if e[1] in ('dialog','alertDialog','tooltip') or e[2]=='Sync']))
                 auto('click',str(x+w/2),str(y+h/2),'--settle')
                 evidence(prefix+'-linked-after-coordinate')
                 note('OBSERVATION clicked exact linked row center '+str((x+w/2,y+h/2)))

@@ -100,7 +100,7 @@ def control(role,label,enabled=True):
 def press(role,label):auto('press',control(role,label)[0],'--settle')
 def fill(label,value):auto('fill',control('textField',label)[0],value,'--settle')
 def wait(text):auto('wait','--text',text,'--timeout','25s','--settle')
-def ready():control('button','Refresh')
+def ready():control('menuButton','Sync')
 
 def evidence(name):
     text=snap();(root/(name+'.snapshot.txt')).write_text(text);auto('screenshot',str(root/(name+'.png')))

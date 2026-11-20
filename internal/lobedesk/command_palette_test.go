@@ -239,7 +239,7 @@ func TestCommandPaletteCatalogAndUnavailableRows(t *testing.T) {
 		}
 		seen[s.ID] = true
 	}
-	if len(seen) != 18 || !seen["repo.reopenClosedTab"] || !seen["repo.clone"] || !seen["tag.create"] || !seen["history.chooseRef"] || !seen["branch.create"] || !seen["stash.saveTracked"] || !seen["repo.fetch"] || !seen["repo.quickSwitch"] || seen["repo.quickSwitchAlias"] || !seen["branch.quickCheckout"] || seen["repo.reloadF5"] || seen["repo.pullF7"] || seen["repo.commit"] {
+	if len(seen) != 20+len(paletteActionShortcuts) || !seen["branch.merge"] || !seen["repo.reopenClosedTab"] || !seen["repo.clone"] || !seen["tag.create"] || !seen["history.chooseRef"] || !seen["branch.create"] || !seen["stash.saveTracked"] || !seen["repo.fetch"] || !seen["repo.quickSwitch"] || seen["repo.quickSwitchAlias"] || !seen["branch.quickCheckout"] || seen["repo.reloadF5"] || seen["repo.pullF7"] || seen["repo.commit"] || !seen["commit.copySHA"] {
 		t.Fatalf("wrong initial whitelist: %v", seen)
 	}
 	if !tt.HasText(a.t("commandPaletteNeedRepo")) {
@@ -322,7 +322,7 @@ func TestCommandPaletteCommitMessageActionOwnsFocus(t *testing.T) {
 	tt.Key(0, ui.KeyEnter)
 	tt.Frame()
 	tt.Frame()
-	if a.commandPalette.open || a.page != "changes" || !tt.Focused(a.t("commitSummary")) || a.commitText != "draft\n\nbody" {
+	if a.commandPalette.open || a.page != "history" || !a.worktreeSelected || !tt.Focused(a.t("commitSummary")) || a.commitText != "draft\n\nbody" {
 		t.Fatal("target action did not own Summary focus")
 	}
 	tt.Key(0, ui.KeyTab)

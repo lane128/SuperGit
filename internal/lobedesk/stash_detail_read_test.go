@@ -23,7 +23,7 @@ func stashDetailReadFixture(t *testing.T) (*app, <-chan func(), gitrepo.Stash) {
 	if err != nil || len(list) != 1 {
 		t.Fatalf("stash fixture: %v %v", list, err)
 	}
-	a.stashes, a.page, a.locale = list, "stash", localeEnglish
+	a.stashes, a.page, a.locale = list, "history", localeEnglish
 	return a, done, list[0]
 }
 
@@ -40,7 +40,7 @@ func receiveStashDetailRead(t *testing.T, done <-chan func()) func() {
 
 func TestStashDetailLoadsSavedPatchThroughWorkbenchControls(t *testing.T) {
 	a, done, stash := stashDetailReadFixture(t)
-	tt := pageTester(a, a.stashPage)
+	tt := pageTester(a, a.historyPage)
 	row, ok := tt.AccessByRole(ui.RoleOption, stashTitle(stash))
 	if !ok || row.Offscreen {
 		t.Fatal("missing stash row")

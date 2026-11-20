@@ -12,7 +12,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
-func TestSidebarRepositoryOpenReflectsRestoreReadiness(t *testing.T) {
+func TestWelcomeRepositoryOpenReflectsRestoreReadiness(t *testing.T) {
 	a := &app{locale: localeEnglish, loading: true}
 	calls := 0
 	a.openDirectoryDialog = func(mygo.OpenDialogOptions) ([]string, error) {
@@ -21,18 +21,18 @@ func TestSidebarRepositoryOpenReflectsRestoreReadiness(t *testing.T) {
 	}
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
-		a.sidebarOpenRow(c)
-	}, 260, 80)
+		a.emptyPage(c)
+	}, 500, 480)
 	tt.Frame()
-	node, ok := tt.AccessByRole(ui.RoleButton, a.t("openRepo"))
+	node, ok := tt.AccessByRole(ui.RoleButton, a.t("chooseFolder"))
 	if !ok || !node.Disabled {
-		t.Fatalf("sidebar Open must be disabled while repository restore is loading: %+v", node)
+		t.Fatalf("Welcome Open must be disabled while repository restore is loading: %+v", node)
 	}
 	a.loading = false
 	tt.Frame()
-	clickRepositoryTabsControl(t, tt, ui.RoleButton, a.t("openRepo"))
+	clickRepositoryTabsControl(t, tt, ui.RoleButton, a.t("chooseFolder"))
 	if calls != 1 {
-		t.Fatalf("sidebar Open did not invoke the picker once after restore: %d", calls)
+		t.Fatalf("Welcome Open did not invoke the picker once after restore: %d", calls)
 	}
 }
 
@@ -137,7 +137,7 @@ func TestOpenRepositoryKeepsAcceptedFolderDuringExternalGitChange(t *testing.T) 
 	tt := ui.NewTester(tabs.view, 980, 760)
 	tt.SetTitleBar(ui.TitleBar{Height: 38, Left: 72})
 	tt.Frame()
-	clickRepositoryTabsControl(t, tt, ui.RoleButton, a.t("openRepo"))
+	tt.Key(ui.Cmd, ui.KeyO)
 	for a.loading || tabs.opening != nil || tabs.active.loading {
 		runContinuation(t, callbacks)
 		tt.Frame()

@@ -23,71 +23,69 @@ func TestFileTabShortcutsCycleVersionedTabsFromActualEditor(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		pairs = append(pairs, [2]string{"detail.previousFileTabBracket", "detail.nextFileTabBracket"}, [2]string{"detail.previousFileTabCommandPage", "detail.nextFileTabCommandPage"})
 	}
-	for _, page := range []string{"changes", "history"} {
-		for _, pair := range pairs {
-			t.Run(page+"/"+pair[0], func(t *testing.T) {
-				previous, next := fileTabBinding(t, pair[0]), fileTabBinding(t, pair[1])
-				a, _ := overviewFixture(t)
-				a.locale = localeEnglish
-				a.page = page
-				draft := "title preserved\n\nbody preserved\n\n"
-				a.commitText = draft
-				a.amend = true
-				first, second := detailFileKey{Path: "same.go"}, detailFileKey{Path: "same.go", Staged: true}
-				tabs := a.detailTabs()
-				tabs.Open(first)
-				tabs.Open(second)
-				tabs.Activate(detailTabKey{Summary: true})
-				tt := pageTester(a, func(c *ui.Context) { a.registerShortcuts(c); a.contentCard(c) })
-				body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
-				if !ok {
-					t.Fatal("missing actual body editor")
-				}
-				tt.ClickAt(body.Bounds.X+body.Bounds.W/2, body.Bounds.Y+body.Bounds.H/2)
-				check := func(want detailTabKey) {
-					t.Helper()
-					tt.Frame()
-					if a.detailTabs().Active != want {
-						t.Fatalf("active=%+v want=%+v", a.detailTabs().Active, want)
-					}
-					label := a.detailSummaryLabel()
-					if !want.Summary {
-						label = want.File.Path + " · " + a.t("unstaged")
-						if want.File.Staged {
-							label = want.File.Path + " · " + a.t("staged")
-						}
-					}
-					node, ok := tt.AccessByRole(ui.RoleTab, label)
-					if !ok || !node.Focused {
-						t.Fatalf("activated tab not focused: %q", label)
-					}
-					if a.commitText != draft || !a.amend {
-						t.Fatal("tab shortcut edited draft/amend")
-					}
-					if !want.Summary && (a.selectedPath != want.File.Path || a.selectedStaged != want.File.Staged) {
-						t.Fatal("tab switched wrong file version")
-					}
-				}
-				for _, want := range []detailTabKey{{File: first}, {File: second}, {Summary: true}} {
-					tt.Key(next.Mod, next.Key)
-					check(want)
-				}
-				// Start the reverse direction from the actual Summary field too.
-				summary, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitSummary"))
-				tt.ClickAt(summary.Bounds.X+summary.Bounds.W/2, summary.Bounds.Y+summary.Bounds.H/2)
-				for _, want := range []detailTabKey{{File: second}, {File: first}, {Summary: true}} {
-					tt.Key(previous.Mod, previous.Key)
-					check(want)
-				}
-				tt.Key(0, ui.KeyTab)
+	for _, pair := range pairs {
+		t.Run(pair[0], func(t *testing.T) {
+			previous, next := fileTabBinding(t, pair[0]), fileTabBinding(t, pair[1])
+			a, _ := overviewFixture(t)
+			a.locale = localeEnglish
+			a.page = "history"
+			draft := "title preserved\n\nbody preserved\n\n"
+			a.commitText = draft
+			a.amend = true
+			first, second := detailFileKey{Path: "same.go"}, detailFileKey{Path: "same.go", Staged: true}
+			tabs := a.detailTabs()
+			tabs.Open(first)
+			tabs.Open(second)
+			tabs.Activate(detailTabKey{Summary: true})
+			tt := pageTester(a, func(c *ui.Context) { a.registerShortcuts(c); a.contentCard(c) })
+			body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+			if !ok {
+				t.Fatal("missing actual body editor")
+			}
+			tt.ClickAt(body.Bounds.X+body.Bounds.W/2, body.Bounds.Y+body.Bounds.H/2)
+			check := func(want detailTabKey) {
+				t.Helper()
 				tt.Frame()
-				tt.Frame()
-				node, _ := tt.AccessByRole(ui.RoleTab, a.detailSummaryLabel())
-				if node.Focused {
-					t.Fatal("tab request stole focus after normal Tab")
+				if a.detailTabs().Active != want {
+					t.Fatalf("active=%+v want=%+v", a.detailTabs().Active, want)
 				}
-			})
-		}
+				label := a.detailSummaryLabel()
+				if !want.Summary {
+					label = want.File.Path + " · " + a.t("unstaged")
+					if want.File.Staged {
+						label = want.File.Path + " · " + a.t("staged")
+					}
+				}
+				node, ok := tt.AccessByRole(ui.RoleTab, label)
+				if !ok || !node.Focused {
+					t.Fatalf("activated tab not focused: %q", label)
+				}
+				if a.commitText != draft || !a.amend {
+					t.Fatal("tab shortcut edited draft/amend")
+				}
+				if !want.Summary && (a.selectedPath != want.File.Path || a.selectedStaged != want.File.Staged) {
+					t.Fatal("tab switched wrong file version")
+				}
+			}
+			for _, want := range []detailTabKey{{File: first}, {File: second}, {Summary: true}} {
+				tt.Key(next.Mod, next.Key)
+				check(want)
+			}
+			// Start the reverse direction from the actual Summary field too.
+			summary, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitSummary"))
+			tt.ClickAt(summary.Bounds.X+summary.Bounds.W/2, summary.Bounds.Y+summary.Bounds.H/2)
+			for _, want := range []detailTabKey{{File: second}, {File: first}, {Summary: true}} {
+				tt.Key(previous.Mod, previous.Key)
+				check(want)
+			}
+			tt.Key(0, ui.KeyTab)
+			tt.Frame()
+			tt.Frame()
+			node, _ := tt.AccessByRole(ui.RoleTab, a.detailSummaryLabel())
+			if node.Focused {
+				t.Fatal("tab request stole focus after normal Tab")
+			}
+		})
 	}
 }
 

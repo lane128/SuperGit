@@ -10,8 +10,9 @@ import (
 )
 
 // A reader that hears only "selected" does not know where in the list it is.
-// Each row now carries its place and the size of its list, and the page puts
-// the rows inside a list role so the two numbers are read together.
+// Each row carries its place and the size of its list, and the History list
+// puts the rows inside one list role so the two numbers are read together:
+// the working tree is the first row, then the stashes, then the commits.
 func TestStashListReportsPositions(t *testing.T) {
 	a := &app{
 		locale: localeChinese,
@@ -22,7 +23,7 @@ func TestStashListReportsPositions(t *testing.T) {
 		},
 	}
 	a.selectedStash = "bbbb"
-	tt := pageTester(a, a.stashPage)
+	tt := pageTester(a, a.historyPage)
 	if _, ok := tt.AccessByRole(ui.RoleList, ""); !ok {
 		t.Fatal("the stash rows are not inside a list")
 	}
@@ -30,8 +31,9 @@ func TestStashListReportsPositions(t *testing.T) {
 	if !ok {
 		t.Fatal("the second stash is not an option")
 	}
-	if second.PosInSet != 2 || second.SetSize != 3 {
-		t.Errorf("the second stash reads place %d of %d; want 2 of 3", second.PosInSet, second.SetSize)
+	// The working tree's row is the list's first row; the stashes follow it.
+	if second.PosInSet != 3 || second.SetSize != 4 {
+		t.Errorf("the second stash reads place %d of %d; want 3 of 4", second.PosInSet, second.SetSize)
 	}
 	if !second.Selected {
 		t.Errorf("the second stash reads %+v; want it selected", second)

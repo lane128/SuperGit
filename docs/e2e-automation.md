@@ -634,3 +634,16 @@ macOS e2e 构建通过。首个原生夹具 `build/repository-switch-native-bey_
 - `python3 -I scripts/native-lobe-integrate-smoke.py`：两个独立临时仓库 / HOME，历史行 focus + Shift+F10 → Cherry-pick / Revert，验证取消不写入、所选 SHA、新提交父提交、完整说明 / 原 SHA、准确 Unicode 路径文件字节、topic 引用保留和无残留进行中操作。证据位于 `build/lobe-integrate-*/`；只覆盖无冲突发起，不是应用内冲突编辑。
 
 自动化 `window w1` 只改变命令目标，不改变原生键盘焦点；当前确认框固定到发起动作的 owner 窗口，切换命令目标不会迁移它。`focus` 与坐标输入也只把事件送给目标内容，不调用系统窗口激活。旧脚本的 `window auto` 只适用于实际焦点恰为确认 owner 的场景；双窗口验收应分别读取两个窗口，并向 owner 窗口的新鲜按钮 ref 回答，不能把命令目标切换当作真实系统焦点切换。
+
+## 统一 History 窗口（2026-11-19）
+
+仓库打开后进入 History。有提交时默认选中当前分支最新提交。工作树、Stash 和提交按顺序共享一个纵向滚动区。有未提交改动时，Changes 方块到 HEAD 的虚线沿最左列垂直绘制，中间经过 Stash 行也保持连贯。HEAD 以下的第一父提交沿该列延续。其他分支的子提交排在父提交上方，从右侧以实线接入。点击右上角 New Tab 可进入欢迎页打开仓库，也可直接按 ⌘O。点击侧栏本地分支、远端分支或指向提交的标签，会把对应提交滚入可见区域，同时更新选中行和 Summary。目标被当前分支范围排除时，History 回到 All refs 继续定位。搜索结果已包含目标时保留搜索。点击侧栏 Stash 则定位对应的 Stash 行。
+
+先运行 `make e2e-build`，再运行 `python3 -I scripts/native-lobe-unified-history.py`。脚本在 243 个提交的临时仓库中，从 Changes 行开始滚动，检查工作树、Stash 和顶部提交一起移出窗口。随后点击本地分支、远端分支和附注标签，逐项核对可见选中行、详情里的完整 SHA、提交数和筛选范围，并验证从 main 跳到旁支。脚本还检查工作树提交框、Stash 详情，以及浏览前后的 Git 状态。截图、Git 调用日志与结果保存在 `build/lobe-unified-history-*/`。
+
+
+## 900×700 窄窗与命令面板 Copy SHA（2026-11-19）
+
+窗口下限从 980 降到 900（高 640）：`SUPERGIT_WINDOW_SIZE=900x700` 现在真实生效，不再回退到默认 1320×840；低于下限的尺寸仍被拒绝。980 以上的布局不变；小于 980 且选中工作树时，列表、Files 与 patch 各自让出部分最小宽度，保证提交编辑区至少留下 120 点的摘要输入框，选中提交时不启用这套让步，避免改变已有窄窗行为。文件标签的关闭揭示改为滚动 Close 动作本身，避免窄条上包裹层已可见、关闭按钮仍被视口裁掉。
+
+`python3 -I scripts/native-lobe-narrow-window.py` 是本轮的原生检查：临时仓库含合并分叉、一个比 HEAD 更晚的旁支提交、一个 Stash 和无关未跟踪文件，以 `SUPERGIT_WINDOW_SIZE=900x700` 启动，断言截图实际为 900×700（本机为 2× 的 1800×1400）、无页面标签、行顺序正确、工作树摘要框宽度 ≥120 且右缘不超出窗口、Stash 头部 Apply 实际改写工作文件而保留 Stash 条目、命令面板 `copy sha` 可用且剪贴板等于所选提交完整 SHA、浏览与 Apply 之外 HEAD / refs / Index / 未跟踪文件不变。结果、截图与 `results.json` 保存在 `build/lobe-narrow-window-*/`。最近一次通过：`build/lobe-narrow-window-89d2ldth`（摘要框 W=134，截图 1800×1400）。Stash 头部 Apply 与右键菜单走同一处理函数；外部自动化报告头部按钮无效时，先确认等待到 `Pop (apply and drop)` 再点击，并用工作文件内容而不是 toast 判定结果，且脏工作区不得与 Stash 内容冲突。

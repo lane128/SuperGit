@@ -20,6 +20,14 @@ func (r *Repository) ChangeStamp(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return r.ChangeStampFromStatus(ctx, status)
+}
+
+// ChangeStampFromStatus hashes the local state from a porcelain status the
+// caller already read. The open path parses its rows from this same text, so
+// the baseline describes exactly what the window shows and `git status` runs
+// once instead of twice.
+func (r *Repository) ChangeStampFromStatus(ctx context.Context, status string) (string, error) {
 	h := sha256.New()
 	enc := json.NewEncoder(h)
 	if err := enc.Encode(status); err != nil {

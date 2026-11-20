@@ -181,7 +181,7 @@ func TestGraphLaneColorsComeFromTokens(t *testing.T) {
 	if palette[0] != tk.Blue || palette[2] != tk.Green {
 		t.Errorf("lane palette does not follow the tokens: %v", palette)
 	}
-	graph := newCommitGraph([]gitrepo.Commit{{SHA: "a", Refs: "HEAD -> main"}}, palette)
+	graph := newCommitGraph("", []gitrepo.Commit{{SHA: "a", Refs: "HEAD -> main"}}, palette)
 	if got := graph.LaneColor(graph.Rows[0].Color); got != palette[graph.Rows[0].Color] {
 		t.Errorf("row color = %v; want palette slot %d", got, graph.Rows[0].Color)
 	}

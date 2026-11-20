@@ -24,6 +24,7 @@ func TestRepositoryTabCycleFromTextEditor(t *testing.T) {
 		runContinuation(t, callbacks)
 	}
 	tt.Frame()
+	selectWorktreeRow(t, tt, b)
 	label := b.t("commitSummary")
 	clickRepositoryTabsControl(t, tt, ui.RoleTextField, label)
 	tt.Type("Draft belongs to the second workspace")

@@ -11,17 +11,21 @@ import (
 // persistedSettings is the on-disk shape of the settings page. Missing fields
 // keep the defaults, so an older or hand-edited file still loads.
 type persistedSettings struct {
-	Theme          string   `json:"theme,omitempty"`
-	Palette        string   `json:"palette,omitempty"`
-	Language       string   `json:"language,omitempty"`
-	ShowGraph      *bool    `json:"showGraph,omitempty"`
-	AutoFetch      *bool    `json:"autoFetch,omitempty"`
-	AutoFetchPrune *bool    `json:"autoFetchPrune,omitempty"`
-	AutoFetchEvery *int     `json:"autoFetchEvery,omitempty"`
-	SidebarSplit   *float32 `json:"sidebarSplit,omitempty"`
-	FilesSplit     *float32 `json:"filesSplit,omitempty"`
-	HistorySplit   *float32 `json:"historySplit,omitempty"`
-	StashSplit     *float32 `json:"stashSplit,omitempty"`
+	SidebarHidden        bool                `json:"sidebarHidden,omitempty"`
+	IgnoreDiffWhitespace bool                `json:"ignoreDiffWhitespace,omitempty"`
+	ExpandMerges         bool                `json:"expandMerges,omitempty"`
+	HiddenBranches       map[string][]string `json:"hiddenBranches,omitempty"`
+	Theme                string              `json:"theme,omitempty"`
+	Palette              string              `json:"palette,omitempty"`
+	Language             string              `json:"language,omitempty"`
+	ShowGraph            *bool               `json:"showGraph,omitempty"`
+	AutoFetch            *bool               `json:"autoFetch,omitempty"`
+	AutoFetchPrune       *bool               `json:"autoFetchPrune,omitempty"`
+	AutoFetchEvery       *int                `json:"autoFetchEvery,omitempty"`
+	SidebarSplit         *float32            `json:"sidebarSplit,omitempty"`
+	FilesSplit           *float32            `json:"filesSplit,omitempty"`
+	HistorySplit         *float32            `json:"historySplit,omitempty"`
+	StashSplit           *float32            `json:"stashSplit,omitempty"`
 	// BranchDetailsSplit is the branch page's list/detail divider, kept apart
 	// from the other pages' so each page opens at its own width.
 	BranchDetailsSplit *float32 `json:"branchDetailsSplit,omitempty"`
@@ -200,6 +204,10 @@ func legacyDesktopPreferencesPath(configFile string) string {
 }
 
 func (a *app) applySettings(settings persistedSettings) {
+	a.sidebarHidden = settings.SidebarHidden
+	a.expandMerges = settings.ExpandMerges
+	a.setIgnoreDiffWhitespace(settings.IgnoreDiffWhitespace)
+	a.syncHiddenBranches(settings.HiddenBranches)
 	switch settings.Theme {
 	case "system", "light", "dark":
 		a.themeMode = settings.Theme
@@ -492,6 +500,7 @@ func (a *app) saveSettingsFor(owner toastOwner) bool {
 		autoFetch := a.autoFetch
 		autoFetchPrune := a.autoFetchPrune
 		settings = persistedSettings{
+			SidebarHidden: a.sidebarHidden, IgnoreDiffWhitespace: a.ignoreDiffWhitespace, ExpandMerges: a.expandMerges, HiddenBranches: a.hiddenBranches,
 			Theme: a.themeMode, Palette: a.palette, Language: string(a.locale),
 			ShowGraph: &showGraph, AutoFetch: &autoFetch, AutoFetchPrune: &autoFetchPrune,
 			AutoFetchEvery:     fetchIntervalSetting(a.autoFetchEvery),

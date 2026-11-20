@@ -200,7 +200,7 @@ func TestAFailedHistoryListIsNotPagedOrWalked(t *testing.T) {
 	if a.historyLoadingMore {
 		t.Error("the failed list started another page")
 	}
-	a.moveCommitSelection(1)
+	a.moveHistorySelection(1)
 	if a.selectedSHA != "aaaa" {
 		t.Error("the arrows moved onto rows the error hides")
 	}
@@ -210,9 +210,9 @@ func TestAFailedHistoryListIsNotPagedOrWalked(t *testing.T) {
 func TestAFailedStashReadNamesTheFailure(t *testing.T) {
 	a := &app{locale: localeChinese, stashesErr: "fatal: cannot read stashes"}
 	a.repo = &gitrepo.Repository{Root: t.TempDir()}
-	tt := pageTester(a, a.stashPage)
+	tt := pageTester(a, a.historyPage)
 	if !tt.HasText(a.t("stashesReadFailed")) {
-		t.Error("the Stash header counts a list it could not read")
+		t.Error("the list counts a stash column it could not read")
 	}
 	if tt.HasText("0 个 Stash") {
 		t.Error("the failed Stash read is reported as an empty list")
@@ -333,7 +333,7 @@ func TestARetryKeepsItsBannerWhileTheReadRuns(t *testing.T) {
 func TestAFailedStashListDropsTheOldPatch(t *testing.T) {
 	a := &app{
 		locale:        localeChinese,
-		page:          "stash",
+		page:          "history",
 		stashes:       []gitrepo.Stash{{SHA: "aaaa"}, {SHA: "bbbb"}},
 		stashesErr:    "fatal: cannot read stashes",
 		selectedStash: "aaaa",
@@ -353,12 +353,13 @@ func TestAFailedStashListDropsTheOldPatch(t *testing.T) {
 	if a.selectedStash != "" {
 		t.Errorf("the failed list auto-selected %q", a.selectedStash)
 	}
-	tt := pageTester(a, a.stashPage)
+	tt := pageTester(a, a.historyPage)
 	if _, ok := tt.Find("old patch line"); ok {
 		t.Error("the failed list still shows the old patch")
 	}
-	if _, ok := tt.Find(a.t("stashDetailHint")); !ok {
-		t.Error("the detail pane does not return to its placeholder")
+	// With no stash selected the details describe the working tree again.
+	if _, ok := tt.Find(a.t("noChangesShort")); !ok {
+		t.Error("the details pane does not return to the working tree")
 	}
 	// The list's own error still offers the full reread under its name.
 	if _, ok := tt.Find(a.stashesErr); !ok {

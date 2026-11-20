@@ -196,7 +196,7 @@ def run():
 
             def ready():
                 deadline = time.monotonic() + 60
-                while not any(e[1] == "button" and e[2] == "Refresh" and "disabled" not in e[3] for e in entries()):
+                while not any(e[1] == "menuButton" and e[2] == "Sync" and "disabled" not in e[3] for e in entries()):
                     if time.monotonic() > deadline:
                         raise AssertionError("Refresh did not finish")
                     time.sleep(0.05)
@@ -260,7 +260,7 @@ def run():
                 auto("screenshot", str(artifacts / f"oldest-{number}.png"))
                 phase["name"] = "refresh_after_oldest"
                 tick = time.monotonic()
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 ready()
                 measurements["unchanged_refresh_to_ready_seconds"] = time.monotonic() - tick
                 wait(f"{metadata['commits']} commits")

@@ -12,6 +12,11 @@ func (a *app) focusCommitMessage() {
 		return
 	}
 	a.openPage("changes")
+	// The box lives in the details pane. A hidden pane has no editor to
+	// focus, so the shortcut brings the pane back rather than doing nothing.
+	if a.historyDetailsHidden {
+		a.setHistoryDetailsHidden(false)
+	}
 	a.commitMessageFocusRoot = a.repo.Root
 	a.commitMessageFocusSeq = a.loadSeq
 	a.invalidate()
@@ -19,7 +24,7 @@ func (a *app) focusCommitMessage() {
 
 // Requests expire rather than surviving navigation or a newly blocking dialog.
 func (a *app) discardStaleCommitMessageFocus() {
-	if a.commitMessageFocusRoot != "" && (!a.canFocusCommitMessage() || a.page != "changes" ||
+	if a.commitMessageFocusRoot != "" && (!a.canFocusCommitMessage() || a.page != "history" || !a.worktreeSelected ||
 		a.repo.Root != a.commitMessageFocusRoot || a.loadSeq != a.commitMessageFocusSeq) {
 		a.commitMessageFocusRoot = ""
 	}

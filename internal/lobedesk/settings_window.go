@@ -36,20 +36,21 @@ func (a *app) openSettingsWindow() {
 	// The closed panel's dropdown state does not belong to the new one.
 	a.paletteOpen = false
 	w := mygo.NewWindow(mygo.WindowOptions{
-		Title:           a.settingsWindowTitle(),
-		Width:           settingsWindowWidth,
-		Height:          settingsWindowHeight,
-		MinWidth:        settingsWindowMinW,
-		MinHeight:       settingsWindowMinH,
-		BackgroundColor: "light-dark(#f7f8fa, #09090b)",
-		StateKey:        "settings",
-		Content:         ui.View(func(c *ui.Context) { a.activeRepositorySession().settingsRoot(c) }),
+		Title:                a.settingsWindowTitle(),
+		Width:                settingsWindowWidth,
+		Height:               settingsWindowHeight,
+		MinWidth:             settingsWindowMinW,
+		MinHeight:            settingsWindowMinH,
+		TitleBarStyle:        mygo.TitleBarHidden,
+		TrafficLightPosition: &mygo.Point{X: 12, Y: 12},
+		BackgroundColor:      "light-dark(#f7f8fa, #09090b)",
+		StateKey:             "settings",
+		Content:              ui.View(func(c *ui.Context) { a.activeRepositorySession().settingsRoot(c) }),
 	})
 	a.settingsWindowSlot().Store(w)
 }
 
-// settingsRoot draws the panel in its own window: the same cards as the page
-// it used to be, without the rail or the title bar of the main window.
+// settingsRoot applies the same theme to the panel and its title bar.
 func (a *app) settingsRoot(c *ui.Context) {
 	a.applyTheme(c)
 	tk := theme.TokensOf(c)

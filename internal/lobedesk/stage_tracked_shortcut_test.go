@@ -135,7 +135,7 @@ func TestStageTrackedShortcutMatchesGitUpdateOnly(t *testing.T) {
 			callbacks := make(chan func(), 128)
 			a := &app{ctx: ctx, repo: repo, status: status, page: "history", worktreeSelected: true, locale: localeEnglish, commitText: "draft\n\nbody", runOnMain: func(fn func()) { callbacks <- fn }, filesCollapsed: map[string]bool{filesSectionUnstaged: true, filesSectionStaged: true}, lineSel: map[int]bool{1: true}}
 			if unborn {
-				a.page = "changes"
+				a.page = "history"
 			}
 			head := status.Head
 			tt := ui.NewTester(func(c *ui.Context) { a.registerShortcuts(c); ui.Column(c).Fill() }, 400, 200)

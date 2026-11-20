@@ -24,33 +24,67 @@ const (
 	historyFilesPaneWidth float32 = 240
 	historyFilesPaneMin   float32 = 180
 	historyDiffPaneMin    float32 = 300
+	// The working tree's Files column holds the commit box under the list, so
+	// it opens wider than a commit's, the way Sublime Merge gives the commit
+	// page more room than a commit's details.
+	worktreeFilesPaneWidth float32 = 300
 )
 
-// historyWidthPressure transitions to a compact Files column at the minimum
-// window width. Base it on the whole window so selection and divider drags
-// cannot move the responsive boundary.
+// historyFilesDefaultWidth is the Files column's opening width for the
+// current subject.
+func (a *app) historyFilesDefaultWidth() float32 {
+	if a.worktreeSelected {
+		return worktreeFilesPaneWidth
+	}
+	return historyFilesPaneWidth
+}
+
+// historyWidthPressure transitions to the compact Files column at the
+// comfortable window width. Base it on the whole window so selection and
+// divider drags cannot move the responsive boundary. The boundary stays at
+// 980 even though the window can now shrink to 900: these readings were tuned
+// there, and widening the range would change them at every size in between.
 func (a *app) historyWidthPressure() float32 {
-	const normalWidth = 1160
+	const normalWidth, compactWidth = 1160, 980
 	width := a.sidebarSplit.rowWidth
 	if width <= 0 {
 		return 0
 	}
-	return min(1, max(0, (normalWidth-width)/(normalWidth-minWindowWidth)))
+	return min(1, max(0, (normalWidth-width)/(normalWidth-compactWidth)))
+}
+
+// historyNarrowPressure measures how far the window has gone below the
+// comfortable 980 points. Only the working tree's row uses it: its commit
+// editor lives under the Files column, so below 980 the editor keeps its
+// width instead of following the commit list's compact floor. At and above
+// 980 the pressure is zero and the established layout is unchanged.
+func (a *app) historyNarrowPressure() float32 {
+	if !a.worktreeSelected {
+		return 0
+	}
+	const comfortableWidth = 980
+	width := a.sidebarSplit.rowWidth
+	if width <= 0 {
+		return 0
+	}
+	return min(1, max(0, (comfortableWidth-width)/(comfortableWidth-minWindowWidth)))
 }
 
 func (a *app) historyFilesMinWidth() float32 {
 	const compactFilesMin = 96
-	return historyFilesPaneMin - a.historyWidthPressure()*(historyFilesPaneMin-compactFilesMin)
+	filesMin := historyFilesPaneMin - a.historyWidthPressure()*(historyFilesPaneMin-compactFilesMin)
+	return max(filesMin, historyFilesPaneMin*a.historyNarrowPressure())
 }
 
 // historyPatchMinWidth gives wider History windows a more useful reading
-// width even when a saved split heavily favors the Files column.
+// width even when a saved split heavily favors the Files column. Below 980
+// the working tree's patch gives room back to the commit editor.
 func (a *app) historyPatchMinWidth() float32 {
-	const wideWindow = 1600
+	const comfortableWidth, wideWindow = 980, 1600
 	const extraPatchWidth = 120
 	width := a.sidebarSplit.rowWidth
-	progress := min(1, max(0, (width-minWindowWidth)/(wideWindow-minWindowWidth)))
-	return historyDiffPaneMin + progress*extraPatchWidth
+	progress := min(1, max(0, (width-comfortableWidth)/(wideWindow-comfortableWidth)))
+	return historyDiffPaneMin - 70*a.historyNarrowPressure() + progress*extraPatchWidth
 }
 
 // historyFilesWidth is the files column's width this frame, read from the
@@ -60,12 +94,11 @@ func (a *app) historyFilesWidth() float32 {
 	if row <= 0 && a.historySplit.rowWidth > 0 {
 		row = (a.historySplit.rowWidth - splitterWidth) * (1 - a.historyShare())
 	}
-	width, minimum := historyFilesPaneWidth, a.historyFilesMinWidth()
+	// One set of columns for every subject: the working tree's files take the
+	// same width as a commit's, since the commit editor lives on the Summary
+	// tab rather than under the list.
+	width, minimum := a.historyFilesDefaultWidth(), a.historyFilesMinWidth()
 	patchMin := a.historyPatchMinWidth()
-	if a.page == "changes" {
-		width, minimum = changesFilesPaneWidth, changesFilesPaneMin
-		patchMin = historyDiffPaneMin
-	}
 	if row <= splitterWidth {
 		return width
 	}
@@ -205,16 +238,41 @@ func (a *app) applyDetailTab(previous detailTabKey) {
 // and the patch side by side. The details toggle in the page header collapses
 // both columns at once.
 func (a *app) historyDetailsPane(c *ui.Context, share, width float32) {
+	if a.selectedStash != "" {
+		// A stash row's subject is the stash itself: its patch and actions,
+		// not a commit's files and metadata.
+		a.stashDetailPane(c, share)
+		return
+	}
 	row := ui.Row(c).Grow(share).Basis(0).MinWidth(0).AlignSelf(ui.Stretch)
 	a.filesSplit.rowWidth = width
+	// The three-way merge editor needs the whole details area: its two source
+	// panes and the result cannot share the width with the file list.
+	conflictEditing := a.conflictEditorTakesThePane()
 	row.Children(func() {
-		a.historyFilesPane(c)
-		if !a.detailsChangesHidden {
-			def := shareForWidth(a.filesSplit.rowWidth-splitterWidth, historyFilesPaneWidth)
-			a.splitHandle(c, &a.filesSplit, def, a.historyFilesMinWidth(), a.historyPatchMinWidth(), a.t("resizeFilesPane"))
+		if !conflictEditing {
+			a.historyFilesPane(c)
+			if !a.detailsChangesHidden {
+				def := shareForWidth(a.filesSplit.rowWidth-splitterWidth, a.historyFilesDefaultWidth())
+				a.splitHandle(c, &a.filesSplit, def, a.historyFilesMinWidth(), a.historyPatchMinWidth(), a.t("resizeFilesPane"))
+			}
 		}
 		a.historyDiffPane(c)
 	})
+}
+
+// conflictEditorTakesThePane reports whether the merge editor is the pane on
+// screen: the working tree's conflict file is open in the editor, whether it
+// was opened from the Summary overview or from the file's own tab.
+func (a *app) conflictEditorTakesThePane() bool {
+	if !a.worktreeSelected {
+		return false
+	}
+	if _, conflict := a.conflictPreviewEntry(a.selectedPath); !conflict {
+		return false
+	}
+	editor := a.currentConflictEditor()
+	return editor != nil && !editor.Preview
 }
 
 // detailFilePath is the file the details are pointing at: the selected file of
@@ -250,49 +308,87 @@ func (a *app) detailFileShown() bool {
 // when its row is selected, otherwise the commit's. Sublime Merge puts this
 // list in its own column between the commits and the patch.
 func (a *app) historyFilesPane(c *ui.Context) {
-	if a.detailsChangesHidden && a.page != "changes" {
+	if a.detailsChangesHidden && !a.worktreeSelected {
 		return
 	}
+	ui.Column(c).Width(a.historyFilesWidth()).Shrink(0).MinHeight(0).AlignSelf(ui.Stretch).
+		Children(func() {
+			a.filesPaneBody(c)
+			if a.worktreeSelected {
+				// The working tree's commit box is part of this column, not a
+				// tab: choosing the row is choosing the editor, and switching
+				// file tabs cannot cover it.
+				a.worktreeCommitPane(c)
+			}
+		})
+}
+
+// filesPaneBody is the files column without the working tree's docked commit
+// box: the header and the scrollable rows. Row navigation is exercised on its
+// own, and the worktree's pane adds the editor below it.
+func (a *app) filesPaneBody(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	count := len(a.commitFiles)
 	if a.worktreeSelected {
 		count = len(a.status.Entries)
 	}
 	width := a.historyFilesWidth()
-	ui.Column(c).Width(width).Shrink(0).MinHeight(0).AlignSelf(ui.Stretch).
-		Children(func() {
-			header := ui.Row(c).Height(38).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
-				Justify(ui.SpaceBetween).BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
-			if a.worktreeSelected && width < scaledFont(146) {
-				// Keep the same controls in the same parent while the heading
-				// and actions move onto separate lines.
-				header.Column().Height(62).Padding(6, 12).Gap(4).AlignItems(ui.Start).Justify(ui.Center)
-			}
-			header.Children(func() {
-				ui.Row(c.Key("files-heading")).Gap(8).AlignItems(ui.Center).Children(func() {
-					display.Text(c, a.t("filesTab"), display.TextProps{Strong: true, FontSize: scaledFont(12)})
-					if a.worktreeSelected || (!a.commitFilesLoading && a.commitFilesErr == "") {
-						display.Tag(c, fmt.Sprint(count), display.TagProps{Variant: display.TagFilled, Size: theme.Small, Round: true})
-					}
-				})
-				if a.worktreeSelected {
-					ui.Row(c.Key("files-actions")).Gap(8).Children(func() { a.filesToolbar(c) })
+	ui.Column(c).FillWidth().Grow(1).Basis(0).MinHeight(0).Children(func() {
+		header := ui.Row(c).Height(38).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
+			Justify(ui.SpaceBetween).BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
+		if a.worktreeSelected && width < scaledFont(146) {
+			// Keep the same controls in the same parent while the heading
+			// and actions move onto separate lines.
+			header.Column().Height(62).Padding(6, 12).Gap(4).AlignItems(ui.Start).Justify(ui.Center)
+		}
+		header.Children(func() {
+			ui.Row(c.Key("files-heading")).Gap(8).AlignItems(ui.Center).Children(func() {
+				display.Text(c, a.t("filesTab"), display.TextProps{Strong: true, FontSize: scaledFont(12)})
+				if a.worktreeSelected || (!a.commitFilesLoading && a.commitFilesErr == "") {
+					display.Tag(c, fmt.Sprint(count), display.TagProps{Variant: display.TagFilled, Size: theme.Small, Round: true})
 				}
 			})
-			filesScroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitFilesScroll}, func() {
-				ui.Column(c).FillWidth().Padding(7).Gap(1).FocusGroup(ui.Horizontal | ui.Vertical).Children(func() {
-					if a.worktreeSelected {
-						a.workingFileSections(c)
-						return
-					}
-					a.commitFileList(c)
-				})
-			}).Grow(1).Basis(0).MinHeight(0)
-			a.commitFilesViewport = filesScroll.Bounds()
-			if a.page == "changes" {
-				a.changesCommitPane(c)
+			if a.worktreeSelected {
+				ui.Row(c.Key("files-actions")).Gap(8).Children(func() { a.filesToolbar(c) })
 			}
 		})
+		filesScroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitFilesScroll}, func() {
+			ui.Column(c).FillWidth().Padding(7).Gap(1).FocusGroup(ui.Horizontal | ui.Vertical).Children(func() {
+				if a.worktreeSelected {
+					a.workingFileSections(c)
+					return
+				}
+				a.commitFileList(c)
+			})
+		}).Grow(1).Basis(0).MinHeight(0)
+		a.commitFilesViewport = filesScroll.Bounds()
+	})
+}
+
+// worktreeCommitPane is the working tree's commit editor under its files.
+// It is tall enough for the whole form — operation, message, amend and
+// identity — so a commit never needs a scroll before it can be written. The
+// form scrolls only on a window too short for that, and the action footer
+// stays outside that scroll so the Commit button cannot be pushed away.
+func (a *app) worktreeCommitPane(c *ui.Context) {
+	tk := theme.TokensOf(c)
+	ui.Column(c).FillWidth().Height(scaledFont(360)).MaxHeightPercent(78).Shrink(0).
+		BorderWidth(1, 0, 0, 0).BorderColor(tk.BorderSecondary).Children(func() {
+		layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.worktreeCommitScroll}, func() {
+			ui.Column(c).FillWidth().Padding(10).Gap(7).Children(func() {
+				a.operationCard(c)
+				branch := a.status.Branch
+				if branch == "" {
+					branch = a.t("detached")
+				}
+				display.Text(c, a.tf("commitTo", branch), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).FillWidth().SingleLine().Tooltip(branch)
+				a.commitMessageFields(c)
+				a.commitAmendControl(c)
+				a.commitIdentityView(c)
+			})
+		}).Grow(1).Basis(0).MinHeight(0)
+		ui.Column(c).FillWidth().Padding(8, 10).Gap(5).Shrink(0).Children(func() { a.commitAction(c, true) })
+	})
 }
 
 // historyDiffPane keeps the permanent Commit/Summary tab beside the open file
@@ -366,6 +462,7 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 	if active {
 		wrapper.Background(tk.BgContainer)
 	}
+	var close ui.Element
 	wrapper.Children(func() {
 		const tabPadding, captionWidth = 10, 204
 		tab := ui.ButtonBase(c).Label(name+suffix).Row().Height(38).Padding(0, tabPadding).
@@ -393,7 +490,7 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 			a.activateDetailTab(key)
 		}
 		if !key.Summary {
-			close := ui.ButtonBase(c).Label(a.t("close") + " " + path).Width(26).Height(30).Shrink(0).Center()
+			close = ui.ButtonBase(c).Label(a.t("close") + " " + path).Width(26).Height(30).Shrink(0).Center()
 			a.wireDetailTabKeys(close, key)
 			close.Children(func() { ui.Icon(c, lucide.X()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary) })
 			if close.Clicked() {
@@ -404,9 +501,15 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 		a.focusRequestedDetailTab(tab, key)
 	})
 	// A click inside the wrapper can change the active tab mid-frame.
-	// Only the resulting selection may consume the pending reveal.
+	// Only the resulting selection may consume the pending reveal. Reveal the
+	// Close action, not just the wrapper: on a narrow strip the wrapper can be
+	// visible while its trailing Close button is clipped by the viewport.
 	if a.detailTabs().Active == key && a.detailReveal {
-		wrapper.ScrollIntoView()
+		if key.Summary {
+			wrapper.ScrollIntoView()
+		} else {
+			close.ScrollIntoView()
+		}
 		a.detailReveal = false
 	}
 }

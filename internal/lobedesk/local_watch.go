@@ -37,8 +37,20 @@ type localWatchRequest struct {
 // selected file invalidate the overview. Do not walk ignored or untracked trees.
 func readLocalWatchStamp(parent context.Context, repo *gitrepo.Repository, entries []gitrepo.Entry) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, localBackgroundInterval)
+	status, err := repo.StatusText(ctx)
+	cancel()
+	if err != nil {
+		return "", err
+	}
+	return readLocalWatchStampWithStatus(parent, repo, entries, status)
+}
+
+// readLocalWatchStampWithStatus takes the porcelain status an open already
+// read for display, so the slowest probe read is shared rather than repeated.
+func readLocalWatchStampWithStatus(parent context.Context, repo *gitrepo.Repository, entries []gitrepo.Entry, status string) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, localBackgroundInterval)
 	defer cancel()
-	stamp, err := repo.ChangeStamp(ctx)
+	stamp, err := repo.ChangeStampFromStatus(ctx, status)
 	if err != nil {
 		return "", err
 	}
@@ -97,7 +109,7 @@ func (a *app) beginLocalProbe(now time.Time) (localWatchRequest, bool) {
 	w := &a.localWatch
 	if w.closed || a.repo == nil || a.loading || a.busy || a.repositoryChooserOpen || w.reading || now.Before(w.next) ||
 		(a.repositoryTabs != nil && (a.repositoryTabs.active != a || a.repositoryTabs.opening != nil)) ||
-		a.confirm.open || a.prompt.open || a.worktreeForm.open || a.reset.open {
+		a.hasPendingDialog(toastMain) {
 		return localWatchRequest{}, false
 	}
 	interval := localBackgroundInterval
@@ -117,9 +129,9 @@ func (a *app) acceptLocalProbe(req localWatchRequest, stamp string, err error, n
 	}
 	w.reading = false
 	w.cancel = nil
-	if a.repositoryChooserOpen {
-		// The native picker keeps pumping events. Retry the probe after it
-		// closes, without starting a refresh that could drop its selection.
+	if a.repositoryChooserOpen || a.hasPendingDialog(toastMain) {
+		// An external change can arrive between keystrokes or picker stages.
+		// Retry once the dialog closes so a reload cannot discard its input.
 		w.next = time.Time{}
 		return false
 	}

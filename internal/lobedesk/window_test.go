@@ -13,14 +13,15 @@ func TestParseWindowSize(t *testing.T) {
 		ok   bool
 	}{
 		{"980x640", 980, 640, true},
+		{"900x700", 900, 700, true},
 		{"1024X768", 1024, 768, true},
 		{" 1000 x 800 ", 1000, 800, true},
 		{"", 0, 0, false},
 		{"1000", 0, 0, false},
 		{"1000x", 0, 0, false},
 		{"axb", 0, 0, false},
-		{"979x640", 0, 0, false},
-		{"980x639", 0, 0, false},
+		{"899x700", 0, 0, false},
+		{"900x639", 0, 0, false},
 		{"1320x840x900", 0, 0, false},
 	}
 	for _, c := range cases {

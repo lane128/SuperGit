@@ -43,7 +43,7 @@ func TestCommitMessageShortcutFromHistoricalContentPreservesNavigation(t *testin
 	tt.Key(ui.Cmd, ui.Key9)
 	waitOverview(t, a, callbacks)
 	tt.Frame()
-	if !a.worktreeSelected || a.page != "changes" || !tt.Focused(a.t("commitSummary")) || a.commitText != draft || !a.amend || !a.historyDetailsHidden {
+	if !a.worktreeSelected || a.page != "history" || !tt.Focused(a.t("commitSummary")) || a.commitText != draft || !a.amend || a.historyDetailsHidden {
 		t.Fatal("real Changes editor navigation lost focus or preserved state")
 	}
 	// Repeated navigation must not reset a caret within existing text.
@@ -61,8 +61,8 @@ func TestCommitMessageShortcutFromHistoricalContentPreservesNavigation(t *testin
 	if !tt.Focused(a.t("commitDescription")) {
 		t.Fatal("focus was not one-shot in the actual page")
 	}
-	a.openPage("history")
-	if a.worktreeSelected || a.selectedSHA != sha || a.detailTabs().Active.File.Path != "same.go" || a.commitDiffScroll.Y != 87 || a.commitFilesScroll.Y != 45 || !a.historyDetailsHidden {
+	a.selectCommit(sha)
+	if a.worktreeSelected || a.selectedSHA != sha || a.detailTabs().Active.File.Path != "same.go" || a.commitDiffScroll.Y != 87 || a.commitFilesScroll.Y != 45 || a.historyDetailsHidden {
 		t.Fatal("shortcut lost previous historical context")
 	}
 	if git("rev-parse", "HEAD") != head || git("ls-files", "--stage", "-z") != index || git("for-each-ref") != refs {

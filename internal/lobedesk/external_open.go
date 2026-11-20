@@ -26,6 +26,16 @@ func externalPathMessageKey(system, key string) string {
 // externalOpenCommand keeps paths out of shell source. Linux reveal opens the
 // containing folder because xdg-open has no portable select-file operation.
 func externalOpenCommand(system, full, kind string) (*exec.Cmd, error) {
+	if kind == "sublimeText" {
+		if system == "darwin" {
+			return exec.Command("open", "-a", "Sublime Text", full), nil
+		}
+		binary, err := exec.LookPath("subl")
+		if err != nil {
+			return nil, fmt.Errorf("Sublime Text (subl): %w", err)
+		}
+		return exec.Command(binary, full), nil
+	}
 	if kind != "open" && kind != "reveal" && kind != "terminal" {
 		return nil, fmt.Errorf("unsupported path action: %s", kind)
 	}

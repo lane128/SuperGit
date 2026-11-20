@@ -68,6 +68,7 @@ func TestPrepareCommitFileUndoKeepsOriginalAndLaterChanges(t *testing.T) {
 	}
 }
 func TestPrepareCommitFileUndoFailureCleansScratch(t *testing.T) {
+	useDirectGitForTempAssertions(t)
 	for _, cancelled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "conflict", true: "cancelled"}[cancelled], func(t *testing.T) {
 			r, _, source, _ := undoCheckFixture(t, "selected.txt")
@@ -87,6 +88,7 @@ func TestPrepareCommitFileUndoFailureCleansScratch(t *testing.T) {
 				cancel()
 			}
 			prepared, err := r.PrepareCommitFileUndo(ctx, source, "selected.txt", status)
+			prepareErr := err
 			if prepared != nil {
 				prepared.Close()
 			}
@@ -95,11 +97,12 @@ func TestPrepareCommitFileUndoFailureCleansScratch(t *testing.T) {
 			}
 			entries, err := os.ReadDir(scratch)
 			if err != nil || len(entries) != 0 {
-				t.Fatal("failed preparation left scratch files")
+				t.Fatalf("failed preparation left scratch files: scratch=%s entries=%v readErr=%v prepareErr=%v", scratch, entries, err, prepareErr)
 			}
 			got, err := os.ReadFile(filepath.Join(r.Root, "selected.txt"))
-			if err != nil || string(got) != "later conflicting content\n" || git(t, r.Root, "status", "--porcelain=v1", "-z") != "" {
-				t.Fatal("failed preparation changed original worktree")
+			gitStatus := git(t, r.Root, "status", "--porcelain=v1", "-z")
+			if err != nil || string(got) != "later conflicting content\n" || gitStatus != "" {
+				t.Fatalf("failed preparation changed original worktree: root=%s bytes=%q readErr=%v status=%q prepareErr=%v", r.Root, got, err, gitStatus, prepareErr)
 			}
 		})
 	}

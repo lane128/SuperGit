@@ -105,8 +105,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-force-prune.") as directory:
             auto("wait", "--text", text, "--timeout", "25s", "--settle")
 
         def menu(button, item):
-            auto("focus", ref("button", button), "--settle")
-            auto("key", "Shift+F10", "--settle")
+            press("menuButton", "Sync")
             (artifacts / (button.lower() + "-menu.snapshot.txt")).write_text(snapshot())
             press("menuItem", item)
 
@@ -123,7 +122,6 @@ with tempfile.TemporaryDirectory(prefix="supergit-force-prune.") as directory:
                     raise RuntimeError("native automation unavailable")
                 time.sleep(0.05)
             auto("open", "--socket", str(socket))
-            auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
             auto("key", "cmd+1", "--settle")
             wait("Force fixture source")
             auto("wait", "--text", "Loading", "--gone", "--timeout", "20s", "--settle")

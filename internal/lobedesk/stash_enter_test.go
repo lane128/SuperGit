@@ -19,7 +19,7 @@ func TestEnterOnAStashRowKeepsTheArrowSelection(t *testing.T) {
 		{SHA: "aaaa", Ref: "stash@{0}", Message: "first"},
 		{SHA: "bbbb", Ref: "stash@{1}", Message: "second"},
 	}
-	a := &app{locale: localeChinese, page: "stash", stashes: stashes}
+	a := &app{locale: localeChinese, page: "history", stashes: stashes}
 	a.repo = &gitrepo.Repository{Root: t.TempDir()}
 	a.ctx = context.Background()
 	tt := ui.NewTester(func(c *ui.Context) {
@@ -38,7 +38,7 @@ func TestEnterOnAStashRowKeepsTheArrowSelection(t *testing.T) {
 	if a.selectedStash != "aaaa" {
 		t.Fatalf("clicking the first row selected %q", a.selectedStash)
 	}
-	a.moveStashSelection(1)
+	a.moveHistorySelection(1)
 	if a.selectedStash != "bbbb" {
 		t.Fatalf("the arrow selected %q; want bbbb", a.selectedStash)
 	}

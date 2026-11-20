@@ -28,8 +28,9 @@ def assert_header_layout(snapshot, window_width):
             if bounds:
                 entries.append((match[2], json.loads(match[3]) if match[3] else "", match[4], tuple(map(float, bounds.groups()))))
     previous_right = 0
-    for label in ("Branches", "Fetch", "Pull (fast-forward only)", "Push", "Refresh"):
-        matches = [e for e in entries if e[0] == "button" and e[1] == label and e[3][1] < 40]
+    for role, label in (("button", "Command palette"), ("button", "Branches"),
+                        ("menuButton", "Save changes…"), ("menuButton", "Sync")):
+        matches = [e for e in entries if e[0] == role and e[1] == label and e[3][1] < 76]
         assert len(matches) == 1, f"Missing title action: {label}"
         entry = matches[0]
         x, y, width, height = entry[3]
@@ -241,7 +242,7 @@ def run():
                 git("add", "--", "local.txt")
                 git("commit", "--no-gpg-sign", "-m", "Native merge local")
                 local = git("rev-parse", "HEAD")
-                button("Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait("Native merge local")
                 select("integration-topic")
                 button("Merge into current branch", coordinate=True)
@@ -268,7 +269,7 @@ def run():
                 git("add", "--", "replay.txt")
                 git("commit", "--no-gpg-sign", "-m", "Native rebase source", "-m", "Preserve the complete replay message.")
                 replay, replay_message = git("rev-parse", "HEAD"), git("show", "-s", "--format=%B", "HEAD")
-                button("Refresh")
+                auto("key", "cmd+r", "--settle")
                 select("main")
                 wait("Native rebase source")
                 select("rebase-onto")
@@ -293,7 +294,7 @@ def run():
                     git("branch", name, stress_head)
                 git("remote", "add", "backup", str(remote))
                 git("fetch", "backup")
-                button("Refresh")
+                auto("key", "cmd+r", "--settle")
 
                 def search(text):
                     fields = [e for e in controls() if e[1] == "textField" and "Search branches and tags" in e[3]]
@@ -314,7 +315,7 @@ def run():
                         rows = [e for e in state if e[1] == "listItem"
                                 and (label is None or e[2] == label)
                                 and (description is None or f'description={json.dumps(description)}' in e[3])]
-                        ready = any(e[1] == "button" and e[2] == "Refresh" and "disabled" not in e[3] for e in state)
+                        ready = any(e[1] == "menuButton" and e[2] == "Sync" and "disabled" not in e[3] for e in state)
                         if len(rows) == 1 and ready:
                             return rows
                         if app.poll() is not None or time.monotonic() > deadline:

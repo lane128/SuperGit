@@ -15,6 +15,7 @@ import (
 // A controlled process acknowledges the init stage after the original file was
 // copied to scratch. Cancellation then exercises real process and temp cleanup.
 func TestPrepareCommitFileUndoCancelAfterScratchCopy(t *testing.T) {
+	useDirectGitForTempAssertions(t)
 	r, _, source, status := undoCheckFixture(t, "selected.txt")
 	original, err := os.ReadFile(filepath.Join(r.Root, "selected.txt"))
 	if err != nil {
@@ -95,7 +96,7 @@ esac
 	}
 	entries, err := os.ReadDir(scratch)
 	if err != nil || len(entries) != 1 {
-		t.Fatal("acknowledgement did not prove owned scratch exists")
+		t.Fatalf("acknowledgement did not prove owned scratch exists: scratch=%s entries=%v readErr=%v temp=%s", scratch, entries, err, os.TempDir())
 	}
 	copied, err := os.ReadFile(filepath.Join(scratch, entries[0].Name(), "worktree", "selected.txt"))
 	if err != nil || string(copied) != string(original) {

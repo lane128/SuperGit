@@ -21,6 +21,7 @@ type historyRef struct {
 }
 
 const (
+	historyRefCommit = "commit"
 	historyRefLocal  = "local"
 	historyRefRemote = "remote"
 	historyRefTag    = "tag"
@@ -42,6 +43,8 @@ func (r historyRef) key() string {
 // branch/tag snapshot instead of being cached with the choice.
 func (a *app) historyRefTip(ref historyRef) string {
 	switch ref.Kind {
+	case historyRefCommit:
+		return ref.Name
 	case historyRefLocal:
 		for _, branch := range a.branches {
 			if branch.Name == ref.Name {
@@ -111,6 +114,9 @@ func (a *app) historyRefLabel() string {
 	if a.historyRef.Kind == "" {
 		return a.t("allRefs")
 	}
+	if a.historyRef.Kind == historyRefCommit {
+		return shortSHA(a.historyRef.Name)
+	}
 	return a.historyRef.Name
 }
 
@@ -138,6 +144,9 @@ func (a *app) historyRefChoices(tk *theme.Tokens) []refChoice {
 	}
 	choices := []refChoice{{label: a.t("allRefs"), icon: lucide.Layers()}}
 	for _, branch := range a.branches {
+		if a.branchHidden("refs/heads/" + branch.Name) {
+			continue
+		}
 		choices = append(choices, refChoice{
 			ref:   historyRef{Kind: historyRefLocal, Name: branch.Name},
 			label: branch.Name,
@@ -147,6 +156,9 @@ func (a *app) historyRefChoices(tk *theme.Tokens) []refChoice {
 		})
 	}
 	for _, branch := range a.remoteBranches {
+		if a.branchHidden("refs/remotes/" + branch.Name) {
+			continue
+		}
 		choices = append(choices, refChoice{
 			ref:   historyRef{Kind: historyRefRemote, Name: branch.Name},
 			label: branch.Name,
@@ -478,7 +490,6 @@ func (a *app) historyRefRow(c *ui.Context, choice refChoice, pos, size int, sele
 func (a *app) applyHistoryRef(ref historyRef) {
 	a.historyRef = ref
 	a.historyQuery = ""
-	a.pendingJumpSHA = ""
 	// A new scope lists different commits, so the old offset would open the
 	// list somewhere arbitrary. The scroll is kept for page switches, which
 	// keep the same scope.
@@ -496,6 +507,7 @@ func (a *app) applyHistoryRef(ref historyRef) {
 	// A deleted ref has no tip: walking every ref keeps the list usable
 	// instead of empty behind a filter that selects nothing.
 	a.historyPinned = tip
+	a.pendingJumpSHA = tip
 	a.reloadHistoryFromTip(tip)
 	a.invalidate()
 }
@@ -548,8 +560,15 @@ func (a *app) reloadHistoryFromTip(tip string) {
 	if tip != "" {
 		tips = []string{tip}
 	}
+	hidden := a.hiddenBranches[repo.Root]
 	go func() {
-		page, err := repo.HistoryPage(ctx, tips, 0, 200)
+		var page gitrepo.HistoryPage
+		var err error
+		if tips == nil {
+			page, err = repo.ReadVisibleHistory(ctx, 200, hidden)
+		} else {
+			page, err = repo.HistoryPage(ctx, tips, 0, 200)
+		}
 		a.hopToMain(func() {
 			if a.historyPageStale(seq, repo, reload) {
 				return
@@ -566,16 +585,35 @@ func (a *app) reloadHistoryFromTip(tip string) {
 			a.historyTips = page.Tips
 			a.historyMore = page.HasMore
 			a.historyErr = ""
+			if !page.HasMore && len(page.Commits) == 0 && a.fileFilter == "" && a.selectedStash == "" && a.pendingJumpSHA == "" {
+				a.selectWorktree()
+			}
 			// A jump that made the filter give way waits for this walk: the
 			// commit it wants may only be reachable from the other refs.
 			if sha := a.pendingJumpSHA; sha != "" {
 				a.pendingJumpSHA = ""
-				a.jumpToCommit(sha)
+				a.jumpToCommitKeeping(sha, true)
 			}
 			a.invalidate()
 			a.loadMoreHistory()
 		})
 	}()
+}
+
+// locateRef selects the tip in History. Keep a compatible scope and search,
+// and let a filter give way if it would hide the requested commit.
+func (a *app) locateRef(kind, name string) {
+	if a.repo == nil || name == "" {
+		return
+	}
+	tip := a.historyRefTip(historyRef{Kind: kind, Name: name})
+	if tip == "" {
+		return
+	}
+	if a.page != "history" {
+		a.openPage("history")
+	}
+	a.showCommitKeeping(tip, true)
 }
 
 // showRefHistory scopes the history page to one ref, the same state the

@@ -61,16 +61,21 @@ func TestRepositoryTabsKeepDraftsAndReuseCanonicalRoot(t *testing.T) {
 		t.Fatal("first repository Diff did not complete")
 	}
 	openLabel := first.t("chooseFolder")
-	opener, ok := view.AccessByRole(ui.RoleButton, openLabel)
-	if !ok || opener.Bounds.Y >= 38 || opener.Offscreen {
-		t.Fatalf("the open repository action is missing from the top strip: %+v", opener)
+	for _, label := range []string{openLabel, first.t("openRepo")} {
+		if opener, ok := view.AccessByRole(ui.RoleButton, label); ok {
+			t.Errorf("the loaded workbench still has an open repository button: %+v", opener)
+		}
 	}
-	click(ui.RoleButton, openLabel)
+	openWithShortcut := func() {
+		view.Key(ui.Cmd, ui.KeyO)
+		view.Frame()
+	}
+	openWithShortcut()
 	if chooserCalls != 1 || tabs.active != first || len(tabs.sessions) != 1 || first.commitText != "First draft\n\nFirst body" {
-		t.Fatal("cancelling from the top strip changed the checkout or draft")
+		t.Fatal("cancelling the chooser changed the checkout or draft")
 	}
 	picked = secondRoot
-	click(ui.RoleButton, openLabel)
+	openWithShortcut()
 	wait()
 	second := tabs.active
 	if second == first || second.repo.Root != secondRoot || second.commitText != "" || len(tabs.sessions) != 2 {
@@ -81,6 +86,7 @@ func TestRepositoryTabsKeepDraftsAndReuseCanonicalRoot(t *testing.T) {
 	if !strings.Contains(first.diff.Text, "first repository patch") || strings.Contains(second.diff.Text, "first repository patch") || tabs.active != second {
 		t.Fatal("late Diff completion crossed repository sessions")
 	}
+	selectWorktreeRow(t, view, second)
 	click(ui.RoleTextField, second.t("commitSummary"))
 	view.Type("Second draft")
 	view.Frame()
@@ -94,7 +100,7 @@ func TestRepositoryTabsKeepDraftsAndReuseCanonicalRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	picked = nested
-	click(ui.RoleButton, openLabel)
+	openWithShortcut()
 	wait()
 	if tabs.active != second || len(tabs.sessions) != 2 || second.commitText != "Second draft" || chooserCalls != 3 {
 		t.Fatalf("nested open: activeIsSecond=%v tabs=%d chooserCalls=%d draft=%q", tabs.active == second, len(tabs.sessions), chooserCalls, second.commitText)
@@ -111,7 +117,7 @@ func TestRepositoryTabsKeepDraftsAndReuseCanonicalRoot(t *testing.T) {
 		}
 	}
 	picked = t.TempDir()
-	click(ui.RoleButton, second.t("openRepo"))
+	openWithShortcut()
 	wait()
 	if tabs.active != second || len(tabs.sessions) != 2 || second.loadErr != "" || second.commitText != "Second draft" {
 		t.Fatal("failed open replaced or reset the active workbench")
@@ -136,16 +142,17 @@ func TestRepositoryTabsKeepDraftsAndReuseCanonicalRoot(t *testing.T) {
 	// The top New Tab action remains visible after the last checkout closes.
 	add, found := view.AccessByRole(ui.RoleButton, first.t("newRepositoryTab"))
 	if !found || add.Offscreen || add.Disabled || add.Bounds.Y >= 38 || add.Bounds.X+add.Bounds.W < 960 || add.Bounds.X+add.Bounds.W > 980 {
-		t.Fatalf("missing usable top-right open button after closing the last tab: %+v", add)
+		t.Fatalf("missing usable New Tab button after closing the last tab: %+v", add)
 	}
 	picked = firstRoot
-	click(ui.RoleButton, first.t("openRepo"))
+	click(ui.RoleButton, openLabel)
 	wait()
 	if tabs.active.repo == nil || tabs.active.repo.Root != firstRoot || len(tabs.sessions) != 1 {
-		t.Fatal("opening from the empty strip did not select the first checkout")
+		t.Fatal("opening from Welcome did not select the first checkout")
 	}
 	picked = secondRoot
-	click(ui.RoleButton, first.t("openRepo"))
+	click(ui.RoleButton, first.t("newRepositoryTab"))
+	click(ui.RoleButton, openLabel)
 	wait()
 	if tabs.active.repo == nil || tabs.active.repo.Root != secondRoot || len(tabs.sessions) != 2 {
 		t.Fatal("the empty-to-two-tab journey did not select the second checkout")

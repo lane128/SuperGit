@@ -95,7 +95,7 @@ def run():
                     auto("key", "shift+F10", "--settle")
                     current = controls()
                     target = next((e for e in current if e[1] == "menuItem" and e[2] == action and "disabled" not in e[3]), None)
-                    repository_ready = any(e[1] == "button" and e[2] == "Refresh" and "disabled" not in e[3] for e in current)
+                    repository_ready = any(e[1] == "menuButton" and e[2] == "Sync" and "disabled" not in e[3] for e in current)
                     if target is not None and repository_ready:
                         auto("press", target[0], "--settle")
                         return
@@ -107,7 +107,7 @@ def run():
             def ready():
                 deadline = time.monotonic() + 25
                 while True:
-                    if any(e[1] == "button" and e[2] == "Refresh" and "disabled" not in e[3] for e in controls()):
+                    if any(e[1] == "menuButton" and e[2] == "Sync" and "disabled" not in e[3] for e in controls()):
                         return
                     if time.monotonic() > deadline:
                         raise AssertionError("Repository did not finish loading")
@@ -140,7 +140,6 @@ def run():
                         raise TimeoutError("Native automation socket unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
-                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 wait("Parent fixture target")
                 auto("key", "cmd+4", "--settle")
@@ -155,7 +154,7 @@ def run():
                 print("PASS native Update initializes configured Unicode/space submodule at parent Index target", flush=True)
 
                 git("checkout", "--detach", base, directory=child)
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 ready()
                 menu("Update submodule")
                 # Wait actual child HEAD, not a previous success toast.
@@ -171,7 +170,7 @@ def run():
 
                 (child / "文件 space.txt").write_text("keep internal dirty bytes\n")
                 child_index = git("ls-files", "--stage", directory=child)
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 ready()
                 menu("Update submodule")
                 wait("Could not update submodule")

@@ -10,11 +10,31 @@ import (
 func (r *Repository) statusText(ctx context.Context) (string, error) {
 	return run(ctx, r.Root, "", "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all", "--ignore-submodules=none")
 }
+
+// StatusText is the porcelain status text the display parses. The local
+// watcher hashes the same text for its baseline, so an open reads it once.
+func (r *Repository) StatusText(ctx context.Context) (string, error) {
+	return r.statusText(ctx)
+}
+
 func (r *Repository) Status(ctx context.Context) (Status, error) {
+	s, _, err := r.StatusWithText(ctx)
+	return s, err
+}
+
+// StatusWithText returns the parsed status and the porcelain text it came
+// from. Opening a repository needs both the rows and the baseline; reading
+// them from one `git status` keeps the slowest step of a large open single.
+func (r *Repository) StatusWithText(ctx context.Context) (Status, string, error) {
 	out, err := r.statusText(ctx)
 	if err != nil {
-		return Status{}, err
+		return Status{}, "", err
 	}
+	s, err := parseStatus(out)
+	return s, out, err
+}
+
+func parseStatus(out string) (Status, error) {
 	s := Status{}
 	records := strings.Split(out, "\x00")
 	for i := 0; i < len(records); i++ {
@@ -69,7 +89,7 @@ func (r *Repository) Status(ctx context.Context) (Status, error) {
 	return s, nil
 }
 func (r *Repository) Branches(ctx context.Context) ([]Branch, error) {
-	out, err := run(ctx, r.Root, "", "for-each-ref", "--format=%(refname:short)%00%(objectname)%00%(upstream:short)%00%(HEAD)%00%(upstream:track,nobracket)%00%(subject)%00%(authorname)%00%(authordate:iso-strict)", "refs/heads")
+	out, err := run(ctx, r.Root, "", "for-each-ref", "--format=%(refname:strip=2)%00%(objectname)%00%(upstream:short)%00%(HEAD)%00%(upstream:track,nobracket)%00%(subject)%00%(authorname)%00%(authordate:iso-strict)", "refs/heads")
 	if err != nil {
 		return nil, err
 	}

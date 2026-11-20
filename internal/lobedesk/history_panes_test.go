@@ -207,11 +207,11 @@ func TestTheWorkingTreeIsTheListsFirstRow(t *testing.T) {
 func TestArrowsWalkIntoTheWorkingTreeRow(t *testing.T) {
 	a := worktreePageApp()
 	a.selectedSHA = "aaaa"
-	a.moveCommitSelection(-1)
+	a.moveHistorySelection(-1)
 	if !a.worktreeSelected {
 		t.Fatal("the arrow up from the first commit did not reach the working tree")
 	}
-	a.moveCommitSelection(1)
+	a.moveHistorySelection(1)
 	if a.worktreeSelected {
 		t.Fatal("the working tree is still selected after the arrow down")
 	}
@@ -219,8 +219,8 @@ func TestArrowsWalkIntoTheWorkingTreeRow(t *testing.T) {
 		t.Fatalf("selected commit = %q; want aaaa", a.selectedSHA)
 	}
 	// And the bottom of the list stops there instead of running past it.
-	a.moveCommitSelection(1)
-	a.moveCommitSelection(1)
+	a.moveHistorySelection(1)
+	a.moveHistorySelection(1)
 	if a.selectedSHA != "bbbb" {
 		t.Fatalf("the end of the list selected %q; want the last commit", a.selectedSHA)
 	}
@@ -351,8 +351,8 @@ func TestTheWorktreeRowSurvivesAnEmptySearch(t *testing.T) {
 	}
 }
 
-// ⌘↩ commits from the history page while the working tree's Summary holds the
-// commit box, and stays quiet while another tab covers it.
+// ⌘↩ commits from the history page while the working tree's docked commit box
+// is on screen, and stays quiet while that column is hidden or covered.
 func TestCommitShortcutReachesTheHistoryCommitBox(t *testing.T) {
 	a := worktreePageApp()
 	a.worktreeSelected = true
@@ -376,8 +376,8 @@ func TestCommitShortcutReachesTheHistoryCommitBox(t *testing.T) {
 	}
 	a.selectedPath = "a.go"
 	a.detailTabs().Open(detailFileKey{Path: a.selectedPath})
-	if a.canCommitShortcut() {
-		t.Fatal("⌘↩ commits while the file tab covers the commit box")
+	if !a.canCommitShortcut() {
+		t.Fatal("⌘↩ stops working while a file tab is in front of the docked commit box")
 	}
 	a.detailTabs().Activate(detailTabKey{Summary: true})
 	a.historyRefOpen = true

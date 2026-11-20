@@ -55,7 +55,7 @@ func TestSpaceOnAStashRowKeepsTheArrowSelection(t *testing.T) {
 		{SHA: "aaaa", Ref: "stash@{0}", Message: "first"},
 		{SHA: "bbbb", Ref: "stash@{1}", Message: "second"},
 	}
-	a := &app{locale: localeChinese, page: "stash", stashes: stashes}
+	a := &app{locale: localeChinese, page: "history", stashes: stashes}
 	a.repo = &gitrepo.Repository{Root: t.TempDir()}
 	tt, bounds := listSpaceTester(t, func(c *ui.Context) {
 		for i, stash := range stashes {
@@ -63,7 +63,7 @@ func TestSpaceOnAStashRowKeepsTheArrowSelection(t *testing.T) {
 		}
 	}, "first")
 	tt.ClickAt(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
-	a.moveStashSelection(1)
+	a.moveHistorySelection(1)
 	if a.selectedStash != "bbbb" {
 		t.Fatalf("the arrow selected %q; want bbbb", a.selectedStash)
 	}

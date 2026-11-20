@@ -112,7 +112,7 @@ for scenario in ('external-resolution', 'markers-observation'):
         auto('wait', '--text', text, '--timeout', '25s', '--settle')
 
     def ready():
-        control('button', 'Refresh')
+        control('menuButton', 'Sync')
 
     def evidence(name):
         text = snapshot(name)
@@ -201,7 +201,7 @@ for scenario in ('external-resolution', 'markers-observation'):
         if scenario == 'external-resolution':
             step = '02-external-edit-mark-resolved'
             file.write_bytes(resolved)
-            press('button', 'Refresh')
+            auto("key", "cmd+r", "--settle")
             ready()
             # Preview remains a conflict until its current bytes are staged by UI.
             assert git('ls-files', '-u'), 'External edit unexpectedly staged itself'
@@ -261,7 +261,7 @@ for scenario in ('external-resolution', 'markers-observation'):
             assert (repo / '.git/MERGE_HEAD').exists(), 'Marker action ended merge'
             step = '03-markers-recovery-before-commit'
             file.write_bytes(resolved)
-            press('button', 'Refresh')
+            auto("key", "cmd+r", "--settle")
             ready()
             if accepted:
                 # Correct the worktree then stage the Modified version through UI.

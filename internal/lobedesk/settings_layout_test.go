@@ -8,6 +8,40 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestSettingsTitleBarTracksAppearanceAndClearsWindowControls(t *testing.T) {
+	a := &app{locale: localeEnglish, palette: themePaletteCatppuccinMacchiato}
+	view := ui.NewTester(a.settingsRoot, settingsWindowMinW, settingsWindowMinH)
+	bar := ui.TitleBar{Left: 76, Right: 100, Height: 38}
+	view.SetTitleBar(bar)
+	for _, tc := range []struct {
+		mode                 string
+		systemDark, wantDark bool
+		palette              string
+	}{
+		{"light", true, false, themePaletteCatppuccinMacchiato},
+		{"dark", false, true, themePaletteCatppuccinMacchiato},
+		{"system", true, true, themePaletteCatppuccinMacchiato},
+		{"system", false, false, themePaletteCatppuccinMacchiato},
+		{"dark", false, true, themePaletteSuperGit},
+	} {
+		a.themeMode, a.palette = tc.mode, tc.palette
+		view.SetDark(tc.systemDark)
+		view.Frame()
+		title, ok := view.Find(a.settingsWindowTitle())
+		if !ok || title.X < bar.Left || title.X+title.W > settingsWindowMinW-bar.Right || title.Y+title.H > bar.Height {
+			t.Fatalf("title overlaps window controls or is outside the title bar: %+v", title)
+		}
+		want := themeConfig(tc.palette).Tokens(tc.wantDark).BgLayout
+		img := view.Image()
+		for _, x := range []int{4, settingsWindowMinW / 2, settingsWindowMinW - 4} {
+			p := img.RGBAAt(x, 4)
+			if p.R != want.R || p.G != want.G || p.B != want.B {
+				t.Fatalf("%s/%s systemDark=%v at x=%d: got %v, want %v", tc.palette, tc.mode, tc.systemDark, x, p, want)
+			}
+		}
+	}
+}
+
 func TestCodeFontCanBeChangedAtMinimumSettingsSize(t *testing.T) {
 	path := isolateSettings(t)
 	before := uiFontScaleValue()

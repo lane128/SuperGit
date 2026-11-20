@@ -125,19 +125,17 @@ func (a *app) quickCheckoutDialog(c *ui.Context) {
 		a.quickCheckout.cursor = -1
 	}
 	tk := theme.TokensOf(c)
-	width, height := c.Size()
+	_, height := c.Size()
 	generation := a.quickCheckout.generation
 	var search ui.Element
 	var chosen *quickCheckoutCandidate
 	c.Key(commandPickerOverlayKey)
-	ui.DialogBase(c, &a.quickCheckout.open, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(0, 0, 0, .4))
+	commandPickerDialog(c, &a.quickCheckout.open, func(backdrop, panel ui.Element) {
+
 		if a.quickCheckout.step != "" {
 			panel.OnShortcut(0, ui.KeyEscape, func() { a.quickCheckoutBack() })
 		}
-		panel.Column().Label(a.t("quickCheckout")).Width(min(520, max(0, width-32))).MaxHeight(max(0, height-32)).Padding(16).Gap(10).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
-			display.Text(c, a.t("quickCheckout"), display.TextProps{Strong: true, FontSize: scaledFont(14)})
+		commandPanel(c, backdrop, panel, a.t("quickCheckout")).Children(func() {
 			if a.quickCheckout.step == "name" {
 				a.quickCheckoutNameForm(c, generation)
 				return
@@ -145,7 +143,7 @@ func (a *app) quickCheckoutDialog(c *ui.Context) {
 			if a.quickCheckout.step == "targets" {
 				display.Text(c, a.quickCheckout.remoteName, display.TextProps{FontSize: scaledFont(12), Rows: 2})
 			}
-			search = a.pickerSearchBar(c, query, a.t("filterBranches"), func() {
+			search = a.paletteInput(c, a.t("quickCheckout"), a.t("filterBranches"), query, func() {
 				index := a.quickCheckout.cursor
 				if index >= 0 && index < len(matches) && selectable(index) {
 					branch := matches[index]
@@ -155,6 +153,9 @@ func (a *app) quickCheckoutDialog(c *ui.Context) {
 				a.quickCheckout.cursor = stepPickerCursor(len(matches), a.quickCheckout.cursor, delta, selectable)
 				a.quickCheckout.reveal = true
 			}).Label(a.t("filterBranches"))
+			if a.quickCheckout.step == "" {
+				a.commandPickerBackspace(search, *query, func() { a.quickCheckout = quickCheckoutState{} })
+			}
 			if a.quickCheckout.step == "targets" {
 				search.OnShortcut(0, ui.KeyEscape, func() { a.quickCheckoutBack() })
 			}
