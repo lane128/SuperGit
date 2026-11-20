@@ -85,7 +85,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-layout.") as directory:
                         raise RuntimeError("layout fixture app did not open automation socket")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
-                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("wait", "--text", "Commit message", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 auto("wait", "--text", "Layout fixture commit", "--timeout", "20s", "--settle")
                 return process

@@ -55,9 +55,9 @@ func TestRefreshShortcutsReadExternalChangesWithoutWriting(t *testing.T) {
 			tt := ui.NewTester(func(c *ui.Context) {
 				theme.Apply(c)
 				a.registerShortcuts(c)
-				ui.Column(c).Width(550).Children(func() { a.commitMessageFields(c) })
+				ui.Column(c).Width(550).Children(func() { a.commitMessageField(c) })
 			}, 600, 400)
-			editor, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+			editor, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 			if !ok {
 				t.Fatal("missing actual body editor")
 			}
@@ -95,8 +95,8 @@ func TestRefreshShortcutsReadExternalChangesWithoutWriting(t *testing.T) {
 				t.Fatal("refresh omitted external change")
 			}
 			tt.Frame()
-			if a.repo.Root != canonicalRoot || a.commitText != "preserve summary\n\nbody\n" || !tt.Focused(a.t("commitDescription")) {
-				t.Fatalf("refresh state: root=%q want=%q draft=%q focused=%v", a.repo.Root, root, a.commitText, tt.Focused(a.t("commitDescription")))
+			if a.repo.Root != canonicalRoot || a.commitText != "preserve summary\n\nbody\n" || !tt.Focused(a.t("commitMessage")) {
+				t.Fatalf("refresh state: root=%q want=%q draft=%q focused=%v", a.repo.Root, root, a.commitText, tt.Focused(a.t("commitMessage")))
 			}
 			if git("rev-parse", "HEAD") != head || git("ls-files", "--stage", "-z") != index || git("for-each-ref", "--format=%(refname) %(objectname)") != refs {
 				t.Fatal("refresh changed Git state")

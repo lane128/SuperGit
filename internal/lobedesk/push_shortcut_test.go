@@ -113,7 +113,7 @@ func TestPushShortcutGuards(t *testing.T) {
 
 func TestPushShortcutActualInputsCancel(t *testing.T) {
 	pushShortcut(t)
-	for _, opener := range []string{"summary", "body", "search"} {
+	for _, opener := range []string{"message", "search"} {
 		for _, cancel := range []string{"escape", "backdrop", "button"} {
 			t.Run(opener+"/"+cancel, func(t *testing.T) {
 				a := pushShortcutApp(t)
@@ -126,7 +126,7 @@ func TestPushShortcutActualInputsCancel(t *testing.T) {
 						if opener == "search" {
 							a.historyPage(c)
 						} else {
-							a.commitMessageFields(c)
+							a.commitMessageField(c)
 						}
 						a.confirmDialog(c)
 					})
@@ -136,10 +136,7 @@ func TestPushShortcutActualInputsCancel(t *testing.T) {
 					tt.Type("needle")
 					tt.Frame()
 				} else {
-					label := a.t("commitSummary")
-					if opener == "body" {
-						label = a.t("commitDescription")
-					}
+					label := a.t("commitMessage")
 					field, ok := tt.AccessByRole(ui.RoleTextField, label)
 					if !ok {
 						t.Fatal("missing opener")
@@ -192,13 +189,9 @@ func TestPushShortcutActualInputsCancel(t *testing.T) {
 					t.Fatal("cancel changed modal/write/amend state")
 				}
 				switch opener {
-				case "summary":
-					if a.commitText != "X\n\nbody" {
-						t.Fatal("lost summary selection", a.commitText)
-					}
-				case "body":
-					if a.commitText != "title\n\nX" {
-						t.Fatal("lost Body selection", a.commitText)
+				case "message":
+					if a.commitText != "X" {
+						t.Fatal("lost commit message selection", a.commitText)
 					}
 				case "search":
 					if a.historyQuery != "X" || a.commitText != "title\n\nbody" {
@@ -275,7 +268,7 @@ func TestPushShortcutOwnedConfirmation(t *testing.T) {
 			tt := ui.NewTester(func(c *ui.Context) {
 				theme.Apply(c)
 				a.registerShortcuts(c)
-				ui.Column(c).Fill().Children(func() { a.commitMessageFields(c); a.confirmDialog(c) })
+				ui.Column(c).Fill().Children(func() { a.commitMessageField(c); a.confirmDialog(c) })
 			}, 900, 640)
 			tt.Key(0, ui.KeyF8)
 			tt.Frame()

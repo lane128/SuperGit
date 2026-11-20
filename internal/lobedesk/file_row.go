@@ -1,6 +1,8 @@
 package lobedesk
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
@@ -16,20 +18,11 @@ const (
 	fileRowBaseH    float32 = 29
 	fileRowGap      float32 = 1
 	fileRowNameSize float32 = 12
-	fileRowDirSize  float32 = 9
 )
 
 // fileRowHeight is one file row at the reader's font scale; the gap under it
 // stays a point, as the list's own spacing does.
 func fileRowHeight() float32 { return scaledFont(fileRowBaseH) }
-
-// fileRowFolderMin is the row width below which the folder is left out of a
-// file row: under it the name needs the room more than the folder does.
-const fileRowFolderMin = 260
-
-// fileRowShowsFolder reports whether a row that many points wide has room for
-// the folder beside the file name.
-func fileRowShowsFolder(room float32) bool { return room >= fileRowFolderMin }
 
 // fileRowShell builds the button both file lists start from: named by the
 // file's path, one line high, with the selected and hover grounds. It is a
@@ -50,31 +43,31 @@ func fileRowShell(c *ui.Context, tk *theme.Tokens, path string, selected bool) u
 	return row
 }
 
-// fileRowPath keeps the current name primary and its directory secondary.
-// When space permits, a rename source precedes the current name with an
-// arrow; it does not replace the destination directory. Narrow rows keep
-// the primary name. The row's label already carries the complete path.
-func fileRowPath(c *ui.Context, row ui.Element, path, originalPath string, selected bool) {
-	name, dir := splitRepoPath(path)
-	room := row.Bounds().W
-	ui.Row(c).Grow(1).Basis(0).MinWidth(0).Gap(6).AlignItems(ui.Center).Children(func() {
-		if originalPath != "" && fileRowShowsFolder(room) {
-			ui.Row(c).Shrink(0).MaxWidthPercent(30).MinWidth(0).Gap(4).AlignItems(ui.Center).Children(func() {
-				display.Text(c, originalPath, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(fileRowDirSize)}).
-					SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
-				display.Text(c, "→", display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(fileRowDirSize)}).
-					SingleLine().Shrink(0).AccessHidden(true)
-			})
+// Paths use the same repository-relative spelling as the patch headers.
+func fileRowPath(c *ui.Context, path string, selected bool) {
+	slot := ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center)
+	slot.Children(func() {
+		size := scaledFont(fileRowNameSize)
+		weight := 400
+		if selected {
+			weight = 600
 		}
-		display.Text(c, name, display.TextProps{FontSize: scaledFont(fileRowNameSize), Strong: selected}).
-			SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
-		if dir != "" && fileRowShowsFolder(room) {
-			maxWidth := float32(40)
-			if originalPath != "" {
-				maxWidth = 20
+		label := path
+		if width := slot.Bounds().W; width > 0 {
+			// Drop whole leading directories first so the filename stays readable.
+			for start := 0; ; {
+				measured, _ := c.MeasureText(0, ui.Span{Text: label, Size: size, Weight: weight})
+				if measured <= width {
+					break
+				}
+				slash := strings.IndexByte(path[start:], '/')
+				if slash < 0 {
+					break
+				}
+				start += slash + 1
+				label = "…/" + path[start:]
 			}
-			display.Text(c, dir, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(fileRowDirSize)}).
-				SingleLine().Shrink(0).MaxWidthPercent(maxWidth).AccessHidden(true)
 		}
+		display.Text(c, label, display.TextProps{FontSize: size, Strong: selected}).SingleLine().FillWidth().AccessHidden(true)
 	})
 }

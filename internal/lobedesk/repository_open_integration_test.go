@@ -54,7 +54,7 @@ func repositoryOpenFingerprint(t *testing.T, root string) string {
 }
 
 func TestOpenRepositoryCancelFromCommitFieldsPreservesContext(t *testing.T) {
-	for _, fieldKey := range []string{"commitSummary", "commitDescription"} {
+	for _, fieldKey := range []string{"commitMessage"} {
 		t.Run(fieldKey, func(t *testing.T) {
 			a, _, root := worktreeApp(t)
 			a.window = &mygo.Window{}
@@ -68,16 +68,16 @@ func TestOpenRepositoryCancelFromCommitFieldsPreservesContext(t *testing.T) {
 			tt := ui.NewTester(func(c *ui.Context) {
 				theme.Apply(c)
 				a.registerShortcuts(c)
-				a.commitMessageFields(c)
+				a.commitMessageField(c)
 			}, 500, 400)
 			focusCommitField(t, tt, a.t(fieldKey))
-			fields := a.commitFields
+
 			tt.Key(ui.Cmd, ui.KeyO)
 			current, ok := tt.AccessByRole(ui.RoleTextField, a.t(fieldKey))
 			if calls != 1 || !ok || !current.Focused {
 				t.Fatal("actual commit field failed dispatch or lost focus after injected cancellation")
 			}
-			if a.repo.Root != root || a.commitText != "retained title\n\nretained body" || a.commitFields.Source != fields.Source || a.commitFields.Summary != fields.Summary || a.commitFields.Body != fields.Body || a.selectedPath != "base.txt" || a.selectedSHA != "old selection" || a.historyRef.Name != "main" || a.loading {
+			if a.repo.Root != root || a.commitText != "retained title\n\nretained body" || a.selectedPath != "base.txt" || a.selectedSHA != "old selection" || a.historyRef.Name != "main" || a.loading {
 				t.Fatal("cancel changed existing repository context")
 			}
 			if repositoryOpenFingerprint(t, root) != before {

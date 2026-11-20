@@ -92,7 +92,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-window-dialog.") as directory:
                     raise RuntimeError("native automation socket unavailable")
                 time.sleep(0.05)
             auto("open", "--socket", str(socket))
-            auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+            auto("wait", "--text", "Commit message", "--timeout", "30s", "--settle")
             auto("key", "cmd+1", "--settle")
             wait("w1", "1 change")
             press("w1", "1 change", "listItem")

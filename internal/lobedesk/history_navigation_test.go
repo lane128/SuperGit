@@ -161,7 +161,7 @@ func TestHistoryNavigationActualShortcutAndEditors(t *testing.T) {
 	if a.selectedSHA != "p" {
 		t.Fatal("Forward shortcut did not replay target")
 	}
-	for _, label := range []string{a.t("commitSummary"), a.t("commitDescription")} {
+	for _, label := range []string{a.t("commitMessage"), a.t("commitMessage")} {
 		editor, ok := tt.AccessByRole(ui.RoleTextField, label)
 		if !ok {
 			t.Fatalf("missing real editor %q", label)

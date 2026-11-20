@@ -255,8 +255,7 @@ func (a *app) comparisonFileList(c *ui.Context, v *comparisonView) {
 				selected := v.selected == i
 				row := fileRowShell(c, tk, file.Path, selected).PositionInSet(i+1, len(v.files)).Tooltip(file.Path)
 				row.Children(func() {
-					a.statusTag(c, changedFileCode(file.Status), display.TagProps{Color: display.TagColor(changedFileColor(file.Status)), Size: theme.Small, Variant: display.TagFilled, Round: true})
-					fileRowPath(c, row, file.Path, file.OriginalPath, selected)
+					fileRowPath(c, file.Path, selected)
 				})
 				if row.Clicked() && !selected {
 					a.loadComparison(i)

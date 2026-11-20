@@ -124,8 +124,7 @@ func TestCommitDateMenuCopiesCapturedDisplayValue(t *testing.T) {
 					}
 					commit := gitrepo.Commit{SHA: strings.Repeat("a", 40), Subject: "Selected", Author: strings.Repeat("作者 name ", 20), Date: original}
 					a := &app{locale: language, selectedSHA: commit.SHA}
-					a.commitFields.Summary = "keep draft"
-					a.commitFields.Body = "keep body"
+					a.commitText = "keep draft\n\nkeep body"
 					copied := ""
 					calls := 0
 					previous := writeClipboard
@@ -172,7 +171,7 @@ func TestCommitDateMenuCopiesCapturedDisplayValue(t *testing.T) {
 					} else if notices[0].kind != "success" {
 						t.Fatal("copy success missing")
 					}
-					if a.selectedSHA != commit.SHA || a.commitFields.Summary != "keep draft" || a.commitFields.Body != "keep body" || a.busy || a.loading {
+					if a.selectedSHA != commit.SHA || a.commitText != "keep draft\n\nkeep body" || a.busy || a.loading {
 						t.Fatal("date copy changed repository or draft state")
 					}
 				})

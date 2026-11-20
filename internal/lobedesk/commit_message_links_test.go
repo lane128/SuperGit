@@ -127,7 +127,7 @@ func TestCommitMessageLinkMenuPreservesSelectionAndCapturedURL(t *testing.T) {
 			body := "Read " + first + " and " + second
 			commit := gitrepo.Commit{Subject: "Selected", Author: "Fixture", SHA: strings.Repeat("a", 40)}
 			a := &app{locale: language, commitMessage: "Selected\n\n" + body, selectedSHA: commit.SHA}
-			a.commitFields.Summary = "keep draft"
+			a.commitText = "keep draft"
 			tt := ui.NewTester(func(c *ui.Context) {
 				theme.Apply(c)
 				ui.Column(c).Fill().Children(func() { a.commitInfoContent(c, commit, theme.TokensOf(c)) })
@@ -160,7 +160,7 @@ func TestCommitMessageLinkMenuPreservesSelectionAndCapturedURL(t *testing.T) {
 			if len(notices) != 1 || notices[0].kind != "error" || !strings.Contains(notices[0].title, "owned URL failure") {
 				t.Fatal("URL open failure missing")
 			}
-			if a.commitFields.Summary != "keep draft" || a.selectedSHA != commit.SHA || a.busy || a.loading {
+			if a.commitText != "keep draft" || a.selectedSHA != commit.SHA || a.busy || a.loading {
 				t.Fatal("opening message URL changed repository or draft state")
 			}
 			tt.FailOpenURL(nil)

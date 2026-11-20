@@ -125,11 +125,10 @@ func TestChooseRepositoryRechecksStateAfterNativeDialog(t *testing.T) {
 
 func TestChooseRepositoryErrorPreservesDraftAndUnlocks(t *testing.T) {
 	a := &app{window: &mygo.Window{}, locale: localeEnglish, page: "history"}
-	a.commitFields.Summary = "draft title"
-	a.commitFields.Body = "draft body"
+	a.commitText = "draft title\n\ndraft body"
 	a.openDirectoryDialog = func(mygo.OpenDialogOptions) ([]string, error) { return nil, errors.New("chooser failed") }
 	a.chooseRepository()
-	if a.repositoryChooserOpen || a.loading || a.loadSeq != 0 || a.commitFields.Summary != "draft title" || a.commitFields.Body != "draft body" {
+	if a.repositoryChooserOpen || a.loading || a.loadSeq != 0 || a.commitText != "draft title\n\ndraft body" {
 		t.Fatal("chooser failure changed draft or retained lock")
 	}
 	if len(a.notices[toastMain]) != 1 || a.notices[toastMain][0].description != "chooser failed" {

@@ -162,10 +162,7 @@ func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.En
 			if s := a.workspaceSelection; a.repo != nil && s.Root == a.repo.Root && s.Group == key && len(s.Files) > 0 {
 				display.Text(c, a.tf("filesSelectedCount", len(s.Files)), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).Shrink(0)
 			}
-			if !compact {
-				// Keep the wider header reading from the left edge.
-				ui.Row(c).Grow(1).Basis(0)
-			}
+
 		})
 		if collapsed {
 			return
@@ -330,13 +327,7 @@ func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Elemen
 	row.OnShortcut(ui.Cmd, ui.KeyA, func() { a.selectWorkspaceGroup(fileRef{entry.Path, staged}) })
 	a.revealIfSelected(row, primary)
 	row.Children(func() {
-		a.statusTag(c, statusCode(entry, staged), display.TagProps{
-			Variant: display.TagFilled,
-			Color:   display.TagColor(statusTagColor(entry, staged)),
-			Size:    theme.Small,
-			Round:   true,
-		})
-		fileRowPath(c, row, entry.Path, entry.OriginalPath, primary)
+		fileRowPath(c, entry.Path, primary)
 		if entry.Conflict {
 			a.statusTag(c, "!", display.TagProps{Variant: display.TagFilled, Color: display.TagError, Size: theme.Small, Round: true})
 		} else {
@@ -936,7 +927,9 @@ func (a *app) commitAction(c *ui.Context, showCount bool) {
 		label = a.t("amend")
 	}
 	visibleLabel := label
-	if showCount {
+	if showCount && staged == 0 && !a.amend && a.operation.Kind == "" {
+		visibleLabel = a.t("nothingToCommit")
+	} else if showCount {
 		visibleLabel += " · " + a.stagedLabel(staged)
 	}
 	ready := a.canCommit()
@@ -952,7 +945,7 @@ func (a *app) commitAction(c *ui.Context, showCount bool) {
 		a.commit()
 	}
 	if showCount {
-		if reason != "" {
+		if reason != "" && reason != a.t("commitTitleRequired") && reason != a.t("stagePrompt") {
 			display.Text(c, reason, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10), Rows: 2}).FillWidth()
 		}
 		return

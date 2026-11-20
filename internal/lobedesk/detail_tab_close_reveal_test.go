@@ -28,10 +28,8 @@ func TestQAMinimumWindowCloseRevealsSuccessorAndPreservesDraft(t *testing.T) {
 	for range 5 {
 		view.Frame()
 	}
-	focusCommitField(t, view, a.t("commitSummary"))
-	view.Type("keep my summary")
-	focusCommitField(t, view, a.t("commitDescription"))
-	view.Type("keep my description")
+	focusCommitField(t, view, a.t("commitMessage"))
+	view.Type("keep my summary\n\nkeep my description")
 	if a.commitText != "keep my summary\n\nkeep my description" {
 		t.Fatalf("draft setup failed: %q", a.commitText)
 	}

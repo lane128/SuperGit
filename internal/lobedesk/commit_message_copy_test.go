@@ -21,7 +21,7 @@ func TestMessageMenuCopiesCapturedPartialSelection(t *testing.T) {
 				const body = "作者 hello https://example.invalid/docs after"
 				commit := gitrepo.Commit{Subject: "Selected", SHA: strings.Repeat("a", 40)}
 				a := &app{locale: language, selectedSHA: commit.SHA, commitMessage: "Selected\n\n" + body}
-				a.commitFields.Summary = "keep draft"
+				a.commitText = "keep draft"
 				attempts := []string{}
 				previous := writeClipboard
 				writeClipboard = func(value string) error {
@@ -76,7 +76,7 @@ func TestMessageMenuCopiesCapturedPartialSelection(t *testing.T) {
 				if failure && !strings.Contains(notices[0].title, "owned selection clipboard failure") {
 					t.Fatal("clipboard error missing")
 				}
-				if a.selectedSHA != strings.Repeat("b", 40) || a.commitFields.Summary != "keep draft" || a.pendingJumpSHA != "" || len(tt.OpenedURLs()) != 0 || a.busy || a.loading {
+				if a.selectedSHA != strings.Repeat("b", 40) || a.commitText != "keep draft" || a.pendingJumpSHA != "" || len(tt.OpenedURLs()) != 0 || a.busy || a.loading {
 					t.Fatal("selection copy mutated navigation or repository state")
 				}
 			})

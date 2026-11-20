@@ -34,7 +34,7 @@ func paletteStashTester(a *app, opener string, width, height int) *ui.Tester {
 			if opener == "history" {
 				a.historyPage(c)
 			} else {
-				a.commitMessageFields(c)
+				a.commitMessageField(c)
 			}
 			a.promptDialog(c)
 			a.commandPickerDialogs(c)
@@ -51,7 +51,7 @@ func stashEntryApp(t *testing.T) *app {
 }
 
 func TestPaletteStashHandoffCancel(t *testing.T) {
-	for _, opener := range []string{"summary", "body", "history"} {
+	for _, opener := range []string{"message", "history"} {
 		for _, mod := range []ui.Modifiers{ui.Cmd, ui.Cmd | ui.Shift} {
 			for _, activate := range []string{"enter", "click"} {
 				for _, dismiss := range []string{"escape", "backdrop", "button"} {
@@ -64,10 +64,7 @@ func TestPaletteStashHandoffCancel(t *testing.T) {
 							tt.Type("needle")
 							tt.Frame()
 						} else {
-							label := a.t("commitSummary")
-							if opener == "body" {
-								label = a.t("commitDescription")
-							}
+							label := a.t("commitMessage")
 							field, ok := tt.AccessByRole(ui.RoleTextField, label)
 							if !ok {
 								t.Fatal("missing opener")
@@ -139,13 +136,9 @@ func TestPaletteStashHandoffCancel(t *testing.T) {
 							t.Fatal("cancel changed modal/write/amend")
 						}
 						switch opener {
-						case "summary":
-							if a.commitText != "X\n\nbody" {
-								t.Fatal("lost summary selection", a.commitText)
-							}
-						case "body":
-							if a.commitText != "title\n\nX" {
-								t.Fatal("lost Body selection", a.commitText)
+						case "message":
+							if a.commitText != "X" {
+								t.Fatal("lost commit message selection", a.commitText)
 							}
 						case "history":
 							if a.historyQuery != "X" || a.commitText != "title\n\nbody" {

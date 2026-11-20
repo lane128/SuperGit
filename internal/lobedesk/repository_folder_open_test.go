@@ -76,7 +76,7 @@ func TestRepositoryFolderHandoffWaitsForRestoreAndBusyTab(t *testing.T) {
 	}
 	c := tabs.active
 	selectWorktreeRow(t, view, c)
-	focusCommitField(t, view, c.t("commitSummary"))
+	focusCommitField(t, view, c.t("commitMessage"))
 	view.Type("Keep the active draft during folder handoff")
 	c.busy = true
 	alias := filepath.Join(t.TempDir(), "alias-of-B")

@@ -137,10 +137,8 @@ def run(bundle, driver, artifacts, scratch):
         command('/usr/bin/open', '-a', str(app), str(alpha))
         selected(alpha.name, ready=True)
         click('listItem', '1 change')
-        field = one(snapshot(), 'textField', 'Commit summary (required)').split()[0]
-        auto('fill', field, 'Alpha fixture draft', '--settle')
-        body = one(snapshot(), 'textField', 'Description (optional)').split()[0]
-        auto('fill', body, 'Alpha fixture body', '--settle')
+        field = one(snapshot(), 'textField', 'Commit message').split()[0]
+        auto('fill', field, 'Alpha fixture draft\n\nAlpha fixture body', '--settle')
         loaded = snapshot()
         for label in ('Open Repository…', 'Open a Git repository'):
             assert not control(loaded, 'button', label), f'Duplicate open button in workbench: {label}'
@@ -164,10 +162,8 @@ def run(bundle, driver, artifacts, scratch):
         one(tree, 'tab', alpha.name)
         assert not control(tree, 'tab', 'Welcome'), 'Beta did not reuse Welcome'
         click('listItem', '1 change')
-        field = one(snapshot(), 'textField', 'Commit summary (required)').split()[0]
-        auto('fill', field, 'Beta fixture draft', '--settle')
-        body = one(snapshot(), 'textField', 'Description (optional)').split()[0]
-        auto('fill', body, 'Beta fixture body', '--settle')
+        field = one(snapshot(), 'textField', 'Commit message').split()[0]
+        auto('fill', field, 'Beta fixture draft\n\nBeta fixture body', '--settle')
         for repo, own, other in ((alpha, alpha_file, beta_file), (beta, beta_file, alpha_file)):
             click('tab', repo.name)
             tree = selected(repo.name, ready=True)

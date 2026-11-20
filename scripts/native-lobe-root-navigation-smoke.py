@@ -165,17 +165,17 @@ try:
             if other!=label:assert '+'+other+' dirty navigation sentinel' not in changes,'Other root diff leaked'
         note('PASS '+name+' root='+str(repo)+' HEAD='+sha+' History/Files/diff/actions match; all three fingerprints unchanged')
     auto('open','--socket',str(socket))
-    wait('Commit summary (required)')
+    wait('Commit message')
     def title(repo):
         candidates=[e for e in entries() if e[1]=='button' and e[2]==repo.name and 'bounds=46,' in e[3]]
         assert len(candidates)==1,('Missing repository title',repo,candidates)
         return candidates[0][0]
     def draft(repo, value):
-        field=next(e for e in entries() if e[1]=='textField' and e[2]=='Commit summary (required)')
+        field=next(e for e in entries() if e[1]=='textField' and e[2]=='Commit message')
         auto('fill',field[0],value,'--settle')
     def assert_reset():
-        fields=[e for e in entries() if e[1]=='textField' and e[2] in ('Commit summary (required)','Description (optional)')]
-        assert len(fields)==2 and all('value=' not in e[3] for e in fields),'Root switch retained another root draft'
+        fields=[e for e in entries() if e[1]=='textField' and e[2] == 'Commit message']
+        assert len(fields)==1 and all('value=' not in e[3] for e in fields),'Root switch retained another root draft'
     def return_parent(current,name):
         auto('press',title(current),'--settle')
         wait(str(parent))

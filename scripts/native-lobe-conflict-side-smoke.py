@@ -131,7 +131,7 @@ for side in ("ours", "theirs"):
                     assert any('"This conflict includes a deletion.' in line and "offscreen" not in line for line in visible_snapshot.splitlines()), "Deletion consequence is not visible beside guidance"
                 (captures / "unresolved.snapshot.txt").write_text(visible_snapshot)
                 auto("screenshot", str(captures / "unresolved.png"))
-                auto("fill", ref("textField", "Commit summary (required)"), "Native " + side + " merge resolution", "--settle")
+                auto("fill", ref("textField", "Commit message"), "Native " + side + " merge resolution", "--settle")
                 assert any('[button] "Commit"' in line and "disabled" in line for line in snapshot().splitlines()), "Unresolved merge enabled Commit"
                 auto("focus", ref("listItem", path.name), "--settle")
                 auto("key", "Shift+F10", "--settle")
@@ -201,7 +201,7 @@ for side in ("ours", "theirs"):
                     results.append({"kind": kind, "shape": options.shape, "side": side, "rebase_stage_identity": True, "localized_success": success, "ui_resolution_staged_exact_side": True, "abort_restored_original_branch": True})
                     print("PASS native rebase UI " + side + ": actual stage identity, exact staged bytes, localized success, Abort restoration", flush=True)
                     continue
-                auto("fill", ref("textField", "Description (optional)"), "Complete UI side resolution\n\nRefs: native-conflict-side", "--settle")
+                auto("fill", ref("textField", "Commit message"), "Native " + side + " merge resolution\n\nComplete UI side resolution\n\nRefs: native-conflict-side", "--settle")
                 deadline = time.monotonic() + 25
                 while True:
                     if any('[button] "Commit"' in line and "disabled" not in line for line in snapshot().splitlines()):

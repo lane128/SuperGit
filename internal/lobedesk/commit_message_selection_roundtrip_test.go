@@ -21,7 +21,7 @@ func TestMessageCommitSelectionRoundTripCancelsResolution(t *testing.T) {
 				} else {
 					a, callbacks, source, target = messageNavigationFixture(t)
 				}
-				draft := a.commitFields.Summary
+				draft := a.commitText
 				other := a.commits[1].SHA
 				tt := ui.NewTester(func(c *ui.Context) {
 					theme.Apply(c)
@@ -70,7 +70,7 @@ func TestMessageCommitSelectionRoundTripCancelsResolution(t *testing.T) {
 					t.Fatal("return click did not restore source")
 				}
 				done()
-				if a.selectedSHA != source.SHA || a.pendingJumpSHA != "" || a.historyNavigation.pending != nil || len(a.historyNavigation.positions) != 0 || len(a.notices[toastMain]) != 0 || a.commitFields.Summary != draft {
+				if a.selectedSHA != source.SHA || a.pendingJumpSHA != "" || a.historyNavigation.pending != nil || len(a.historyNavigation.positions) != 0 || len(a.notices[toastMain]) != 0 || a.commitText != draft {
 					t.Fatalf("obsolete navigation revived after selection: selected=%s routes=%d", a.selectedSHA, len(a.historyNavigation.positions))
 				}
 			})

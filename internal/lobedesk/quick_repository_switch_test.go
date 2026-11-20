@@ -19,7 +19,7 @@ func repositorySwitchTester(a *app) *ui.Tester {
 	return ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
 		a.registerShortcuts(c)
-		ui.Column(c).Fill().Children(func() { a.commitMessageFields(c); a.commandPickerDialogs(c) })
+		ui.Column(c).Fill().Children(func() { a.commitMessageField(c); a.commandPickerDialogs(c) })
 	}, 600, 500)
 }
 
@@ -56,7 +56,7 @@ func TestQuickRepositorySwitchActualInputCancel(t *testing.T) {
 			a.commitText = "title\n\nbody"
 			a.recentRepositories = []string{a.repo.Root, "/fixtures/other"}
 			tt := repositorySwitchTester(a)
-			body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+			body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 			if !ok {
 				t.Fatal("missing actual Body")
 			}
@@ -92,7 +92,7 @@ func TestQuickRepositorySwitchActualInputCancel(t *testing.T) {
 			tt.Key(0, ui.KeyEnd)
 			tt.Type("X")
 			tt.Frame()
-			if a.quickRepositorySwitch.open || a.commitText != "title\n\nbodyX" || a.loading {
+			if a.quickRepositorySwitch.open || a.commitText != "titleX\n\nbody" || a.loading {
 				t.Fatal("cancel lost original input/draft")
 			}
 		})
@@ -107,7 +107,7 @@ func intBool(value bool) int {
 }
 
 func TestQuickRepositorySwitchOpenerSelection(t *testing.T) {
-	for _, opener := range []string{"summary", "body", "history"} {
+	for _, opener := range []string{"message", "history"} {
 		t.Run(opener, func(t *testing.T) {
 			a := browsingApp(t)
 			a.commitText = "title\n\nbody"
@@ -120,10 +120,7 @@ func TestQuickRepositorySwitchOpenerSelection(t *testing.T) {
 				tt.Frame()
 			} else {
 				tt = repositorySwitchTester(a)
-				label := a.t("commitSummary")
-				if opener == "body" {
-					label = a.t("commitDescription")
-				}
+				label := a.t("commitMessage")
 				field, ok := tt.AccessByRole(ui.RoleTextField, label)
 				if !ok {
 					t.Fatal("missing opener", label)
@@ -142,12 +139,8 @@ func TestQuickRepositorySwitchOpenerSelection(t *testing.T) {
 			tt.Type("X")
 			tt.Frame()
 			switch opener {
-			case "summary":
-				if a.commitText != "X\n\nbody" {
-					t.Fatalf("summary selection lost: %q", a.commitText)
-				}
-			case "body":
-				if a.commitText != "title\n\nX" {
+			case "message":
+				if a.commitText != "X" {
 					t.Fatalf("Body selection lost: %q", a.commitText)
 				}
 			case "history":

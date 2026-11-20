@@ -147,16 +147,16 @@ func TestPullShortcutFromActualBodyUsesFastForwardOnly(t *testing.T) {
 			if scenario == "search" {
 				a.page = "history"
 			}
-			label := a.t("commitDescription")
+			label := a.t("commitMessage")
 			if scenario == "summary" {
-				label = a.t("commitSummary")
+				label = a.t("commitMessage")
 			}
 			tt := pageTester(a, func(c *ui.Context) {
 				a.registerShortcuts(c)
 				if scenario == "search" {
 					a.historyPage(c)
 				} else {
-					a.commitMessageFields(c)
+					a.commitMessageField(c)
 				}
 			})
 			if scenario == "search" {

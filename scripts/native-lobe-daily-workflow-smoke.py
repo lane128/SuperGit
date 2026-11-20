@@ -187,8 +187,7 @@ def select_and_apply(line_label, staged, expected):
 
 
 def fill_message(subject, description):
-    auto('fill', control('textField', 'Commit summary (required)')[0], subject, '--settle')
-    auto('fill', control('textField', 'Description (optional)')[0], description, '--settle')
+    auto('fill', control('textField', 'Commit message')[0], subject + '\n\n' + description, '--settle')
 
 
 def ui_commit(subject, description, expected_tree, parent):
@@ -250,14 +249,14 @@ try:
     ready()
     step = '01-open-edit-refresh'
     press('listItem', 'No changes')
-    wait('Commit summary (required)')
+    wait('Commit message')
     fill_message(summary, body)
     before = save_state('opened')
     file.write_bytes(working_bytes)
     wait('+ALPHA')
     wait('+BETA')
     current = entries()
-    assert any(e[1] == 'textField' and e[2] == 'Description (optional)' and 'focused' in e[3] for e in current), 'External edit stole editor focus'
+    assert any(e[1] == 'textField' and e[2] == 'Commit message' and 'focused' in e[3] for e in current), 'External edit stole editor focus'
     auto("key", "cmd+r", "--settle")
     wait('+ALPHA')
     ready()

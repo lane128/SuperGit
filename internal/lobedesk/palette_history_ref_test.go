@@ -35,7 +35,7 @@ func historyRefPaletteApp(t *testing.T) *app {
 }
 
 func TestPaletteHistoryRefHandoffCancel(t *testing.T) {
-	for _, opener := range []string{"summary", "body", "history"} {
+	for _, opener := range []string{"message", "history"} {
 		for _, mod := range []ui.Modifiers{ui.Cmd, ui.Cmd | ui.Shift} {
 			for _, activate := range []string{"enter", "click"} {
 				for _, dismiss := range []string{"escape", "backdrop"} {
@@ -47,10 +47,7 @@ func TestPaletteHistoryRefHandoffCancel(t *testing.T) {
 						if opener == "history" {
 							tt.Key(ui.Cmd, ui.KeyF)
 						} else {
-							label := a.t("commitSummary")
-							if opener == "body" {
-								label = a.t("commitDescription")
-							}
+							label := a.t("commitMessage")
 							field, ok := tt.AccessByRole(ui.RoleTextField, label)
 							if !ok {
 								t.Fatal("missing original input")
@@ -105,13 +102,9 @@ func TestPaletteHistoryRefHandoffCancel(t *testing.T) {
 						tt.Type("X")
 						tt.Frame()
 						switch opener {
-						case "summary":
-							if a.commitText != "X\n\nbody" {
-								t.Fatal("lost Summary selection")
-							}
-						case "body":
-							if a.commitText != "title\n\nX" {
-								t.Fatal("lost Body selection")
+						case "message":
+							if a.commitText != "X" {
+								t.Fatal("lost commit message selection")
 							}
 						case "history":
 							if a.historyQuery != "X" || a.commitText != "title\n\nbody" {
@@ -162,7 +155,7 @@ func TestPaletteHistoryRefGuards(t *testing.T) {
 			entry := historyRefPaletteEntry(t, a)
 			a.commitText = "title\n\nbody"
 			tt := paletteStashTester(a, "summary", 900, 640)
-			field, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitSummary"))
+			field, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 			if !ok {
 				t.Fatal("missing original input")
 			}
@@ -191,7 +184,7 @@ func TestPaletteHistoryRefGuards(t *testing.T) {
 			}
 			tt.Type("X")
 			tt.Frame()
-			if a.commitText != "X\n\nbody" || a.historyRefQuery != "" {
+			if a.commitText != "X" || a.historyRefQuery != "" {
 				t.Fatal("stale picker kept focus or lost the surviving original input selection")
 			}
 		})

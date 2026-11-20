@@ -134,10 +134,10 @@ func TestConflictEditorWorkbenchJourney(t *testing.T) {
 			if got := splitCommitGit(t, root, "show", ":base.txt"); got != "combined current and incoming\n" {
 				t.Fatalf("Index=%q", got)
 			}
-			click(ui.RoleTextField, a.t("commitSummary"))
+			click(ui.RoleTextField, a.t("commitMessage"))
 			tt.Key(ui.Cmd, ui.KeyA)
 			tt.Type("Combine conflict in app")
-			click(ui.RoleTextField, a.t("commitDescription"))
+			click(ui.RoleTextField, a.t("commitMessage"))
 			tt.Key(ui.Cmd, ui.KeyA)
 			tt.Type("Preserve both intents.")
 			tt.Advance(150 * time.Millisecond)

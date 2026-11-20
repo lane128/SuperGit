@@ -24,9 +24,7 @@ const (
 	historyFilesPaneWidth float32 = 240
 	historyFilesPaneMin   float32 = 180
 	historyDiffPaneMin    float32 = 300
-	// The working tree's Files column holds the commit box under the list, so
-	// it opens wider than a commit's, the way Sublime Merge gives the commit
-	// page more room than a commit's details.
+	// Working files also have stage controls and a group selection count.
 	worktreeFilesPaneWidth float32 = 300
 )
 
@@ -308,24 +306,12 @@ func (a *app) historyFilesPane(c *ui.Context) {
 	ui.Column(c).Width(a.historyFilesWidth()).Shrink(0).MinHeight(0).AlignSelf(ui.Stretch).
 		Children(func() {
 			a.filesPaneBody(c)
-			if a.worktreeSelected {
-				// The working tree's commit box is part of this column, not a
-				// tab: choosing the row is choosing the editor, and switching
-				// file tabs cannot cover it.
-				a.worktreeCommitPane(c)
-			}
 		})
 }
 
-// filesPaneBody is the files column without the working tree's docked commit
-// box: the header and the scrollable rows. Row navigation is exercised on its
-// own, and the worktree's pane adds the editor below it.
+// The Files column keeps file groups and their staging actions together.
 func (a *app) filesPaneBody(c *ui.Context) {
 	tk := theme.TokensOf(c)
-	count := len(a.commitFiles)
-	if a.worktreeSelected {
-		count = len(a.status.Entries)
-	}
 	width := a.historyFilesWidth()
 	ui.Column(c).FillWidth().Grow(1).Basis(0).MinHeight(0).Children(func() {
 		header := ui.Row(c).Height(38).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
@@ -338,8 +324,8 @@ func (a *app) filesPaneBody(c *ui.Context) {
 		header.Children(func() {
 			ui.Row(c.Key("files-heading")).Gap(8).AlignItems(ui.Center).Children(func() {
 				display.Text(c, a.t("filesTab"), display.TextProps{Strong: true, FontSize: scaledFont(12)})
-				if a.worktreeSelected || (!a.commitFilesLoading && a.commitFilesErr == "") {
-					display.Tag(c, fmt.Sprint(count), display.TagProps{Variant: display.TagFilled, Size: theme.Small, Round: true})
+				if a.worktreeSelected {
+					display.Tag(c, fmt.Sprint(len(a.status.Entries)), display.TagProps{Variant: display.TagFilled, Size: theme.Small, Round: true})
 				}
 			})
 			if a.worktreeSelected {
@@ -359,29 +345,22 @@ func (a *app) filesPaneBody(c *ui.Context) {
 	})
 }
 
-// worktreeCommitPane is the working tree's commit editor under its files.
-// It is tall enough for the whole form — operation, message, amend and
-// identity — so a commit never needs a scroll before it can be written. The
-// form scrolls only on a window too short for that, and the action footer
-// stays outside that scroll so the Commit button cannot be pushed away.
+// The worktree composer sits above the patch, leaving the Files column its
+// full height. One editor owns the complete message, including pasted bodies.
 func (a *app) worktreeCommitPane(c *ui.Context) {
 	tk := theme.TokensOf(c)
-	ui.Column(c).FillWidth().Height(scaledFont(360)).MaxHeightPercent(78).Shrink(0).
-		BorderWidth(1, 0, 0, 0).BorderColor(tk.BorderSecondary).Children(func() {
-		layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.worktreeCommitScroll}, func() {
-			ui.Column(c).FillWidth().Padding(10).Gap(7).Children(func() {
-				a.operationCard(c)
-				branch := a.status.Branch
-				if branch == "" {
-					branch = a.t("detached")
-				}
-				display.Text(c, a.tf("commitTo", branch), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).FillWidth().SingleLine().Tooltip(branch)
-				a.commitMessageFields(c)
-				a.commitAmendControl(c)
+	pane := ui.Column(c).FillWidth().Shrink(0).Padding(8, 10).Gap(4).
+		BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
+	pane.Children(func() {
+		a.operationCard(c)
+		a.commitMessageField(c)
+		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
+			ui.Column(c).Basis(scaledFont(190)).Grow(1).MinWidth(0).MaxWidthPercent(100).Children(func() {
 				a.commitIdentityView(c)
+				a.commitAmendControl(c)
 			})
-		}).Grow(1).Basis(0).MinHeight(0)
-		ui.Column(c).FillWidth().Padding(8, 10).Gap(5).Shrink(0).Children(func() { a.commitAction(c, true) })
+			ui.Column(c).Basis(scaledFont(128)).Grow(1).MinWidth(0).MaxWidthPercent(100).Children(func() { a.commitAction(c, true) })
+		})
 	})
 }
 
@@ -403,11 +382,11 @@ func (a *app) historyDiffPane(c *ui.Context) {
 			// bottom border here would cut that join.
 			// Keep the thumb visible on overflow so a clipped tab can be reached
 			// with a mouse even before the pointer enters the strip.
-			strip := ui.ScrollHorizontal(c).Height(38).Shrink(0).FillWidth().Background(tk.FillTertiary).
+			strip := ui.ScrollHorizontal(c).Height(32).Shrink(0).FillWidth().Background(tk.BgLayout).
 				KeepScrollbars(true).TrackScroll(&a.detailTabStrip)
 			strip.Children(func() {
-				ui.Row(c).Height(38).Gap(2).Padding(0, 8).AlignItems(ui.Center).
-					Background(tk.FillTertiary).Role(ui.RoleTabList).Label(a.t("detailTabs")).FocusGroup(ui.Horizontal).Children(func() {
+				ui.Row(c).Height(32).AlignItems(ui.Center).
+					Role(ui.RoleTabList).Label(a.t("detailTabs")).FocusGroup(ui.Horizontal).Children(func() {
 					a.detailTabButton(c, tk, detailTabKey{Summary: true})
 					if a.detailFileShown() {
 						// A close click mutates OpenFiles during this render pass.
@@ -427,10 +406,30 @@ func (a *app) historyDiffPane(c *ui.Context) {
 				a.invalidate()
 			}
 			*previousWidth = width
+			if a.worktreeSelected && !a.conflictEditorTakesThePane() {
+				a.worktreeCommitPane(c.Key("composer"))
+			}
 			a.worktreeSelectionBar(c)
 			a.drawDiffFindBar(c.Key("find-in-diff"), a.diffFind, a.diffFindSections, a.closeDiffFind)
 			a.historyDiffBody(c, tk)
 		})
+}
+
+func (a *app) detailTabStatus(file detailFileKey) string {
+	if a.worktreeSelected {
+		for _, entry := range a.status.Entries {
+			if entry.Path == file.Path {
+				return statusCode(entry, file.Staged)
+			}
+		}
+	} else {
+		for _, entry := range a.commitFiles {
+			if entry.Path == file.Path {
+				return changedFileCode(entry.Status)
+			}
+		}
+	}
+	return ""
 }
 
 // detailTabButton draws one tab. It fills the strip and wears the page's
@@ -443,6 +442,12 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 		name = a.detailSummaryLabel()
 	} else {
 		name, _ = splitRepoPath(path)
+		for _, other := range a.detailTabs().OpenFiles {
+			if base, _ := splitRepoPath(other.Path); other.Path != path && base == name {
+				name = path
+				break
+			}
+		}
 		if a.worktreeSelected {
 			stage := "unstaged"
 			if key.File.Staged {
@@ -453,15 +458,14 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 	}
 	c = c.Key(key)
 	active := a.detailTabs().Active == key
-	wrapper := ui.Row(c).Height(38).Shrink(0).MaxWidth(260).AlignItems(ui.Center).
-		Radius(tk.BorderRadius, tk.BorderRadius, 0, 0)
+	wrapper := ui.Row(c).Height(32).Shrink(0).MaxWidth(260).AlignItems(ui.Center).BorderWidth(0, 1, 2, 0).BorderColor(tk.BorderSecondary)
 	if active {
-		wrapper.Background(tk.BgContainer)
+		wrapper.Background(tk.BgContainer).BorderColor(tk.Blue).BorderWidth(0, 0, 2, 0)
 	}
 	var close ui.Element
 	wrapper.Children(func() {
 		const tabPadding, captionWidth = 10, 204
-		tab := ui.ButtonBase(c).Label(name+suffix).Row().Height(38).Padding(0, tabPadding).
+		tab := ui.ButtonBase(c).Label(name+suffix).Row().Height(30).Padding(0, tabPadding).
 			MinWidth(0).MaxWidth(captionWidth + 2*tabPadding).AlignItems(ui.Center).
 			Role(ui.RoleTab).AccessSelected(active)
 		a.wireDetailTabKeys(tab, key)
@@ -476,6 +480,11 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 		}
 		tab.Children(func() {
 			props := display.TextProps{FontSize: scaledFont(11.5), Strong: active, Type: style}
+			if path != "" {
+				if code := a.detailTabStatus(key.File); code != "" {
+					display.Text(c, code, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Shrink(0).Padding(0, 4).AccessHidden(true)
+				}
+			}
 			// The file name can shorten, but the two versions must stay distinct.
 			display.Text(c, name, props).SingleLine().MinWidth(0).Shrink(1)
 			if suffix != "" {
@@ -486,7 +495,7 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 			a.activateDetailTab(key)
 		}
 		if !key.Summary {
-			close = ui.ButtonBase(c).Label(a.t("close") + " " + path).Width(26).Height(30).Shrink(0).Center()
+			close = ui.ButtonBase(c).Label(a.t("close") + " " + path).Width(22).Height(26).Shrink(0).Center()
 			a.wireDetailTabKeys(close, key)
 			close.Children(func() { ui.Icon(c, lucide.X()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary) })
 			if close.Clicked() {

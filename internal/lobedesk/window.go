@@ -14,8 +14,7 @@ const (
 	// minWindowWidth and minWindowHeight bound the window, so a layout check
 	// below them would test a size no reader can reach. The width floor is the
 	// narrow window the three History columns and the commit editor still fit:
-	// at 900 points the Files column keeps enough room for the editor instead
-	// of collapsing under the patch pane.
+	// at 900 points the Files column and the right-hand editor both fit.
 	minWindowWidth  = 900
 	minWindowHeight = 640
 )

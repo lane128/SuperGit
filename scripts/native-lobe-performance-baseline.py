@@ -208,7 +208,7 @@ def run():
                         raise AssertionError("Native app failed to open automation socket")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
-                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("wait", "--text", "Commit message", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 wait("Perf commit 12000")
                 ready()

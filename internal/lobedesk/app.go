@@ -93,6 +93,7 @@ const (
 )
 
 type app struct {
+	historyCounts                                     *historyFileCounts
 	sidebarHidden, ignoreDiffWhitespace, expandMerges bool
 	hiddenBranches                                    map[string][]string // Immutable snapshots keyed by checkout root.
 	comparison                                        revisionComparison
@@ -228,9 +229,7 @@ type app struct {
 	commitFilesViewport ui.Rect
 	commitDiffScroll    ui.ScrollState
 	commitDiffViewport  ui.Rect
-	// worktreeCommitScroll scrolls the working tree's commit form above its
-	// pinned action footer.
-	worktreeCommitScroll ui.ScrollState
+
 	// A pane can be hidden from the settings page; hiding the files and the
 	// patch leaves the Summary with the whole width.
 	detailsInfoHidden    bool
@@ -322,7 +321,6 @@ type app struct {
 	commitText     string
 	amend          bool
 	commitIdentity commitIdentityState
-	commitFields   commitFieldsState
 	// An ordinary saved draft waits for a successful snapshot outside a Git operation.
 	unrestoredDraft string
 	// pendingMessage is the message seeded from Git during a merge,

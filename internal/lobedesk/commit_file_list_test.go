@@ -35,7 +35,7 @@ func TestCommitFileHistoryMenuCanReplaceListDuringRender(t *testing.T) {
 	}
 }
 
-func TestNarrowHistoryCommitFilesKeepShortBasenamesReadable(t *testing.T) {
+func TestNarrowHistoryCommitFilesKeepShortPathsReadable(t *testing.T) {
 	oldScale := uiFontScaleValue()
 	setUIFontScale(fontScaleLarge)
 	t.Cleanup(func() { setUIFontScale(oldScale) })
@@ -49,7 +49,7 @@ func TestNarrowHistoryCommitFilesKeepShortBasenamesReadable(t *testing.T) {
 	var nameWidth float32
 	view := ui.NewTester(func(c *ui.Context) {
 		a.root(c)
-		nameWidth, _ = c.MeasureText(0, ui.Span{Text: name, Size: scaledFont(12)})
+		nameWidth, _ = c.MeasureText(0, ui.Span{Text: path, Size: scaledFont(12)})
 	}, 980, 640)
 	for _, width := range []int{980, 1320, 980} {
 		view.SetSize(width, 640)
@@ -57,7 +57,7 @@ func TestNarrowHistoryCommitFilesKeepShortBasenamesReadable(t *testing.T) {
 		if file, ok := view.AccessByRole(ui.RoleOption, path); !ok || file.Offscreen {
 			t.Fatalf("width %d: full path missing from the Files list", width)
 		}
-		bounds, ok := view.Find(name)
+		bounds, ok := view.Find(path)
 		if !ok || bounds.W+0.5 < nameWidth {
 			t.Errorf("width %d: %s has %.1f points, needs %.1f to avoid truncation", width, name, bounds.W, nameWidth)
 		}

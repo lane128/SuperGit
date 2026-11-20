@@ -13,7 +13,7 @@ import (
 
 func TestBatchShortcutsFromActualCommitFieldsPreserveDraftAndFocus(t *testing.T) {
 	for _, action := range []string{"stage", "unstage"} {
-		for _, label := range []string{"commitSummary", "commitDescription"} {
+		for _, label := range []string{"commitMessage"} {
 			t.Run(action+"/"+label, func(t *testing.T) {
 				a, callbacks := overviewFixture(t)
 				a.page = "history"
@@ -36,7 +36,7 @@ func TestBatchShortcutsFromActualCommitFieldsPreserveDraftAndFocus(t *testing.T)
 				tt := ui.NewTester(func(c *ui.Context) {
 					theme.Apply(c)
 					a.registerShortcuts(c)
-					ui.Column(c).Width(580).Children(func() { a.commitMessageFields(c) })
+					ui.Column(c).Width(580).Children(func() { a.commitMessageField(c) })
 				}, 600, 400)
 				editor, ok := tt.AccessByRole(ui.RoleTextField, a.t(label))
 				if !ok {
@@ -48,10 +48,7 @@ func TestBatchShortcutsFromActualCommitFieldsPreserveDraftAndFocus(t *testing.T)
 				}
 				tt.Key(ui.Cmd, ui.KeyA)
 				tt.Key(ui.Cmd, ui.KeyC)
-				wantCopy := "summary preserved"
-				if label == "commitDescription" {
-					wantCopy = "first body line\nsecond body line\n\n"
-				}
+				wantCopy := draft
 				if tt.Clipboard() != wantCopy || a.busy || a.commitText != draft {
 					t.Fatal("plain Select All/Copy changed batch state or editor behavior")
 				}
@@ -69,7 +66,7 @@ func TestBatchShortcutsFromActualCommitFieldsPreserveDraftAndFocus(t *testing.T)
 					}
 				}
 				tt.Frame()
-				if a.commitText != draft || a.commitFields.Source != draft || !tt.Focused(a.t(label)) {
+				if a.commitText != draft || !tt.Focused(a.t(label)) {
 					t.Fatal("batch shortcut changed draft projection or editor focus")
 				}
 				if readGit("show", ":same.go") != want || readGit("rev-parse", "HEAD") != head || readGit("for-each-ref", "--format=%(refname) %(objectname)") != refs {

@@ -25,7 +25,7 @@ func messageNavigationFixture(t *testing.T) (*app, chan func(), gitrepo.Commit, 
 	a.commits = []gitrepo.Commit{source, {SHA: parent, Subject: "Parent"}, {SHA: target, Subject: "Message target"}}
 	a.commitFilesLoaded = true
 	a.commitMessage = source.Subject + "\n\nSee " + target
-	a.commitFields.Summary = "keep draft"
+
 	a.historyRef = historyRef{Kind: historyRefLocal, Name: "main"}
 	a.historyPinned = source.SHA
 	return a, callbacks, source, target
@@ -87,7 +87,7 @@ func TestMessageCommitMenuNavigatesCapturedIndependentTarget(t *testing.T) {
 			if a.selectedSHA != target || !a.revealSelection || a.historyQuery != "" || !a.canNavigateHistory(-1) {
 				t.Fatalf("wrong navigation result: %s query=%q", a.selectedSHA, a.historyQuery)
 			}
-			if len(tt.OpenedURLs()) != 0 || a.commitText != "draft\n\nbody" || a.commitFields.Summary != "keep draft" || a.historyRef.Name != "main" || a.historyPinned != source.SHA {
+			if len(tt.OpenedURLs()) != 0 || a.commitText != "draft\n\nbody" || a.historyRef.Name != "main" || a.historyPinned != source.SHA {
 				t.Fatal("message jump changed URL, draft or ref scope")
 			}
 			if got := pullFixtureGit(t, a.repo.Root, "rev-parse", "HEAD"); got != source.SHA {
@@ -185,7 +185,7 @@ func TestMessageCommitMenuRejectsChangedOwnership(t *testing.T) {
 				} else {
 					done()
 				}
-				if a.selectedSHA != selected || a.historyQuery != query || a.repo.Root != root || a.pendingJumpSHA != "" || a.historyNavigation.pending != nil || a.messageCommitRequest != nil || len(a.historyNavigation.positions) != 0 || len(a.notices[toastMain]) != 0 || len(tt.OpenedURLs()) != 0 || a.commitFields.Summary != "keep draft" {
+				if a.selectedSHA != selected || a.historyQuery != query || a.repo.Root != root || a.pendingJumpSHA != "" || a.historyNavigation.pending != nil || a.messageCommitRequest != nil || len(a.historyNavigation.positions) != 0 || len(a.notices[toastMain]) != 0 || len(tt.OpenedURLs()) != 0 || a.commitText != "draft\n\nbody" {
 					t.Fatal("stale action changed the new view")
 				}
 				if phase == "open menu" {

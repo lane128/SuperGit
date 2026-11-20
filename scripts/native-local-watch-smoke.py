@@ -74,8 +74,8 @@ def run():
 
             def assert_draft():
                 fields = [e for e in controls() if e[1] == "textField"]
-                assert any(e[2] == "Commit summary (required)" and "Watch draft" in e[3] for e in fields), "automatic refresh lost summary draft"
-                assert any(e[2] == "Description (optional)" and "Keep this body" in e[3] for e in fields), "automatic refresh lost body draft"
+                assert any(e[2] == "Commit message" and "Watch draft" in e[3] for e in fields), "automatic refresh lost summary draft"
+                assert any(e[2] == "Commit message" and "Keep this body" in e[3] for e in fields), "automatic refresh lost body draft"
 
             try:
                 deadline = time.monotonic() + 20
@@ -86,21 +86,20 @@ def run():
                         raise TimeoutError("native automation socket unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
-                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("wait", "--text", "Commit message", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 wait("Watch baseline")
                 row = next(e for e in controls() if e[1] == "listItem" and (e[2].endswith(" change") or e[2].endswith(" changes")))
                 auto("press", row[0], "--settle")
                 wait("+dirty before opening")
                 fields = {e[2]: e[0] for e in controls() if e[1] == "textField"}
-                auto("fill", fields["Commit summary (required)"], "Watch draft", "--settle")
-                auto("fill", fields["Description (optional)"], "Keep this body", "--settle")
-                auto("focus", fields["Commit summary (required)"], "--settle")
+                auto("fill", fields["Commit message"], "Watch draft\n\nKeep this body", "--settle")
+                auto("focus", fields["Commit message"], "--settle")
                 before_head, before_index = git("rev-parse", "HEAD"), git("ls-files", "--stage")
                 (repo / "a.txt").write_text("saved externally again\n")
                 wait("+saved externally again")
                 assert_draft()
-                assert any(e[1] == "textField" and e[2] == "Commit summary (required)" and "focused" in e[3] for e in controls()), "automatic refresh stole editor focus"
+                assert any(e[1] == "textField" and e[2] == "Commit message" and "focused" in e[3] for e in controls()), "automatic refresh stole editor focus"
                 (repo / "文件 space.txt").write_text("non-selected external save\n")
                 wait("+non-selected external save")
                 assert git("rev-parse", "HEAD") == before_head and git("ls-files", "--stage") == before_index, "local detection wrote HEAD or Index"

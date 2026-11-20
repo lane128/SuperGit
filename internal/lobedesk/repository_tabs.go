@@ -324,7 +324,7 @@ func (tabs *repositoryTabs) askClose(target *app) {
 	if !tabs.canClose(target) {
 		return
 	}
-	if target.repo == nil || (target.commitText == "" && target.commitFields.Summary == "" && target.commitFields.Body == "" && target.unrestoredDraft == "" && len(target.conflictEditors) == 0) {
+	if target.repo == nil || (target.commitText == "" && target.unrestoredDraft == "" && len(target.conflictEditors) == 0) {
 		tabs.close(target)
 		return
 	}

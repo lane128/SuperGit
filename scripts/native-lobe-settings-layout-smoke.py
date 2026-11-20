@@ -114,7 +114,7 @@ for language, theme, scale in cases:
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
                 auto("window", "w1")
-                auto("wait", "--text", "Commit summary (required)" if language == "en" else "提交标题（必填）", "--timeout", "30s", "--settle")
+                auto("wait", "--text", "Commit message" if language == "en" else "提交信息", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 auto("wait", "--text", "Settings layout fixture", "--timeout", "25s", "--settle")
                 settings_label = "Settings" if language == "en" else "设置"

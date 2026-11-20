@@ -87,7 +87,7 @@ func TestRepositoryTabsKeepDraftsAndReuseCanonicalRoot(t *testing.T) {
 		t.Fatal("late Diff completion crossed repository sessions")
 	}
 	selectWorktreeRow(t, view, second)
-	click(ui.RoleTextField, second.t("commitSummary"))
+	click(ui.RoleTextField, second.t("commitMessage"))
 	view.Type("Second draft")
 	view.Frame()
 	click(ui.RoleTab, filepath.Base(firstRoot))

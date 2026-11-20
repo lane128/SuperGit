@@ -11,23 +11,14 @@ import (
 	"supergit/internal/gitrepo"
 )
 
-// A file row is one line: the name, and the folder after it when there is room.
-// The folder is dropped below the threshold rather than shortening the name,
-// because the name is what the row is for; at the two window widths the app
-// opens at, the file pane is narrower than the threshold, so the rows read as
-// names only and the diff header keeps the full path.
-func TestFileRowDropsTheFolderWhenItIsNarrow(t *testing.T) {
-	if fileRowShowsFolder(fileRowFolderMin - 1) {
-		t.Errorf("a row %v wide showed its folder; want it dropped below %v", fileRowFolderMin-1, fileRowFolderMin)
-	}
-	if !fileRowShowsFolder(fileRowFolderMin) {
-		t.Errorf("a row %v wide dropped its folder; want it shown from %v", fileRowFolderMin, fileRowFolderMin)
-	}
-	// The pane at both supported window sizes sits under the threshold, so the
-	// rule has to leave the name alone there rather than splitting the row.
-	for _, room := range []float32{180, 215, 240} {
-		if fileRowShowsFolder(room) {
-			t.Errorf("a %v wide file pane kept the folder; the name would lose its room", room)
+func TestFileRowsShowRelativePathsInNarrowColumns(t *testing.T) {
+	for _, width := range []int{160, 240, 360} {
+		view := ui.NewTester(func(c *ui.Context) {
+			theme.Apply(c)
+			ui.Row(c).FillWidth().Children(func() { fileRowPath(c, "api/config.go", false) })
+		}, width, 100)
+		if _, ok := view.Find("api/config.go"); !ok {
+			t.Fatalf("path missing at width %d", width)
 		}
 	}
 }
@@ -73,26 +64,8 @@ func TestBothFileListsDrawOneKindOfRow(t *testing.T) {
 			if want := scaledFont(29); !nearlyEqual(wrow.Bounds.H, want) || !nearlyEqual(crow.Bounds.H, want) {
 				t.Errorf("rows are %v and %v high; want both %v at this preset", wrow.Bounds.H, crow.Bounds.H, want)
 			}
-			reference := ui.NewTester(func(c *ui.Context) {
-				theme.Apply(c)
-				ui.Text(c, "a.go").FontSize(scaledFont(12))
-			}, 300, 120)
-			nameReference, _ := reference.Find("a.go")
-			for _, text := range []struct{ name, label string }{{"a.go", "name"}, {"dir", "folder"}} {
-				w, ok := work.Find(text.name)
-				if !ok {
-					t.Fatalf("the working tree's %s is not drawn", text.label)
-				}
-				c, ok := commit.Find(text.name)
-				if !ok {
-					t.Fatalf("the commit's %s is not drawn", text.label)
-				}
-				if text.label == "name" && !nearlyEqual(w.H, nameReference.H) {
-					t.Errorf("file name height %v differs from 12pt reference %v", w.H, nameReference.H)
-				}
-				if !nearlyEqual(w.H, c.H) {
-					t.Errorf("the %s is %v high in the working tree and %v in the commit; want one size", text.label, w.H, c.H)
-				}
+			if !work.HasText("dir/a.go") || !commit.HasText("dir/a.go") {
+				t.Fatal("both lists must render the repository-relative path")
 			}
 		})
 	}

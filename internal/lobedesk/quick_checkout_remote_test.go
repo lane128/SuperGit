@@ -136,7 +136,7 @@ func TestQuickCheckoutRemoteNameAndReturn(t *testing.T) {
 	pullFixtureGit(t, a.repo.Root, "update-ref", "refs/remotes/origin/topic", target)
 	a.remoteBranches = []gitrepo.Branch{{Name: "origin/topic", SHA: target}}
 	tt := quickCheckoutTester(a)
-	body, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+	body, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 	tt.ClickAt(body.Bounds.X+10, body.Bounds.Y+10)
 	tt.Key(ui.Cmd, ui.KeyB)
 	tt.Frame()
@@ -319,7 +319,7 @@ func TestQuickCheckoutRemoteCancelRestoresBody(t *testing.T) {
 	a, _, target := quickCheckoutFixture(t)
 	a.remoteBranches = []gitrepo.Branch{{Name: "origin/topic", SHA: target}}
 	tt := quickCheckoutTester(a)
-	body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+	body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 	if !ok {
 		t.Fatal("Body absent")
 	}
@@ -337,7 +337,7 @@ func TestQuickCheckoutRemoteCancelRestoresBody(t *testing.T) {
 	tt.Key(0, ui.KeyEnd)
 	tt.Type("X")
 	tt.Frame()
-	if a.quickCheckout.open || a.commitText != "draft\n\nbodyX" || !a.amend {
+	if a.quickCheckout.open || a.commitText != "draftX\n\nbody" || !a.amend {
 		t.Fatalf("cancel lost opener/draft: open=%v draft=%q", a.quickCheckout.open, a.commitText)
 	}
 }

@@ -58,7 +58,7 @@ func TestChangesCommitEditorFitsAtMinimumWindow(t *testing.T) {
 				}
 				a.detailTabs().Active = detailTabKey{Summary: true}
 				tt := changesLayoutTester(a)
-				summary, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitSummary"))
+				summary, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 				if !ok {
 					t.Fatal("the working tree's Summary tab hides the commit editor")
 				}
@@ -97,8 +97,7 @@ func TestChangesKeyboardTargetsVisibleFilesAndCommit(t *testing.T) {
 	if !a.worktreeFilesShown() || !a.detailNavigationAllowed() || !a.canToggleSelectedStage() || !a.canCommitShortcut() {
 		t.Fatal("the working tree's visible controls do not receive file/diff/commit shortcuts")
 	}
-	// The commit box is docked under the files column, so a file tab cannot
-	// cover it; the diff shortcuts reach the file's patch instead.
+	// Opening a file keeps the composer above the selected patch.
 	a.detailTabs().Open(detailFileKey{Path: "same.go", Staged: true})
 	if !a.worktreeDiffShown() || !a.canCommitShortcut() {
 		t.Fatal("opening a file tab dropped the patch or the commit shortcut")

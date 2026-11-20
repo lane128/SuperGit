@@ -51,7 +51,7 @@ func clickRepositoryTabsControl(t *testing.T, tt *ui.Tester, role ui.Role, label
 
 func TestRepositoryTabsReportUncommittedChangesOnInactiveCheckout(t *testing.T) {
 	tabs, clean, dirty, view, callbacks := repositoryTabsSafetyFixture(t)
-	clean.commitFields.Summary = "An unsent draft"
+	clean.commitText = "An unsent draft"
 	path := filepath.Join(dirty.repo.Root, "untracked.txt")
 	if err := os.WriteFile(path, []byte("fixture change\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -163,7 +163,7 @@ func TestRepositoryTabsFailedRefreshKeepsAmendDisabled(t *testing.T) {
 	}
 	tt.Frame()
 	action, ok := tt.AccessByRole(ui.RoleButton, b.t("amend"))
-	if !ok || !action.Disabled || b.commitText != "Draft to keep on read failure" {
+	if b.loadErr == "" || b.canCommit() || (ok && !action.Disabled) || b.commitText != "Draft to keep on read failure" {
 		t.Fatalf("failed activation refresh leaves unsafe commit state: action=%+v draft=%q error=%q", action, b.commitText, b.loadErr)
 	}
 	if err := os.Rename(metadata+"-off", metadata); err != nil {

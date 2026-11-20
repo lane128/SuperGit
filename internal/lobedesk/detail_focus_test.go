@@ -28,7 +28,7 @@ func TestDetailTabsKeepKeyboardOwnership(t *testing.T) {
 	// Editing the commit message must not navigate tabs or the history list.
 	foundInput := false
 	for _, info := range tt.AccessAll() {
-		if info.Placeholder == a.t("commitSummaryHint") {
+		if info.Placeholder == a.t("commitMessage") {
 			tt.ClickAt(info.Bounds.X+info.Bounds.W/2, info.Bounds.Y+info.Bounds.H/2)
 			foundInput = true
 			break

@@ -19,7 +19,7 @@ func paletteTester(a *app, editors bool, width, height int) *ui.Tester {
 		a.registerShortcuts(c)
 		ui.Column(c).Fill().Children(func() {
 			if editors {
-				a.commitMessageFields(c)
+				a.commitMessageField(c)
 			}
 			a.commandPaletteDialog(c)
 		})
@@ -74,11 +74,13 @@ func TestCommandPaletteAliasesCancelToActualBody(t *testing.T) {
 			a.locale, a.page = localeEnglish, "changes"
 			a.commitText, a.amend = "summary\n\nbody", true
 			tt := paletteTester(a, true, 600, 500)
-			body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+			body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 			if !ok {
 				t.Fatal("actual Body missing")
 			}
 			tt.ClickAt(body.Bounds.X+body.Bounds.W/2, body.Bounds.Y+body.Bounds.H/2)
+			tt.Key(ui.Cmd, ui.KeyA)
+			tt.Key(0, ui.KeyRight)
 			tt.Key(mod, ui.KeyP)
 			tt.Frame()
 			if !a.commandPalette.open || !tt.Focused(a.t("commandPaletteSearch")) {
@@ -96,13 +98,13 @@ func TestCommandPaletteAliasesCancelToActualBody(t *testing.T) {
 			tt.Key(0, ui.KeyEscape)
 			tt.Frame()
 			tt.Frame()
-			if a.commandPalette.open || !tt.Focused(a.t("commitDescription")) {
+			if a.commandPalette.open || !tt.Focused(a.t("commitMessage")) {
 				t.Fatalf("cancel did not restore actual Body: open=%v, access=%+v", a.commandPalette.open, tt.AccessAll())
 			}
 			tt.Key(0, ui.KeyEnd)
 			tt.Type("X")
-			if a.commitFields.Body != "bodyX" {
-				t.Fatalf("typing missed restored Body: %#v", a.commitFields)
+			if a.commitText != "summary\n\nbodyX" {
+				t.Fatalf("typing missed restored Body: %#v", a.commitText)
 			}
 			tt.Key(mod, ui.KeyP)
 			tt.Frame()
@@ -138,12 +140,12 @@ func TestCommandPaletteCancelFromSummaryAndHistorySearch(t *testing.T) {
 						if source == "search" {
 							a.historyPage(c)
 						} else {
-							a.commitMessageFields(c)
+							a.commitMessageField(c)
 						}
 						a.commandPaletteDialog(c)
 					})
 				}, 900, 640)
-				label := a.t("commitSummary")
+				label := a.t("commitMessage")
 				if source == "search" {
 					tt.Key(ui.Cmd, ui.KeyF)
 				} else {
@@ -152,6 +154,8 @@ func TestCommandPaletteCancelFromSummaryAndHistorySearch(t *testing.T) {
 						t.Fatalf("missing actual %s", label)
 					}
 					tt.ClickAt(node.Bounds.X+node.Bounds.W/2, node.Bounds.Y+node.Bounds.H/2)
+					tt.Key(ui.Cmd, ui.KeyA)
+					tt.Key(0, ui.KeyLeft)
 				}
 				tt.Key(ui.Cmd, ui.KeyP)
 				tt.Frame()
@@ -173,7 +177,7 @@ func TestCommandPaletteCancelFromSummaryAndHistorySearch(t *testing.T) {
 					if a.historyQuery != "needleX" || a.commitText != "draft\n\nbody" {
 						t.Fatal("search typing or draft changed")
 					}
-				} else if a.commitFields.Summary != "draftX" || a.commitFields.Body != "body" {
+				} else if a.commitText != "draftX\n\nbody" {
 					t.Fatal("summary typing missed original field")
 				}
 			})
@@ -322,13 +326,13 @@ func TestCommandPaletteCommitMessageActionOwnsFocus(t *testing.T) {
 	tt.Key(0, ui.KeyEnter)
 	tt.Frame()
 	tt.Frame()
-	if a.commandPalette.open || a.page != "history" || !a.worktreeSelected || !tt.Focused(a.t("commitSummary")) || a.commitText != "draft\n\nbody" {
+	if a.commandPalette.open || a.page != "history" || !a.worktreeSelected || !tt.Focused(a.t("commitMessage")) || a.commitText != "draft\n\nbody" {
 		t.Fatal("target action did not own Summary focus")
 	}
 	tt.Key(0, ui.KeyTab)
 	tt.Frame()
 	tt.Frame()
-	if !tt.Focused(a.t("commitDescription")) {
+	if !tt.Focused(a.t("commitMessage")) {
 		t.Fatal("palette stole focus after target action")
 	}
 }

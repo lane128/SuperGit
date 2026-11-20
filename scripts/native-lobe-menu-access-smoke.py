@@ -98,7 +98,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-menu-access.") as directory:
                     raise RuntimeError("native automation unavailable")
                 time.sleep(0.05)
             auto("open", "--socket", str(socket))
-            auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+            auto("wait", "--text", "Commit message", "--timeout", "30s", "--settle")
             auto("key", "cmd+1", "--settle")
             auto("wait", "--text", "Menu access fixture", "--timeout", "20s", "--settle")
             auto("press", history_row(), "--settle")

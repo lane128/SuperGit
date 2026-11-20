@@ -171,8 +171,8 @@ try:
     note('PASS empty-state Clone entry/form/Cancel; no destination or original Git/data changes')
     stop()
     step='02-active-form-cancel'
-    start(active);wait('Commit summary (required)');root_ready(active);press('tab','Changes')
-    fill('Commit summary (required)','Keep old Clone draft');fill('Description (optional)','Keep old Clone description')
+    start(active);wait('Commit message');root_ready(active);press('tab','Changes')
+    fill('Commit message', 'Keep old Clone draft' + '\n\n' + 'Keep old Clone description')
     open_clone(active);fill(source_field,str(remote));fill(destination_field,str(cancelled_destination));press('button','Cancel');no_form()
     text=evidence(step)
     assert 'value="Keep old Clone draft"' in text and 'value="Keep old Clone description"' in text,'Cancel changed original draft'
@@ -213,7 +213,7 @@ try:
     assert git(destination,'rev-parse','refs/tags/clone-fixture-tag')==expected_head
     assert not (destination/'.git/modules').exists() and not (destination/'child module/.git').exists(),'Clone unexpectedly initialized submodule'
     press('tab','Changes');text=evidence(step+'-clean-reset')
-    assert all('value=' not in e[3] for e in entries(text) if e[1]=='textField' and e[2] in ('Commit summary (required)','Description (optional)')),'Successful Clone kept old draft'
+    assert all('value=' not in e[3] for e in entries(text) if e[1]=='textField' and e[2] == 'Commit message'),'Successful Clone kept old draft'
     press('button','History');wait('Unique Clone source tip');auto('key','cmd+0','--settle');wait(expected_head.decode().strip());wait('Full clone fixture body')
     press('listItem',readme);wait('+Owned local clone content');evidence(step+'-history-files')
     (root/'clone-final.git.json').write_text(json.dumps(state(destination),indent=2)+'\n')

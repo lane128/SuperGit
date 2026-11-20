@@ -17,7 +17,7 @@ func quickCheckoutTester(a *app) *ui.Tester {
 	return ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
 		a.registerShortcuts(c)
-		ui.Column(c).Fill().Children(func() { a.commitMessageFields(c); a.quickCheckoutDialog(c) })
+		ui.Column(c).Fill().Children(func() { a.commitMessageField(c); a.quickCheckoutDialog(c) })
 	}, 600, 500)
 }
 
@@ -83,7 +83,7 @@ func TestQuickCheckoutCancelActualSummaryAndHistorySearch(t *testing.T) {
 						if source == "search" {
 							a.historyPage(c)
 						} else {
-							a.commitMessageFields(c)
+							a.commitMessageField(c)
 						}
 						a.quickCheckoutDialog(c)
 					})
@@ -91,11 +91,13 @@ func TestQuickCheckoutCancelActualSummaryAndHistorySearch(t *testing.T) {
 				if source == "search" {
 					tt.Key(ui.Cmd, ui.KeyF)
 				} else {
-					node, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitSummary"))
+					node, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 					if !ok {
 						t.Fatal("actual Summary missing")
 					}
 					tt.ClickAt(node.Bounds.X+node.Bounds.W/2, node.Bounds.Y+node.Bounds.H/2)
+					tt.Key(ui.Cmd, ui.KeyA)
+					tt.Key(0, ui.KeyLeft)
 				}
 				tt.Key(ui.Cmd, ui.KeyB)
 				tt.Frame()
@@ -125,7 +127,7 @@ func TestQuickCheckoutCancelActualSummaryAndHistorySearch(t *testing.T) {
 					if a.historyQuery != "needleX" || a.commitText != "draft\n\nbody" {
 						t.Fatal("search/draft changed")
 					}
-				} else if a.commitFields.Summary != "draftX" || a.commitFields.Body != "body" {
+				} else if a.commitText != "draftX\n\nbody" {
 					t.Fatal("Summary focus lost")
 				}
 			})
@@ -139,11 +141,13 @@ func TestQuickCheckoutOpensFromBodyAndCancelsOnce(t *testing.T) {
 	a.commitText, a.amend = "draft\n\nbody", true
 	a.branches = []gitrepo.Branch{{Name: "main", SHA: "main-tip", Current: true}, {Name: "topic", SHA: "different-tip"}}
 	tt := quickCheckoutTester(a)
-	body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+	body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 	if !ok {
 		t.Fatal("actual Body missing")
 	}
 	tt.ClickAt(body.Bounds.X+body.Bounds.W/2, body.Bounds.Y+body.Bounds.H/2)
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(0, ui.KeyRight)
 	tt.Key(ui.Cmd, ui.KeyB)
 	tt.Frame()
 	if !a.quickCheckout.open || !tt.HasText("topic") || !tt.HasText(a.t("quickCheckoutDirty")) {
@@ -161,12 +165,12 @@ func TestQuickCheckoutOpensFromBodyAndCancelsOnce(t *testing.T) {
 	tt.Key(0, ui.KeyEscape)
 	tt.Frame()
 	tt.Frame()
-	if a.quickCheckout.open || !tt.Focused(a.t("commitDescription")) {
+	if a.quickCheckout.open || !tt.Focused(a.t("commitMessage")) {
 		t.Fatal("one Escape did not restore Body")
 	}
 	tt.Key(0, ui.KeyEnd)
 	tt.Type("X")
-	if a.commitFields.Body != "bodyX" || !a.amend {
+	if a.commitText != "draft\n\nbodyX" || !a.amend {
 		t.Fatal("draft/amend focus lost")
 	}
 }

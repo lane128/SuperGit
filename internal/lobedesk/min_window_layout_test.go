@@ -28,9 +28,13 @@ func TestTheWorkbenchFitsTheNarrowestWindow(t *testing.T) {
 	for range 5 {
 		view.Frame()
 	}
-	summary, ok := view.AccessByRole(ui.RoleTextField, a.t("commitSummary"))
+	summary, ok := view.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 	if !ok {
 		t.Fatal("the narrowest window hides the commit summary field")
+	}
+	file, ok := view.AccessByRole(ui.RoleOption, "same.go")
+	if !ok || summary.Bounds.X < file.Bounds.X+file.Bounds.W {
+		t.Fatalf("commit editor overlaps the Files column: editor=%+v file=%+v", summary.Bounds, file.Bounds)
 	}
 	if summary.Offscreen || summary.Bounds.W < 120 {
 		t.Fatalf("the commit summary field is squeezed to %+v", summary.Bounds)

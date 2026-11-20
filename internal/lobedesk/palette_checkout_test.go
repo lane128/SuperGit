@@ -16,7 +16,7 @@ func paletteCheckoutTester(a *app) *ui.Tester {
 	return ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
 		a.registerShortcuts(c)
-		ui.Column(c).Fill().Children(func() { a.commitMessageFields(c); a.commandPickerDialogs(c) })
+		ui.Column(c).Fill().Children(func() { a.commitMessageField(c); a.commandPickerDialogs(c) })
 	}, 900, 640)
 }
 
@@ -26,7 +26,7 @@ func TestPaletteCheckoutActualBodyHandoff(t *testing.T) {
 			t.Run(shortcutModName(mod)+"/"+activate, func(t *testing.T) {
 				a, _, _ := quickCheckoutFixture(t)
 				tt := paletteCheckoutTester(a)
-				body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+				body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 				if !ok {
 					t.Fatal("Body missing")
 				}
@@ -78,7 +78,7 @@ func TestPaletteCheckoutActualBodyHandoff(t *testing.T) {
 				tt.Key(0, ui.KeyEnd)
 				tt.Type("X")
 				tt.Frame()
-				if a.quickCheckout.open || a.commandPalette.open || a.commitText != "draft\n\nbodyX" || !a.amend {
+				if a.quickCheckout.open || a.commandPalette.open || a.commitText != "draftX\n\nbody" || !a.amend {
 					t.Fatalf("cancel lost original input/draft: %q", a.commitText)
 				}
 			})
@@ -89,7 +89,7 @@ func TestPaletteCheckoutActualBodyHandoff(t *testing.T) {
 func TestPaletteCheckoutBackdropRestoresBody(t *testing.T) {
 	a, _, _ := quickCheckoutFixture(t)
 	tt := paletteCheckoutTester(a)
-	body, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+	body, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 	tt.ClickAt(body.Bounds.X+10, body.Bounds.Y+10)
 	tt.Key(ui.Cmd, ui.KeyP)
 	tt.Frame()
@@ -104,7 +104,7 @@ func TestPaletteCheckoutBackdropRestoresBody(t *testing.T) {
 	tt.Key(0, ui.KeyEnd)
 	tt.Type("X")
 	tt.Frame()
-	if a.quickCheckout.open || a.commandPalette.open || a.commitText != "draft\n\nbodyX" || !a.amend {
+	if a.quickCheckout.open || a.commandPalette.open || a.commitText != "draftX\n\nbody" || !a.amend {
 		t.Fatal("backdrop cancel lost original input or draft")
 	}
 }

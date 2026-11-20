@@ -67,11 +67,7 @@ func (a *app) canOpenSelectedFile() bool {
 	return !a.confirm.open && !a.prompt.open && !a.blameOpen && !a.worktreeForm.open && !a.reset.open
 }
 
-// canCommitShortcut reports whether ⌘↩ may commit: the history page with the
-// working tree's Summary in front, and no dialog waiting for an answer. The
-// commit box lives there, so the keystroke reaches it wherever the reader
-// typed the message. A hidden details pane or an open ref picker means the box
-// is not in front, so the key does not write the message the reader last saw.
+// The working tree composer stays above the patch on both Summary and file tabs.
 func (a *app) canCommitShortcut() bool {
 	if a.repo == nil || a.busy || a.loading {
 		return false
@@ -82,8 +78,6 @@ func (a *app) canCommitShortcut() bool {
 	if a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open {
 		return false
 	}
-	// The commit box is docked under the files column, so it is on screen
-	// whichever detail tab is in front.
 	return a.worktreeFilesShown()
 }
 

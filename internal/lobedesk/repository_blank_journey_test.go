@@ -95,10 +95,8 @@ func TestBlankRepositoryTabJourney(t *testing.T) {
 	}
 	wait()
 	const aSummary, aBody = "Alpha draft summary", "Alpha draft body"
-	focusCommitField(t, view, a.t("commitSummary"))
-	view.Type(aSummary)
-	focusCommitField(t, view, a.t("commitDescription"))
-	view.Type(aBody)
+	focusCommitField(t, view, a.t("commitMessage"))
+	view.Type(aSummary + "\n\n" + aBody)
 	if a.commitText != aSummary+"\n\n"+aBody {
 		t.Fatalf("setup failed to type Alpha draft: %q", a.commitText)
 	}
@@ -136,7 +134,7 @@ func TestBlankRepositoryTabJourney(t *testing.T) {
 	// The commit editor lives in the working tree's row, which a repository
 	// does not open on; there is no separate Changes page to click.
 	selectWorktreeRow(t, view, b)
-	focusCommitField(t, view, b.t("commitSummary"))
+	focusCommitField(t, view, b.t("commitMessage"))
 	view.Type(bSummary)
 	click(ui.RoleTab, filepath.Base(aRoot))
 	if tabs.active != a || a.commitText != aSummary+"\n\n"+aBody {

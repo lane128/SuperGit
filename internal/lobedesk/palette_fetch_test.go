@@ -145,7 +145,7 @@ func TestPaletteFetchCatalogAndGuards(t *testing.T) {
 }
 
 func TestPaletteFetchOwnedInputs(t *testing.T) {
-	for _, opener := range []string{"summary", "body", "history"} {
+	for _, opener := range []string{"message", "history"} {
 		for _, activation := range []string{"enter", "click"} {
 			t.Run(opener+"/"+activation, func(t *testing.T) {
 				a, _, root := worktreeApp(t)
@@ -217,10 +217,7 @@ func TestPaletteFetchOwnedInputs(t *testing.T) {
 					tt.Frame()
 				} else {
 					tt = paletteTester(a, true, 900, 640)
-					label := a.t("commitSummary")
-					if opener == "body" {
-						label = a.t("commitDescription")
-					}
+					label := a.t("commitMessage")
 					field, ok := tt.AccessByRole(ui.RoleTextField, label)
 					if !ok {
 						t.Fatal("missing opener")
@@ -315,13 +312,9 @@ func TestPaletteFetchOwnedInputs(t *testing.T) {
 				tt.Type("X")
 				tt.Frame()
 				switch opener {
-				case "summary":
-					if a.commitText != "X\n\nbody" {
-						t.Fatal("lost summary selection", a.commitText)
-					}
-				case "body":
-					if a.commitText != "title\n\nX" {
-						t.Fatal("lost Body selection", a.commitText)
+				case "message":
+					if a.commitText != "X" {
+						t.Fatal("lost commit message selection", a.commitText)
 					}
 				case "history":
 					if a.historyQuery != "X" || a.commitText != "title\n\nbody" {

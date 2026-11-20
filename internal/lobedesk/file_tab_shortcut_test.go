@@ -38,7 +38,7 @@ func TestFileTabShortcutsCycleVersionedTabsFromActualEditor(t *testing.T) {
 			tabs.Open(second)
 			tabs.Activate(detailTabKey{Summary: true})
 			tt := pageTester(a, func(c *ui.Context) { a.registerShortcuts(c); a.contentCard(c) })
-			body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+			body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 			if !ok {
 				t.Fatal("missing actual body editor")
 			}
@@ -72,7 +72,7 @@ func TestFileTabShortcutsCycleVersionedTabsFromActualEditor(t *testing.T) {
 				check(want)
 			}
 			// Start the reverse direction from the actual Summary field too.
-			summary, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitSummary"))
+			summary, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 			tt.ClickAt(summary.Bounds.X+summary.Bounds.W/2, summary.Bounds.Y+summary.Bounds.H/2)
 			for _, want := range []detailTabKey{{File: second}, {File: first}, {Summary: true}} {
 				tt.Key(previous.Mod, previous.Key)

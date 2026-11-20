@@ -36,8 +36,8 @@ func TestFileRowSeparatesStagingStateFromVersionAction(t *testing.T) {
 			if !ok || !strings.Contains(action.Description, test.state) {
 				t.Fatalf("%s lost separate staging state %q: %+v", test.action, test.state, action)
 			}
-			if !tt.HasText(test.code) {
-				t.Fatalf("staging indicator replaced file status %s", test.code)
+			if tt.HasText(test.code) || !tt.HasText(entry.Path) {
+				t.Fatalf("file row must show its path without a separate %s badge", test.code)
 			}
 			if action.Bounds.X < 0 || action.Bounds.X+action.Bounds.W > 280 {
 				t.Fatalf("staging action outside narrow file pane: %+v", action.Bounds)

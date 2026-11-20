@@ -16,7 +16,7 @@ import (
 )
 
 func TestPaletteRepositorySwitchHandoff(t *testing.T) {
-	for _, opener := range []string{"summary", "body", "history"} {
+	for _, opener := range []string{"message", "history"} {
 		for _, mod := range []ui.Modifiers{ui.Cmd, ui.Cmd | ui.Shift} {
 			for _, activate := range []string{"enter", "click"} {
 				for _, cancel := range []string{"escape", "backdrop"} {
@@ -33,10 +33,7 @@ func TestPaletteRepositorySwitchHandoff(t *testing.T) {
 							tt.Frame()
 						} else {
 							tt = paletteCheckoutTester(a)
-							label := a.t("commitSummary")
-							if opener == "body" {
-								label = a.t("commitDescription")
-							}
+							label := a.t("commitMessage")
 							field, ok := tt.AccessByRole(ui.RoleTextField, label)
 							if !ok {
 								t.Fatal("missing opener")
@@ -96,13 +93,9 @@ func TestPaletteRepositorySwitchHandoff(t *testing.T) {
 							t.Fatal("cancel failed or changed state")
 						}
 						switch opener {
-						case "summary":
-							if a.commitText != "X\n\nbody" {
-								t.Fatalf("lost original summary selection: %q", a.commitText)
-							}
-						case "body":
-							if a.commitText != "title\n\nX" {
-								t.Fatalf("lost original Body selection: %q", a.commitText)
+						case "message":
+							if a.commitText != "X" {
+								t.Fatalf("lost original commit message selection: %q", a.commitText)
 							}
 						case "history":
 							if a.historyQuery != "X" || a.commitText != "title\n\nbody" {
@@ -175,7 +168,7 @@ func TestPaletteRepositorySwitchTabLeavesSearch(t *testing.T) {
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
 		a.registerShortcuts(c)
-		ui.Column(c).Fill().Children(func() { a.commitMessageFields(c); a.commandPickerDialogs(c) })
+		ui.Column(c).Fill().Children(func() { a.commitMessageField(c); a.commandPickerDialogs(c) })
 		typing = c.FocusTakesText()
 	}, 600, 500)
 	tt.Key(ui.Cmd, ui.KeyP)

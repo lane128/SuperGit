@@ -85,7 +85,7 @@ func TestCommitFileUndoUIConfirmPreservesDraftAndIndex(t *testing.T) {
 	if err != nil || string(got) != "original\n" {
 		t.Fatalf("undo did not restore selected source change: %q %v", got, err)
 	}
-	if selectionGit(t, root, "rev-parse", "HEAD") != head || selectionGit(t, root, "ls-files", "--stage", "-z") != index || a.commitFields.Summary != "keep draft title" || a.commitFields.Body != "keep draft body" {
+	if selectionGit(t, root, "rev-parse", "HEAD") != head || selectionGit(t, root, "ls-files", "--stage", "-z") != index || a.commitText != "keep draft title\n\nkeep draft body" {
 		t.Fatal("undo changed history/index/draft")
 	}
 	found := false

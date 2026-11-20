@@ -120,7 +120,7 @@ def run():
                         raise TimeoutError("native automation socket unavailable; see app.log")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
-                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("wait", "--text", "Commit message", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 wait("Tab fixture changes")
                 press("listItem", "2 changes")
@@ -129,10 +129,8 @@ def run():
                 group_names = {e[2] for e in controls() if e[1] == "button"}
                 assert {"Modified Files", "Untracked Files", "Staged Files"}.issubset(group_names), "fixed file groups missing, including the empty untracked group"
                 auto("screenshot", str(artifacts / "worktree-groups-graph.png"))
-                summary_field = next(e for e in controls() if e[1] == "textField" and e[2] == "Commit summary (required)")
-                body_field = next(e for e in controls() if e[1] == "textField" and e[2] == "Description (optional)")
-                auto("fill", summary_field[0], "Draft survives tabs", "--settle")
-                auto("fill", body_field[0], "Details retained", "--settle")
+                summary_field = next(e for e in controls() if e[1] == "textField" and e[2] == "Commit message")
+                auto("fill", summary_field[0], "Draft survives tabs\n\nDetails retained", "--settle")
                 assert "Author: " in auto("snapshot", "--full"), "effective commit author is missing"
                 auto("screenshot", str(artifacts / "commit-form-identity.png"))
                 press("listItem", paths[0], occurrence=0)
@@ -217,7 +215,7 @@ def run():
 
                 press("listItem", "2 changes")
                 press("tab", "Changes")
-                assert any(e[1] == "textField" and e[2] == "Commit summary (required)" for e in controls()), "Changes lost commit editor"
+                assert any(e[1] == "textField" and e[2] == "Commit message" for e in controls()), "Changes lost commit editor"
                 press("listItem", paths[0], occurrence=0)
                 wait("+working version")
                 # The file view header follows the two file-list stage buttons.
@@ -296,10 +294,8 @@ def run():
 
                 def fill_commit(summary, body):
                     fields = controls()
-                    summary_field = next(e for e in fields if e[1] == "textField" and e[2] == "Commit summary (required)")
-                    body_field = next(e for e in fields if e[1] == "textField" and e[2] == "Description (optional)")
-                    auto("fill", summary_field[0], summary, "--settle")
-                    auto("fill", body_field[0], body, "--settle")
+                    summary_field = next(e for e in fields if e[1] == "textField" and e[2] == "Commit message")
+                    auto("fill", summary_field[0], summary + ("\n\n" + body if body else ""), "--settle")
 
                 fill_commit("Native form commit", "First paragraph\n\nSecond paragraph")
                 hook = repo / ".git/hooks/commit-msg"
@@ -352,8 +348,8 @@ def run():
                 wait("Author: Fixture <fixture@example.invalid>")
                 wait("Committer: Current Fixture Committer <committer@example.invalid>")
                 amend_fields = controls()
-                assert any(e[1] == "textField" and e[2] == "Commit summary (required)" and 'value="Native form commit"' in e[3] for e in amend_fields), "Amend did not prefill HEAD summary"
-                assert any(e[1] == "textField" and e[2] == "Description (optional)" and "First paragraph" in e[3] and "Second paragraph" in e[3] for e in amend_fields), "Amend lost HEAD body while prefilling"
+                assert any(e[1] == "textField" and e[2] == "Commit message" and 'value="Native form commit' in e[3] for e in amend_fields), "Amend did not prefill HEAD summary"
+                assert any(e[1] == "textField" and e[2] == "Commit message" and "First paragraph" in e[3] and "Second paragraph" in e[3] for e in amend_fields), "Amend lost HEAD body while prefilling"
                 fill_commit("Native amended title", "Amended body")
                 press("button", "Amend commit")
                 deadline = time.monotonic() + 20

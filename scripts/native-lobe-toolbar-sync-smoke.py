@@ -165,7 +165,7 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
                 auto("type", name, "--settle")
                 press("listItem", name + " · Local branches")
                 until(lambda: git("branch", "--show-current") == name, f"Checkout did not switch to {name}")
-                state = "102 ahead · 0 behind" if name == branch else "No upstream"
+                state = "102 ahead · 0 behind" if name == branch else ""
                 current = branch_button(state, name)
                 assert bounds(current) == (x, y, w, h), current
                 if name == "main":

@@ -68,7 +68,7 @@ func pagedMessageFixture(t *testing.T) (*app, chan func(), gitrepo.Commit, strin
 	a.locale, a.page, a.worktreeSelected, a.selectedSHA = localeEnglish, "history", false, source.SHA
 	a.commitMessage = source.Subject + "\n\nSee " + target
 	a.commitFilesLoaded = true
-	a.commitFields.Summary = "keep paging draft"
+	a.commitText = "keep paging draft"
 	t.Cleanup(a.resetHistoryTraversal)
 	return a, callbacks, source, target
 }
@@ -85,7 +85,7 @@ func TestMessageCommitPagesWithinCurrentScope(t *testing.T) {
 	for a.pendingJumpSHA != "" || a.historyLoadingMore {
 		historyCompletion(t, callbacks)()
 	}
-	if a.selectedSHA != target || !a.revealSelection || !a.canNavigateHistory(-1) || a.commitFields.Summary != "keep paging draft" || a.historyRef != beforeRef || strings.Join(a.historyTips, " ") != beforeTips || len(a.notices[toastMain]) != 0 {
+	if a.selectedSHA != target || !a.revealSelection || !a.canNavigateHistory(-1) || a.commitText != "keep paging draft" || a.historyRef != beforeRef || strings.Join(a.historyTips, " ") != beforeTips || len(a.notices[toastMain]) != 0 {
 		t.Fatal("paged message jump failed or changed traversal")
 	}
 	a.navigateHistory(-1)

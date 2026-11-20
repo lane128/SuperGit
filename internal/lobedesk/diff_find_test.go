@@ -110,15 +110,15 @@ func TestDiffFindLeavesHistorySearchAndCommitEditorScoped(t *testing.T) {
 	if a.historyQuery != "first" {
 		t.Fatal("history search lost its existing shortcut")
 	}
-	editor, ok := view.AccessByRole(ui.RoleTextField, a.t("commitSummary"))
+	editor, ok := view.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 	if !ok {
 		t.Fatal("missing commit editor")
 	}
 	view.ClickAt(editor.Bounds.X+5, editor.Bounds.Y+5)
 	view.Key(ui.Cmd, ui.KeyF)
 	view.Type("draft")
-	if a.historyQuery != "first" || a.commitFields.Summary != "draft" {
-		t.Fatalf("Find took over the commit editor: query=%q, draft=%q", a.historyQuery, a.commitFields.Summary)
+	if a.historyQuery != "first" || a.commitText != "draft" {
+		t.Fatalf("Find took over the commit editor: query=%q, draft=%q", a.historyQuery, a.commitText)
 	}
 }
 

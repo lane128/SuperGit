@@ -119,7 +119,7 @@ def run():
                         raise TimeoutError("Native automation socket unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
-                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("wait", "--text", "Commit message", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 wait("Operation main change")
                 press("In progress: cherry-pick")
@@ -249,7 +249,7 @@ def run():
                     auto("fill", entries[0][0], value, "--settle")
 
                 merge_conflict()
-                fill_field("Commit summary (required)", "Native merge resolution")
+                fill_field("Commit message", "Native merge resolution")
                 assert any(e[1] == "button" and e[2] == "Commit" and "disabled" in e[3] for e in controls()), "Unresolved merge allowed Commit"
                 before_merge_abort = fingerprint()
                 press("Abort")
@@ -268,8 +268,7 @@ def run():
                 git("add", "--", path.name)
                 auto("key", "cmd+r", "--settle")
                 ready()
-                fill_field("Commit summary (required)", "Native merge resolution")
-                fill_field("Description (optional)", "Complete merge resolution body\n\nRefs: native-merge-fixture")
+                fill_field("Commit message", "Native merge resolution\n\nComplete merge resolution body\n\nRefs: native-merge-fixture")
                 resolved_merge_index = git("ls-files", "--stage").stdout
                 press("Commit")
                 wait("Committed")

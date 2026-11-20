@@ -137,6 +137,12 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
             auto("open", "--socket", str(socket))
             auto("wait", "--text", "Main tip", "--timeout", "30s", "--settle")
             auto("wait", "--text", "243 commits", "--timeout", "30s", "--settle")
+            auto("wait", "--text", "2", "--timeout", "10s", "--settle")
+            deadline = time.monotonic() + 10
+            while 'description="2 files changed"' not in auto("snapshot", "--full"):
+                if time.monotonic() > deadline:
+                    raise AssertionError("stash count must include its tracked file and its saved untracked file")
+                time.sleep(0.05)
             results["open_seconds"] = round(time.monotonic() - started, 3)
             auto("screenshot", str(artifacts / "history.png"))
 
@@ -164,7 +170,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
             worktree_ref = worktree[0][0]
             auto("focus", worktree_ref, "--settle")
             auto("click", worktree_ref, "--settle")
-            auto("wait", "--text", "Commit summary (required)", "--timeout", "10s", "--settle")
+            auto("wait", "--text", "Commit message", "--timeout", "10s", "--settle")
             auto("screenshot", str(artifacts / "worktree-row.png"))
             results["worktree_row_shows_commit_editor"] = True
 

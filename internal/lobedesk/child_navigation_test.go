@@ -23,7 +23,7 @@ func childNavigationTester(a *app) *ui.Tester {
 	return ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
 		a.registerShortcuts(c)
-		ui.Column(c).Fill().Children(func() { a.commitMessageFields(c); a.childNavigationDialog(c) })
+		ui.Column(c).Fill().Children(func() { a.commitMessageField(c); a.childNavigationDialog(c) })
 	}, 600, 500)
 }
 
@@ -155,7 +155,7 @@ func TestChildNavigationGuardsAndInput(t *testing.T) {
 	}
 	a := childNavigationApp(t)
 	tt := childNavigationTester(a)
-	body, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+	body, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 	tt.ClickAt(body.Bounds.X+10, body.Bounds.Y+10)
 	tt.Key(ui.Alt, ui.KeyUp)
 	tt.Frame()
@@ -169,7 +169,7 @@ func TestChildNavigationCancelRestoresInput(t *testing.T) {
 		t.Run(fmt.Sprint(backdrop), func(t *testing.T) {
 			a := childNavigationApp(t)
 			tt := childNavigationTester(a)
-			body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+			body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 			if !ok {
 				t.Fatal("missing description editor")
 			}
@@ -189,7 +189,7 @@ func TestChildNavigationCancelRestoresInput(t *testing.T) {
 			tt.Key(0, ui.KeyEnd)
 			tt.Type("X")
 			tt.Frame()
-			if a.childNavigation.open || a.selectedSHA != "source" || a.commitText != "retained draft\n\nX" {
+			if a.childNavigation.open || a.selectedSHA != "source" || a.commitText != "retained draftX" {
 				t.Fatalf("cancel lost input opener or state: draft=%q", a.commitText)
 			}
 		})

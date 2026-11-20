@@ -123,8 +123,7 @@ func TestHistoryDefaultFilesWidthLeavesRoomForPatch(t *testing.T) {
 			t.Errorf("window %.0f: Files %.1f / patch %.1f, want %.0f / ≥%.0f", tc.width, files, patch, tc.files, tc.minPatch)
 		}
 	}
-	// The working tree's row carries the commit box under its files, so its
-	// Files column opens wider than a commit's.
+	// Working files have additional staging controls.
 	a := &app{page: "history", worktreeSelected: true}
 	a.filesSplit.rowWidth = 800
 	if got := a.historyFilesWidth(); math.Abs(float64(got-300)) > 0.5 {

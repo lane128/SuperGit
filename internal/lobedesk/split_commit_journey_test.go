@@ -163,9 +163,10 @@ func TestMixedChangesSplitIntoTwoCommits(t *testing.T) {
 	}
 	commit := func(summary, body string) {
 		t.Helper()
-		click(ui.RoleTextField, a.t("commitSummary"))
+		click(ui.RoleTextField, a.t("commitMessage"))
 		tt.Type(summary)
-		click(ui.RoleTextField, a.t("commitDescription"))
+		tt.Key(0, ui.KeyEnter)
+		tt.Key(0, ui.KeyEnter)
 		tt.Type(body)
 		if a.commitText != summary+"\n\n"+body {
 			t.Fatalf("draft = %q", a.commitText)

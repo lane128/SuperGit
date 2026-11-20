@@ -58,7 +58,7 @@ func TestCommitMessageShortcutFocusesActualEditorOnce(t *testing.T) {
 			var other string
 			fields := func(c *ui.Context) {
 				if a.page == "history" && a.worktreeSelected {
-					a.commitMessageFields(c)
+					a.commitMessageField(c)
 				} else {
 					field.Input(c, &other, field.InputProps{}).Label("other page")
 				}
@@ -69,7 +69,7 @@ func TestCommitMessageShortcutFocusesActualEditorOnce(t *testing.T) {
 				ui.Column(c).Width(550).Children(func() { fields(c) })
 			}, 600, 400)
 			if page == "history" {
-				node, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+				node, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 				if !ok {
 					t.Fatal("missing body")
 				}
@@ -77,18 +77,20 @@ func TestCommitMessageShortcutFocusesActualEditorOnce(t *testing.T) {
 			}
 			tt.Key(binding.Mod, binding.Key)
 			tt.Frame()
-			if a.page != "history" || !a.worktreeSelected || !tt.Focused(a.t("commitSummary")) || a.commitText != draft || !a.amend {
+			if a.page != "history" || !a.worktreeSelected || !tt.Focused(a.t("commitMessage")) || a.commitText != draft || !a.amend {
 				t.Fatal("navigation did not preserve draft/amend and focus actual summary")
 			}
+			tt.Key(ui.Cmd, ui.KeyA)
+			tt.Key(0, ui.KeyLeft)
 			tt.Key(0, ui.KeyEnd)
 			tt.Type(" marker")
-			if a.commitFields.Summary != "中文 summary marker" || a.commitFields.Body != "body line\n\n" {
-				t.Fatalf("typing missed summary: %#v", a.commitFields)
+			if a.commitText != "中文 summary marker\n\nbody line\n\n" {
+				t.Fatalf("typing missed summary: %#v", a.commitText)
 			}
 			tt.Key(0, ui.KeyTab)
 			tt.Frame()
 			tt.Frame()
-			if !tt.Focused(a.t("commitDescription")) {
+			if !tt.Focused(a.t("commitMessage")) {
 				t.Fatal("one-shot request stole focus after Tab")
 			}
 			if fingerprint() != index {
@@ -159,16 +161,16 @@ func TestCommitMessageShortcutGuardsAndStaleRequests(t *testing.T) {
 			tt := ui.NewTester(func(c *ui.Context) {
 				theme.Apply(c)
 				a.registerShortcuts(c)
-				ui.Column(c).Width(550).Children(func() { a.commitMessageFields(c) })
+				ui.Column(c).Width(550).Children(func() { a.commitMessageField(c) })
 			}, 600, 400)
-			if tt.Focused(a.t("commitSummary")) {
+			if tt.Focused(a.t("commitMessage")) {
 				t.Fatal("stale request focused editor")
 			}
 			a.page = "history"
 			a.worktreeSelected = true
 			a.newRepoForm.open = false
 			tt.Frame()
-			if tt.Focused(a.t("commitSummary")) {
+			if tt.Focused(a.t("commitMessage")) {
 				t.Fatal("stale request survived cancellation")
 			}
 		})

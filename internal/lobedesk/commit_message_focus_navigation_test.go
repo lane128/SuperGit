@@ -43,22 +43,24 @@ func TestCommitMessageShortcutFromHistoricalContentPreservesNavigation(t *testin
 	tt.Key(ui.Cmd, ui.Key9)
 	waitOverview(t, a, callbacks)
 	tt.Frame()
-	if !a.worktreeSelected || a.page != "history" || !tt.Focused(a.t("commitSummary")) || a.commitText != draft || !a.amend || a.historyDetailsHidden {
+	if !a.worktreeSelected || a.page != "history" || !tt.Focused(a.t("commitMessage")) || a.commitText != draft || !a.amend || a.historyDetailsHidden {
 		t.Fatal("real Changes editor navigation lost focus or preserved state")
 	}
 	// Repeated navigation must not reset a caret within existing text.
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(0, ui.KeyLeft)
 	tt.Key(0, ui.KeyEnd)
 	tt.Key(0, ui.KeyLeft)
 	tt.Key(ui.Cmd, ui.Key9)
 	tt.Type("X")
-	if a.commitFields.Summary != "标题abXc" || a.commitFields.Body != "body\n\n" {
-		t.Fatalf("repeat focus reset caret or draft: %+v", a.commitFields)
+	if a.commitText != "标题abXc\n\nbody\n\n" {
+		t.Fatalf("repeat focus reset caret or draft: %+v", a.commitText)
 	}
 	// A later render must permit normal focus movement away from the title.
 	tt.Key(0, ui.KeyTab)
 	tt.Frame()
 	tt.Frame()
-	if !tt.Focused(a.t("commitDescription")) {
+	if tt.Focused(a.t("commitMessage")) {
 		t.Fatal("focus was not one-shot in the actual page")
 	}
 	a.selectCommit(sha)

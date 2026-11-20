@@ -168,7 +168,7 @@ try:
         assert app.poll() is None and time.monotonic()<end,'Native automation unavailable'
         time.sleep(.05)
     auto('open','--socket',str(socket))
-    wait('Commit summary (required)')
+    wait('Commit message')
     ready()
     press('tab','Changes')
     step='01-target-hunk-enter-stage'
@@ -185,8 +185,7 @@ try:
     step='04-ui-partial-commit'
     subject='Focused hunk Enter commit'
     body='Commit only target replacement\n\nKeep other replacement and unrelated binary dirty'
-    auto('fill',control('textField','Commit summary (required)')[0],subject,'--settle')
-    auto('fill',control('textField','Description (optional)')[0],body,'--settle')
+    auto('fill',control('textField','Commit message')[0],subject + '\n\n' + body, '--settle')
     before_index=git('ls-files','--stage','-z')
     press('button','Commit')
     end=time.monotonic()+25

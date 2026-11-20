@@ -169,11 +169,11 @@ with tempfile.TemporaryDirectory(prefix="supergit-narrow-window.") as directory:
             # 2. The working tree's commit editor, inside the window.
             auto("focus", worktree[0][0], "--settle")
             auto("click", worktree[0][0], "--settle")
-            auto("wait", "--text", "Commit summary (required)", "--timeout", "10s", "--settle")
+            auto("wait", "--text", "Commit message", "--timeout", "10s", "--settle")
             auto("screenshot", str(artifacts / "02-worktree-editor.png"))
             found = entries()
             summary = [e for e in found if e[1] == "textField" and
-                       ("Commit summary (required)" in e[2] or 'placeholder="Commit summary (required)"' in e[3])]
+                       ("Commit message" in e[2] or 'placeholder="Commit message"' in e[3])]
             assert summary, "the commit summary field is missing at 900 points"
             summary_bounds = bounds(summary[0][3])
             assert summary_bounds, f"no bounds for the summary field: {summary[0]}"

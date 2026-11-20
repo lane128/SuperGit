@@ -10,7 +10,7 @@ import (
 	"supergit/internal/gitrepo"
 )
 
-func TestRenamedFileRowShowsSourceBeforeCurrentNameAndFolder(t *testing.T) {
+func TestRenamedFileRowShowsDestinationPath(t *testing.T) {
 	before := uiFontScaleValue()
 	setUIFontScale(fontScaleLarge)
 	t.Cleanup(func() { setUIFontScale(before) })
@@ -45,59 +45,20 @@ func TestRenamedFileRowShowsSourceBeforeCurrentNameAndFolder(t *testing.T) {
 						if !ok {
 							t.Fatal("rename lost complete current-path accessible label")
 						}
-						name, ok := tt.Find(tc.name)
-						if tc.path == tc.name {
-							// Find sees the row label first for a root-level file.
-							// Both that label and the separately drawn filename must exist.
-							count := 0
-							for _, text := range tt.Texts() {
-								if text == tc.name {
-									count++
-								}
+						if row.Bounds.W <= 0 || row.Bounds.X < 0 || row.Bounds.X+row.Bounds.W > float32(width)+0.5 {
+							t.Fatalf("path is outside the row: %+v", row.Bounds)
+						}
+						found := false
+						for _, text := range tt.Texts() {
+							if text == tc.path {
+								found = true
 							}
-							if count != 2 {
-								t.Fatal("root filename was not drawn beside its row label")
+							if text == tc.original || text == "→" {
+								t.Fatalf("extra visible rename decoration %q", text)
 							}
 						}
-						if !ok || name.W <= 0 || name.X < 0 || name.X+name.W > float32(width) {
-							t.Fatal("current name is not visible inside row")
-						}
-						tt.Frame()
-						stable, _ := tt.Find(tc.name)
-						if !nearlyEqual(name.X, stable.X) || !nearlyEqual(name.W, stable.W) {
-							t.Fatal("settled file-name geometry changed between frames")
-						}
-						if row.Bounds.W < fileRowFolderMin {
-							_, hasSource := tt.Find(tc.original)
-							_, hasArrow := tt.Find("→")
-							if hasSource || hasArrow {
-								t.Fatal("narrow row displaced primary name with source")
-							}
-							if tc.dir != "" {
-								if _, hasFolder := tt.Find(tc.dir); hasFolder {
-									t.Fatal("narrow row kept destination folder")
-								}
-							}
-							return
-						}
-						source, hasSource := tt.Find(tc.original)
-						arrow, hasArrow := tt.Find("→")
-						if !hasSource || !hasArrow || source.W <= 0 || arrow.W <= 0 || source.X+source.W > arrow.X || arrow.X+arrow.W > row.Bounds.X+row.Bounds.W || tc.path != tc.name && arrow.X+arrow.W > name.X {
-							t.Fatalf("rename direction unclear: source=%+v arrow=%+v name=%+v", source, arrow, name)
-						}
-						if tc.dir != "" {
-							folder, hasFolder := tt.Find(tc.dir)
-							if !hasFolder || folder.W <= 0 || name.X+name.W > folder.X || folder.X+folder.W > float32(width) {
-								t.Fatalf("missing or overlapping destination folder: %+v", folder)
-							}
-						}
-						for _, decorative := range []string{tc.original, "→", tc.name, tc.dir} {
-							if decorative == "" || decorative == tc.path {
-								continue
-							}
-							if _, ok := tt.Access(decorative); ok {
-								t.Fatalf("decorative text %q duplicates row accessibility", decorative)
-							}
+						if !found {
+							t.Fatalf("missing destination path %s", tc.path)
 						}
 					})
 				}

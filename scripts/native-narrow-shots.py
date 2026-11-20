@@ -214,7 +214,7 @@ for name, language, theme, font_scale, width in combinations:
             print(auto("screenshot", str(shots / (name + suffix + ".png"))).strip(), flush=True)
             (shots / (name + suffix + ".snapshot.txt")).write_text(auto("snapshot", "--full"))
 
-        startup_summary = "提交标题（必填）" if language == "zh" else "Commit summary (required)"
+        startup_summary = "提交信息" if language == "zh" else "Commit message"
         auto("wait", "--text", startup_summary, "--timeout", "20s", "--settle")
         startup_tab = next(e for e in controls() if e[1] == "tab" and e[2] == ("改动" if language == "zh" else "Changes"))
         assert "checked" in startup_tab[3], "launch did not select Changes"
@@ -303,7 +303,7 @@ for name, language, theme, font_scale, width in combinations:
         commit_button = next(e for e in entries if e[1] == "button" and e[2] == commit_label)
         assert "disabled" in commit_button[3], "empty summary permits commit"
         capture("-commit-disabled")
-        summary_label = "提交标题（必填）" if language == "zh" else "Commit summary (required)"
+        summary_label = "提交信息" if language == "zh" else "Commit message"
         summary = next(e for e in entries if e[1] == "textField" and e[2] == summary_label)
         auto("fill", summary[0], "Acceptance draft with staged changes", "--settle")
         deadline = time.monotonic() + 20
@@ -334,7 +334,9 @@ for name, language, theme, font_scale, width in combinations:
             assert h > 0 and y + h <= 640 and "offscreen" not in action[3], "Changes commit action is unreachable"
             detail_at = next(i for i, e in enumerate(current) if e[1] == "tabList" and e[2] == details_label)
             detail_viewport = next(e for e in reversed(current[:detail_at]) if e[1] == "scroll")
-            assert x >= 160 and ex + ew <= bounds(detail_viewport)[0] + 1, "commit editor is not beside Diff"
+            dx, dy, dw, dh = bounds(detail_viewport)
+            assert ex >= dx - 1 and ex + ew <= dx + dw + 1 and ey >= dy + dh - 1, "commit editor is outside the detail column"
+            assert ey + eh <= y + 1, "commit button overlaps the editor"
             assert "Acceptance draft with staged changes" in auto("snapshot", "--full"), "Changes lost draft"
             version = "unstaged" if "working" in expected else "staged"
             capture("-changes-" + version)

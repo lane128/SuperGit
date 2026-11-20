@@ -12,7 +12,7 @@ func paletteCloneTester(a *app) *ui.Tester {
 		theme.Apply(c)
 		a.registerShortcuts(c)
 		ui.Column(c).Fill().Children(func() {
-			a.commitMessageFields(c)
+			a.commitMessageField(c)
 			a.cloneRepositoryDialog(c)
 			a.commandPickerDialogs(c)
 		})
@@ -67,7 +67,7 @@ func TestPaletteCloneHandoffCancel(t *testing.T) {
 							a.repo = nil
 						}
 						tt := paletteCloneTester(a)
-						body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+						body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 						if !ok {
 							t.Fatal("Body missing")
 						}
@@ -108,7 +108,7 @@ func TestPaletteCloneHandoffCancel(t *testing.T) {
 						tt.Frame()
 						tt.Type("X")
 						tt.Frame()
-						if a.cloneForm.open || a.commandPalette.open || a.commitText != "draft\n\nX" || !a.amend {
+						if a.cloneForm.open || a.commandPalette.open || a.commitText != "X" || !a.amend {
 							t.Fatalf("cancel lost original selection/draft: %q", a.commitText)
 						}
 					})

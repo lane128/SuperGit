@@ -562,10 +562,18 @@ func (a *app) commitList(c *ui.Context) {
 									selected = i
 								}
 							}
+							cache := a.prepareHistoryCounts()
+							var missing []gitrepo.Commit
 							virtualPatchRows(c, a.historyViewport, &a.historyScroll, heights, selected, func(rowContext *ui.Context, i int) {
 								commit := commits[i]
-								a.historyEntryRow(rowContext.Key(commit.SHA), commit, a.stashTimeline.bySHA[commit.SHA], i, i+2, total, graph)
+								stash := a.stashTimeline.bySHA[commit.SHA]
+								cache.queue(&missing, commit)
+								if extra := stashUntrackedSnapshot(stash); extra != "" {
+									cache.queue(&missing, gitrepo.Commit{SHA: extra})
+								}
+								a.historyEntryRow(rowContext.Key(commit.SHA), commit, stash, i, i+2, total, graph)
 							})
+							a.loadHistoryFileCounts(cache, missing)
 						}
 					})
 				}).Grow(1).Basis(0).MinHeight(0)
@@ -1050,6 +1058,13 @@ func (a *app) historyEntryRow(c *ui.Context, commit gitrepo.Commit, stash *gitre
 						titleText.Tooltip(commit.Subject)
 					}
 				}
+				if a.repo != nil && a.historyCounts != nil && a.historyCounts.root == a.repo.Root {
+					if n, ok := a.historyCounts.fileCount(commit.SHA, stash); ok {
+						display.Text(c, itoa(n), display.TextProps{FontSize: scaledFont(10), Type: display.TextSecondary}).
+							SingleLine().Shrink(0).Padding(0, 4).Radius(3).Background(tk.FillSecondary).
+							Tooltip(a.changedFilesLabel(n))
+					}
+				}
 				if stash != nil && a.hideTime && a.hideAuthor {
 					a.stashBadge(c, *stash)
 				}
@@ -1349,6 +1364,7 @@ func (a *app) commitFileList(c *ui.Context) {
 		}
 		return
 	}
+	display.Text(c, fmt.Sprintf("%s (%d)", a.t("changes"), len(a.commitFiles)), display.TextProps{Strong: true, Type: display.TextSecondary, FontSize: scaledFont(11)}).Padding(5, 4)
 	a.commitFileRows(c, a.commitFiles)
 }
 
@@ -1391,17 +1407,7 @@ func (a *app) commitFileRows(c *ui.Context, files []gitrepo.ChangedFile) {
 				}
 				*wasFocused = row.Focused()
 				row.Children(func() {
-					code := changedFileCode(file.Status)
-					badge := a.statusTag(rowContext, code, display.TagProps{
-						Variant: display.TagFilled,
-						Color:   display.TagColor(changedFileColor(file.Status)),
-						Size:    theme.Small,
-						Round:   true,
-					})
-					if compact {
-						badge.PaddingX(4)
-					}
-					fileRowPath(rowContext, row, file.Path, file.OriginalPath, primary)
+					fileRowPath(rowContext, file.Path, primary)
 				})
 				a.fileDetailMenu(rowContext, row, file.Path)
 				menuOpen := *ui.Local(row, "contextMenu", func() bool { return false })
@@ -1423,24 +1429,6 @@ func changedFileCode(status string) string {
 		return "?"
 	}
 	return status[:1]
-}
-
-func changedFileColor(status string) string {
-	if status == "" {
-		return "gray"
-	}
-	switch status[:1] {
-	case "A":
-		return "success"
-	case "D":
-		return "error"
-	case "R", "C":
-		return "geekblue"
-	case "M", "T":
-		return "warning"
-	default:
-		return "gray"
-	}
 }
 
 func (a *app) commitDiffView(c *ui.Context) {

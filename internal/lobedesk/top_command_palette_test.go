@@ -57,7 +57,7 @@ func TestTopCommandPaletteToolbarAndPosition(t *testing.T) {
 	tt := ui.NewTester(func(c *ui.Context) {
 		a.applyTheme(c)
 		a.registerShortcuts(c)
-		ui.Column(c).Fill().Children(func() { a.titleBar(c); a.commitMessageFields(c); a.commandPickerDialogs(c) })
+		ui.Column(c).Fill().Children(func() { a.titleBar(c); a.commitMessageField(c); a.commandPickerDialogs(c) })
 	}, 900, 640)
 	assertCommandControlBounds(t, tt, a, 900)
 	branch, _ := tt.AccessByRole(ui.RoleButton, a.t("branches"))
@@ -103,7 +103,7 @@ func TestTopCommandPaletteParameterBackspace(t *testing.T) {
 		t.Run(command, func(t *testing.T) {
 			a := createBranchApp(t)
 			tt := paletteStashTester(a, "body", 900, 640)
-			body, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitDescription"))
+			body, _ := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
 			tt.ClickAt(body.Bounds.X+10, body.Bounds.Y+10)
 			tt.Key(ui.Cmd, ui.KeyP)
 			tt.Frame()
@@ -141,7 +141,7 @@ func TestTopCommandPaletteParameterBackspace(t *testing.T) {
 			tt.Key(0, ui.KeyEnd)
 			tt.Type("X")
 			tt.Frame()
-			if a.commitText != "title\n\nbodyX" || a.busy {
+			if a.commitText != "titleX\n\nbody" || a.busy {
 				t.Fatalf("return lost draft/focus: %q", a.commitText)
 			}
 		})

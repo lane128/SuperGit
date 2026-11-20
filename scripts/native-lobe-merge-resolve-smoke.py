@@ -187,7 +187,7 @@ for scenario in ('external-resolution', 'markers-observation'):
                 raise RuntimeError('Native process unavailable')
             time.sleep(.05)
         auto('open', '--socket', str(socket))
-        wait('Commit summary (required)')
+        wait('Commit message')
         ready()
         press('tab', 'Changes')
         press('listItem', 'conflict.txt')
@@ -213,8 +213,7 @@ for scenario in ('external-resolution', 'markers-observation'):
             step = '03-ui-merge-commit'
             subject = 'Native external merge resolution'
             body = 'Combined main and incoming text\n\nRefs: owned-merge-fixture'
-            auto('fill', control('textField', 'Commit summary (required)')[0], subject, '--settle')
-            auto('fill', control('textField', 'Description (optional)')[0], body, '--settle')
+            auto('fill', control('textField', 'Commit message')[0], subject + '\n\n' + body, '--settle')
             resolved_index = git('ls-files', '--stage')
             press('button', 'Commit')
             wait('Committed')

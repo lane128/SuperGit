@@ -34,7 +34,7 @@ func createBranchApp(t *testing.T) *app {
 }
 
 func TestPaletteCreateBranchHandoff(t *testing.T) {
-	for _, opener := range []string{"summary", "body", "history"} {
+	for _, opener := range []string{"message", "history"} {
 		for _, mod := range []ui.Modifiers{ui.Cmd, ui.Cmd | ui.Shift} {
 			for _, activation := range []string{"enter", "click"} {
 				for _, dismiss := range []string{"escape", "backdrop", "button"} {
@@ -47,10 +47,7 @@ func TestPaletteCreateBranchHandoff(t *testing.T) {
 							tt.Type("needle")
 							tt.Frame()
 						} else {
-							label := a.t("commitSummary")
-							if opener == "body" {
-								label = a.t("commitDescription")
-							}
+							label := a.t("commitMessage")
 							f, ok := tt.AccessByRole(ui.RoleTextField, label)
 							if !ok {
 								t.Fatal("missing opener")
@@ -123,13 +120,9 @@ func TestPaletteCreateBranchHandoff(t *testing.T) {
 							t.Fatal("cancel changed modal/write/amend")
 						}
 						switch opener {
-						case "summary":
-							if a.commitText != "X\n\nbody" {
-								t.Fatal("lost Summary selection")
-							}
-						case "body":
-							if a.commitText != "title\n\nX" {
-								t.Fatal("lost Body selection")
+						case "message":
+							if a.commitText != "X" {
+								t.Fatal("lost commit message selection")
 							}
 						case "history":
 							if a.historyQuery != "X" || a.commitText != "title\n\nbody" {

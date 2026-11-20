@@ -202,16 +202,14 @@ func (a *app) branchDetailHeader(c *ui.Context, sel branchDetailSelection) {
 func (a *app) localBranchDetails(c *ui.Context, sel branchDetailSelection) {
 	branch := sel.branch
 	switch {
-	case branch.Upstream == "":
-		a.branchDetailField(c, a.t("upstream"), a.t("branchNoUpstream"))
-	case branch.UpstreamGone:
+	case branch.UpstreamGone && branch.Upstream != "":
 		ui.Column(c).FillWidth().Gap(1).Children(func() {
 			display.Text(c, a.t("upstream"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).SingleLine()
 			name := elideMiddle(branch.Upstream, a.branchDetailNameRunes())
 			display.Text(c, name+" · "+a.t("upstreamGone"),
 				display.TextProps{Type: display.TextWarning, FontSize: scaledFont(11)}).SingleLine().FillWidth().Tooltip(branch.Upstream)
 		})
-	default:
+	case branch.Upstream != "":
 		// The counts sit on the upstream line, as in the list, so the reader
 		// sees whether a pull or a push is waiting without doing the sum.
 		value := fmt.Sprintf("%s · ↑%d ↓%d", branch.Upstream, branch.Ahead, branch.Behind)

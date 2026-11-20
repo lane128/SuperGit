@@ -51,7 +51,7 @@ func TestHistoryWorkingTreeShowsTheCommitEditor(t *testing.T) {
 		diff: gitrepo.Diff{Text: "+index version", Lines: []gitrepo.DiffLine{{Kind: "add", Text: "+index version"}}},
 	}
 	tt := changesLayoutTester(a)
-	if _, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitSummary")); !ok {
+	if _, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage")); !ok {
 		t.Fatal("the working tree's History selection hides the commit editor")
 	}
 	if _, ok := tt.AccessByRole(ui.RoleButton, a.t("commit")); !ok {

@@ -217,7 +217,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-long-patch.") as directory:
                         raise AssertionError("Native app did not open its automation socket")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
-                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("wait", "--text", "Commit message", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 wait("Long patch after")
                 # Start from the small parent, then measure selecting the 8,000-line patch.

@@ -196,14 +196,12 @@ var messages = map[locale]map[string]string{
 		"stageAllConflicts":               "冲突文件需逐个解决，不能全部暂存",
 		"unstageAll":                      "全部取消暂存",
 		"commit":                          "提交",
-		"commitPlaceholder":               "提交标题（必填）\n\n详细说明（可选）",
-		"commitSummary":                   "提交标题（必填）",
-		"commitDescription":               "详细说明（可选）",
-		"commitSummaryHint":               "概括这次改动",
+		"commitMessage":                   "提交信息",
+		"nothingToCommit":                 "没有可提交的改动",
+		"filesChangedCount":               "%d 个文件改动",
 		"commitTitleRequired":             "请填写提交标题。",
 		"commitWaiting":                   "请等待当前操作结束后再提交。",
 		"commitConflictsHint":             "请先解决所有冲突，再提交。",
-		"commitDescriptionHint":           "说明改动原因与细节",
 		"retryCommitMessage":              "重试读取提交说明",
 		"commitHelp":                      "只提交已暂存内容，Git hooks 会运行。",
 		"committer":                       "提交者",
@@ -493,7 +491,6 @@ var messages = map[locale]map[string]string{
 		"path":                            "路径",
 		"upstream":                        "上游",
 		"upstreamGone":                    "上游已删除",
-		"branchNoUpstream":                "无上游",
 		"latestCommit":                    "最新提交",
 		"lightweightTag":                  "轻量",
 		"trackedBy":                       "由 %s 跟踪",
@@ -1087,14 +1084,12 @@ var messages = map[locale]map[string]string{
 		"stageAllConflicts":               "Resolve each conflicted file; they cannot be staged in bulk",
 		"unstageAll":                      "Unstage all",
 		"commit":                          "Commit",
-		"commitPlaceholder":               "Commit summary (required)\n\nDescription (optional)",
-		"commitSummary":                   "Commit summary (required)",
-		"commitDescription":               "Description (optional)",
-		"commitSummaryHint":               "Summarize this change",
-		"commitTitleRequired":             "Enter a commit summary.",
+		"commitMessage":                   "Commit message",
+		"nothingToCommit":                 "Nothing to commit",
+		"filesChangedCount":               "%d files changed",
+		"commitTitleRequired":             "Enter a commit message.",
 		"commitWaiting":                   "Wait for the current operation before committing.",
 		"commitConflictsHint":             "Resolve all conflicts before committing.",
-		"commitDescriptionHint":           "Explain why and add details",
 		"retryCommitMessage":              "Retry commit message",
 		"commitHelp":                      "Only staged changes are committed. Git hooks run on commit.",
 		"committer":                       "Committer",
@@ -1384,7 +1379,6 @@ var messages = map[locale]map[string]string{
 		"path":                            "Path",
 		"upstream":                        "Upstream",
 		"upstreamGone":                    "upstream gone",
-		"branchNoUpstream":                "No upstream",
 		"latestCommit":                    "Latest commit",
 		"lightweightTag":                  "Lightweight",
 		"trackedBy":                       "Tracked by %s",
@@ -1840,6 +1834,13 @@ func (a *app) changesLabel(n int) string {
 		return fmt.Sprintf("%d changes", n)
 	}
 	return fmt.Sprintf("%d 个改动", n)
+}
+
+func (a *app) changedFilesLabel(n int) string {
+	if a.locale == localeEnglish && n == 1 {
+		return "1 file changed"
+	}
+	return a.tf("filesChangedCount", n)
 }
 
 func (a *app) stagedLabel(n int) string {

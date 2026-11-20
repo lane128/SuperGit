@@ -87,7 +87,7 @@ func TestRepositoryTabRevealsWiderCheckoutThatFillsWelcome(t *testing.T) {
 
 func TestRepositoryTabsOverflowArrowsPanWithoutSwitching(t *testing.T) {
 	tabs, a, b, view, callbacks := repositoryTabsSafetyFixture(t)
-	b.commitFields.Summary = "Draft in the active checkout"
+	b.commitText = "Draft in the active checkout"
 	prefix := t.TempDir()
 	tabs.sessions = []*app{a}
 	for i := range 8 {
@@ -116,7 +116,7 @@ func TestRepositoryTabsOverflowArrowsPanWithoutSwitching(t *testing.T) {
 	x := tabs.scroll.X
 	clickRepositoryTabsControl(t, view, ui.RoleButton, left)
 	frame()
-	if tabs.scroll.X >= x || tabs.active != b || len(tabs.sessions) != 10 || tabs.sessions[0] != a || tabs.sessions[9] != b || b.commitFields.Summary != "Draft in the active checkout" {
+	if tabs.scroll.X >= x || tabs.active != b || len(tabs.sessions) != 10 || tabs.sessions[0] != a || tabs.sessions[9] != b || b.commitText != "Draft in the active checkout" {
 		t.Fatalf("panning left changed the checkout, draft or order, or did not scroll: x=%g -> %g", x, tabs.scroll.X)
 	}
 	assertArrow(right, true)

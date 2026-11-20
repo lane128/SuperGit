@@ -26,7 +26,7 @@ func createTagPaletteApp(t *testing.T) *app {
 }
 
 func TestPaletteCreateTagHandoffCancel(t *testing.T) {
-	for _, opener := range []string{"summary", "body", "history"} {
+	for _, opener := range []string{"message", "history"} {
 		for _, mod := range []ui.Modifiers{ui.Cmd, ui.Cmd | ui.Shift} {
 			for _, activate := range []string{"enter", "click"} {
 				for _, dismiss := range []string{"escape", "backdrop", "button"} {
@@ -39,10 +39,7 @@ func TestPaletteCreateTagHandoffCancel(t *testing.T) {
 							tt.Type("original")
 							tt.Frame()
 						} else {
-							label := a.t("commitSummary")
-							if opener == "body" {
-								label = a.t("commitDescription")
-							}
+							label := a.t("commitMessage")
 							f, ok := tt.AccessByRole(ui.RoleTextField, label)
 							if !ok {
 								t.Fatal("missing original input")
@@ -108,13 +105,9 @@ func TestPaletteCreateTagHandoffCancel(t *testing.T) {
 						tt.Type("X")
 						tt.Frame()
 						switch opener {
-						case "summary":
-							if a.commitText != "X\n\nbody" {
-								t.Fatal("lost Summary selection")
-							}
-						case "body":
-							if a.commitText != "title\n\nX" {
-								t.Fatal("lost Body selection")
+						case "message":
+							if a.commitText != "X" {
+								t.Fatal("lost commit message selection")
 							}
 						case "history":
 							if a.historyQuery != "X" {

@@ -111,7 +111,7 @@ def run_case(mode):
                         raise RuntimeError("native automation unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
-                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
+                auto("wait", "--text", "Commit message", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 wait("Reset fixture tip")
                 auto("wait", "--text", "Loading", "--gone", "--timeout", "20s", "--settle")

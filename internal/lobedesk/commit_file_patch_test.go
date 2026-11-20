@@ -29,8 +29,7 @@ func commitPatchFixture(t *testing.T) (*app, chan func(), *ui.Tester) {
 	}
 	a.commits = []gitrepo.Commit{{SHA: a.selectedSHA}}
 	a.commitFilesLoaded = true
-	a.commitFields.Summary = "keep draft title"
-	a.commitFields.Body = "keep draft body"
+	a.commitText = "keep draft title\n\nkeep draft body"
 	tt := pageTester(a, func(c *ui.Context) {
 		ui.Column(c).Width(500).Height(250).Children(func() { a.commitFileList(c) })
 		a.confirmDialog(c)
@@ -98,7 +97,7 @@ func TestCommitFilePatchMenuSavesApplicablePatchWithoutReload(t *testing.T) {
 		t.Fatal("menu exported worktree or index instead of selected commit")
 	}
 	gotWork, _ := os.ReadFile(filepath.Join(root, "same.go"))
-	if selectionGit(t, root, "rev-parse", "HEAD") != head || selectionGit(t, root, "show", ":same.go") != index || !bytes.Equal(gotWork, work) || a.loadSeq != 0 || a.selectedSHA != strings.TrimSpace(head) || a.commitFields.Summary != "keep draft title" || a.commitFields.Body != "keep draft body" {
+	if selectionGit(t, root, "rev-parse", "HEAD") != head || selectionGit(t, root, "show", ":same.go") != index || !bytes.Equal(gotWork, work) || a.loadSeq != 0 || a.selectedSHA != strings.TrimSpace(head) || a.commitText != "keep draft title\n\nkeep draft body" {
 		t.Fatal("export changed source state, draft, or selection")
 	}
 	if len(a.notices[toastMain]) != 1 || a.notices[toastMain][0].kind != "success" {
@@ -141,7 +140,7 @@ func TestCommitFilePatchChooserCancellationErrorAndStaleReturnDoNotWrite(t *test
 			}
 			activatePatchExport(t, a, tt)
 			got, err := os.ReadFile(destination)
-			if err != nil || string(got) != "keep existing" || calls != 1 || a.repositoryChooserOpen || a.commitFields.Summary != "keep draft title" || a.commitFields.Body != "keep draft body" {
+			if err != nil || string(got) != "keep existing" || calls != 1 || a.repositoryChooserOpen || a.commitText != "keep draft title\n\nkeep draft body" {
 				t.Fatalf("chooser %s changed destination/draft or retained lock", name)
 			}
 			if name == "error" && (len(a.notices[toastMain]) != 1 || a.notices[toastMain][0].kind != "error") {

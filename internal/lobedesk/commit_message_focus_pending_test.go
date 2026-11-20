@@ -31,14 +31,14 @@ func TestCommitMessageFocusExpiresWhileEditorIsUnmounted(t *testing.T) {
 				a.registerShortcuts(c)
 				ui.Column(c).Width(550).Children(func() {
 					if mounted {
-						a.commitMessageFields(c)
+						a.commitMessageField(c)
 					}
 				})
 			}, 600, 400)
 			setBlocked(false)
 			mounted = true
 			tt.Frame()
-			if tt.Focused(a.t("commitSummary")) {
+			if tt.Focused(a.t("commitMessage")) {
 				t.Fatal("expired request stole focus when editor mounted later")
 			}
 		})

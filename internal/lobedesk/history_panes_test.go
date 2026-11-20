@@ -237,7 +237,7 @@ func TestTheWorktreeSummaryHoldsTheCommitBox(t *testing.T) {
 	}
 	box := false
 	for _, info := range tt.AccessAll() {
-		if info.Placeholder == a.t("commitSummaryHint") {
+		if info.Placeholder == a.t("commitMessage") {
 			box = true
 			break
 		}
@@ -437,8 +437,8 @@ func TestTheFileTabNamesItsFullPath(t *testing.T) {
 	if tab.Bounds.W > 300 {
 		t.Errorf("the file tab is %v wide inside a 300-wide strip", tab.Bounds.W)
 	}
-	if tab.Bounds.H < 38 {
-		t.Errorf("the tab is %v high; it should fill the strip", tab.Bounds.H)
+	if tab.Bounds.H != 30 {
+		t.Errorf("the tab is %v high; want 30 points inside the 32-point strip", tab.Bounds.H)
 	}
 }
 

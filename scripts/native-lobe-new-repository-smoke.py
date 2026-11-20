@@ -209,8 +209,8 @@ try:
     note('PASS empty-state New repository entry/Cancel leaves destination absent and original fingerprints unchanged')
     stop()
     step='02-title-entry-cancel'
-    start(active);wait('Commit summary (required)');root_ready(active);press('tab','Changes')
-    fill('Commit summary (required)','Keep old new-repository draft');fill('Description (optional)','Retain old description')
+    start(active);wait('Commit message');root_ready(active);press('tab','Changes')
+    fill('Commit message', 'Keep old new-repository draft' + '\n\n' + 'Retain old description')
     open_new(active);fill(field,str(cancelled));press('button','Cancel');no_form()
     text=evidence(step);assert not cancelled.exists()
     assert 'value="Keep old new-repository draft"' in text and 'value="Retain old description"' in text,'Cancel changed old draft'
@@ -230,7 +230,7 @@ try:
     unborn();same(git(destination,'ls-files','--stage','-z'),b'','New Index not empty')
     same(git(destination,'status','--porcelain=v1','-z'),b'','New worktree not clean');same(git(destination,'remote'),b'','New repo has remote')
     press('tab','Changes');text=evidence(step+'-changes')
-    assert all('value=' not in e[3] for e in entries(text) if e[1]=='textField' and e[2] in ('Commit summary (required)','Description (optional)')),'Create kept old draft'
+    assert all('value=' not in e[3] for e in entries(text) if e[1]=='textField' and e[2] == 'Commit message'),'Create kept old draft'
     assert not any(e[1]=='checkBox' and e[2]=='Amend last commit' for e in entries(text)),'Unborn repository offers Amend'
     press('button','History');wait('No commits yet.');evidence(step+'-history')
     note('PASS UI Create opens precise Unicode/space root: unborn main/no refs/empty Index/clean/no remotes/No commits yet, old draft reset')
@@ -252,7 +252,7 @@ try:
     note('PASS UI restages text and stages binary with exact blobs; repository remains unborn')
     step='10-first-ui-commit'
     subject='First native New Repository commit';body='Created through native UI\n\nText and binary fixture'
-    fill('Commit summary (required)',subject);fill('Description (optional)',body)
+    fill('Commit message', subject + '\n\n' + body)
     index=git(destination,'ls-files','--stage','-z');press('button','Commit')
     end=time.monotonic()+25
     while git(destination,'rev-parse','--verify','HEAD',check=False).returncode:

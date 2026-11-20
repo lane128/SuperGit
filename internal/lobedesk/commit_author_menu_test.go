@@ -16,8 +16,7 @@ func TestCommitAuthorMenuCopiesCapturedFullName(t *testing.T) {
 			original := "作者 Name ’ with spaces " + strings.Repeat("long author ", 12)
 			commit := gitrepo.Commit{SHA: strings.Repeat("a", 40), Subject: "Selected commit", Author: original, Date: "2026-11-18 12:00:00"}
 			a := &app{locale: language, selectedSHA: commit.SHA}
-			a.commitFields.Summary = "keep draft"
-			a.commitFields.Body = "keep body"
+			a.commitText = "keep draft\n\nkeep body"
 			copied := ""
 			previous := writeClipboard
 			writeClipboard = func(value string) error { copied = value; return nil }
@@ -46,7 +45,7 @@ func TestCommitAuthorMenuCopiesCapturedFullName(t *testing.T) {
 			if copied != original {
 				t.Fatalf("copied wrong or elided author: %q", copied)
 			}
-			if a.commitFields.Summary != "keep draft" || a.commitFields.Body != "keep body" || a.selectedSHA != commit.SHA || a.busy || a.loading {
+			if a.commitText != "keep draft\n\nkeep body" || a.selectedSHA != commit.SHA || a.busy || a.loading {
 				t.Fatal("copy changed draft/selection or started repository work")
 			}
 		})

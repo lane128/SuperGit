@@ -16,7 +16,7 @@ func (a *app) branchTrackingStatus() (visible, spoken string) {
 	case s.Branch == "":
 		return "", ""
 	case s.Upstream == "":
-		visible = a.t("branchNoUpstream")
+		return "", ""
 	case s.UpstreamGone:
 		visible = a.t("upstreamGone")
 	case s.Ahead == 0 && s.Behind == 0:
@@ -117,7 +117,7 @@ func (a *app) syncMenuHeader(c *ui.Context, menu ui.MenuParts) {
 	case a.status.Branch == "":
 		header = a.t("detached")
 	case header == "":
-		header = a.t("branchNoUpstream")
+		return
 	case a.status.UpstreamGone:
 		header += " · " + a.t("upstreamGone")
 	}

@@ -53,7 +53,7 @@ func TestFileRowMenuSelectsTheFile(t *testing.T) {
 			a.fileRow(c, entry, false)
 		})
 	}, 600, 400)
-	r, ok := tt.Find("a.go")
+	r, ok := tt.Find(entry.Path)
 	if !ok {
 		t.Fatal("the file row is not laid out")
 	}
