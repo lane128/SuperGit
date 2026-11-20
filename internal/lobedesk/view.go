@@ -103,6 +103,20 @@ func (a *app) titleBar(c *ui.Context) {
 	a.workbenchToolbar(c, true)
 }
 
+// windowTitleBar paints through the native title area. The platform reports
+// the space it needs for its own buttons, including changes in full screen.
+func windowTitleBar(c *ui.Context) ui.Element {
+	tk := theme.TokensOf(c)
+	bar := c.TitleBar()
+	inset := float32(8)
+	if bar.Left > 0 {
+		inset = max(bar.Left+8, 80)
+	}
+	return ui.Row(c).FillWidth().Height(max(float32(titleBarHeight), bar.Height)).Shrink(0).
+		Padding(0, max(8, bar.Right+4), 0, inset).AlignItems(ui.Center).DragWindow().
+		Background(tk.BgLayout).BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
+}
+
 func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 	tk := theme.TokensOf(c)
 	height := float32(titleBarHeight)

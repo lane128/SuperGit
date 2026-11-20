@@ -33,7 +33,9 @@ func settingsHelp(c *ui.Context, text string) {
 }
 
 func (a *app) settingsPage(c *ui.Context) {
-	a.pageHeader(c, a.t("settings"), "", nil)
+	windowTitleBar(c).Children(func() {
+		display.Text(c, a.settingsWindowTitle(), display.TextProps{Heading: 5, Strong: true, FontSize: scaledFont(13)}).SingleLine()
+	})
 	ui.Row(c).Grow(1).Basis(0).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 		a.settingsNavigation(c)
 		layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.settingsScroll}, func() {

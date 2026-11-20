@@ -419,14 +419,7 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 	}
 	tabs.stripWidth, tabs.stripButtonWidth, tabs.stripTabCount = width, buttonWidth, len(visibleTabs)
 	tabs.stripOverflowSpace, tabs.stripOpening = space, opening
-	bar := c.TitleBar()
-	height := max(float32(titleBarHeight), bar.Height)
-	inset := float32(8)
-	if bar.Left > 0 {
-		inset = max(bar.Left+8, 80)
-	}
-	ui.Row(c).Height(height).Shrink(0).Padding(0, max(8, bar.Right+4), 0, inset).Gap(gap).AlignItems(ui.Center).DragWindow().
-		BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary).Children(func() {
+	windowTitleBar(c).Gap(gap).Children(func() {
 		var activate, close, alias, dragSource, dragTarget *app
 		names := tabs.checkoutTabNames(c, visibleTabs)
 		viewport := ui.Box(c).Grow(1).Basis(0).MinWidth(0).Height(34)
