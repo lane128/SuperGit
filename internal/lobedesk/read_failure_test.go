@@ -337,15 +337,15 @@ func TestAFailedStashListDropsTheOldPatch(t *testing.T) {
 		stashes:       []gitrepo.Stash{{SHA: "aaaa"}, {SHA: "bbbb"}},
 		stashesErr:    "fatal: cannot read stashes",
 		selectedStash: "aaaa",
-		stashDiff:     gitrepo.Diff{Lines: []gitrepo.DiffLine{{Kind: "add", Text: "old patch line"}}},
-		stashSeq:      3,
+		commitDiff:    gitrepo.Diff{Lines: []gitrepo.DiffLine{{Kind: "add", Text: "old patch line"}}},
+		commitSeq:     3,
 	}
 	a.clearStashDetail()
-	if a.selectedStash != "" || len(a.stashDiff.Lines) != 0 || a.stashDiffErr != "" {
-		t.Errorf("the failed list kept %q, %d lines, error %q", a.selectedStash, len(a.stashDiff.Lines), a.stashDiffErr)
+	if a.selectedStash != "" || len(a.commitDiff.Lines) != 0 || a.commitDiffErr != "" {
+		t.Errorf("the failed list kept %q, %d lines, error %q", a.selectedStash, len(a.commitDiff.Lines), a.commitDiffErr)
 	}
-	if a.stashSeq != 4 {
-		t.Errorf("the failed list left the stash sequence at %d; want 4 so a pending patch load is dropped", a.stashSeq)
+	if a.commitSeq != 4 {
+		t.Errorf("the failed list left the stash sequence at %d; want 4 so a pending patch load is dropped", a.commitSeq)
 	}
 	// Partial rows are still listed, but a failed read must not auto-pick one
 	// and load a patch the error says cannot be vouched for.

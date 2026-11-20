@@ -301,12 +301,16 @@ func (a *app) historyPageAtWidth(c *ui.Context, width float32) {
 	a.historyRowExtent = rowHeight
 	source := a.historySource()
 	subtitle := a.commitsLabel(len(source))
-	commits := a.projectHistoryMerges(a.filteredHistoryRows())
+	filtered := a.filteredHistoryRows()
+	commits := a.projectHistoryMerges(a.historyWithStashes(filtered))
+	if a.selectedStash != "" && a.stashTimeline.bySHA[a.selectedStash] == nil && !a.loading && !a.historyReloading {
+		a.clearStashDetail()
+	}
 	// The list, the selection and the details pane all index into these rows;
 	// cache them for the frame instead of walking and filtering three times.
 	a.historyRowsCache, a.historyRowsFrame, a.historyRowsSet = commits, a.frameSeq, true
 	if strings.TrimSpace(a.historyQuery) != "" {
-		subtitle = a.commitsLabel(len(commits))
+		subtitle = a.commitsLabel(len(filtered))
 	}
 	if a.historyErr != "" {
 		// The count would describe the walk that failed, and after a ref
@@ -326,7 +330,7 @@ func (a *app) historyPageAtWidth(c *ui.Context, width float32) {
 	// A chosen stash is the details' subject: picking a commit for it would
 	// replace the stash's patch with a commit nobody chose.
 	if !a.historyReloading && a.pendingJumpSHA == "" && a.selectedStash == "" && !a.worktreeSelected && (a.selectedSHA == "" || a.hasSelectedIn(source) || !more) {
-		if sha := historySelection(commits, a.selectedSHA); sha != "" && sha != a.selectedSHA {
+		if sha := historySelection(filtered, a.selectedSHA); sha != "" && sha != a.selectedSHA {
 			a.selectCommit(sha)
 		}
 	}
@@ -472,7 +476,7 @@ func (a *app) historyListState(rows int) historyListState {
 		return historyListRows // The footer describes the interrupted read.
 	case len(source) == 0 && a.fileFilter != "":
 		return historyListNoFileHistory
-	case len(source) == 0:
+	case len(source) == 0 && rows == 0:
 		return historyListEmpty
 	case rows == 0:
 		return historyListNoMatch
@@ -530,9 +534,9 @@ func (a *app) commitList(c *ui.Context) {
 			default:
 				scroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.historyScroll}, func() {
 					ui.Column(c).FillWidth().Padding(historyListPadding).Role(ui.RoleList).Children(func() {
-						total := 1 + len(a.stashes) + len(commits)
+						total := 1 + len(commits)
 						a.historyWorktreeRow(c, 0, total)
-						a.historyStashExtent = a.historyStashRows(c, total)
+						a.historyStashExtent = a.historyStashErrorBanner(c)
 						switch state {
 						case historyListEmpty:
 							a.diffPlaceholder(c, lucide.History(), a.t("noHistory"), a.t("noHistoryHint"))
@@ -554,12 +558,13 @@ func (a *app) commitList(c *ui.Context) {
 							selected := -1
 							for i := range commits {
 								heights[i] = a.historyRowHeight()
-								if commits[i].SHA == a.selectedSHA {
+								if commits[i].SHA == a.selectedSHA || commits[i].SHA == a.selectedStash {
 									selected = i
 								}
 							}
 							virtualPatchRows(c, a.historyViewport, &a.historyScroll, heights, selected, func(rowContext *ui.Context, i int) {
-								a.commitRow(rowContext.Key(commits[i].SHA), commits[i], i, len(a.stashes)+1, total, graph)
+								commit := commits[i]
+								a.historyEntryRow(rowContext.Key(commit.SHA), commit, a.stashTimeline.bySHA[commit.SHA], i, i+2, total, graph)
 							})
 						}
 					})
@@ -578,30 +583,21 @@ func (a *app) commitList(c *ui.Context) {
 	})
 }
 
-// Stash rows and their retry banner have intrinsic heights. Keep their
-// measured extent so merge folding can anchor the visible commit by index.
-func (a *app) historyStashRows(c *ui.Context, total int) float32 {
-	if a.stashesErr == "" && len(a.stashes) == 0 {
+// Only the read-error banner has a non-row height.
+func (a *app) historyStashErrorBanner(c *ui.Context) float32 {
+	if a.stashesErr == "" {
 		return 0
 	}
 	group := ui.Column(c).FillWidth().Shrink(0)
-	if a.stashesErr != "" {
-		group.PaddingX(12).PaddingY(8).Gap(4)
-		a.continueWorktreeThrough(group, theme.TokensOf(c), 12, 8)
-		group.Children(func() {
-			display.Text(c, a.stashesLabel(0, true), display.TextProps{Strong: true, FontSize: scaledFont(11)})
-			display.Text(c, a.stashesErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(11), Rows: 2})
-			if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
-				a.reload()
-			}
-		})
-	} else {
-		group.Children(func() {
-			for i, stash := range a.stashes {
-				a.stashRow(c.Key(stash.SHA), stash, i+2, total)
-			}
-		})
-	}
+	group.PaddingX(12).PaddingY(8).Gap(4)
+	a.continueWorktreeThrough(group, theme.TokensOf(c), 12, 8)
+	group.Children(func() {
+		display.Text(c, a.stashesLabel(0, true), display.TextProps{Strong: true, FontSize: scaledFont(11)})
+		display.Text(c, a.stashesErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(11), Rows: 2})
+		if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
+			a.reload()
+		}
+	})
 	return group.Bounds().H
 }
 
@@ -837,8 +833,15 @@ const (
 // lead is how many rows sit above the commits in the same list -- the working
 // tree's row -- so the place a reader hears counts that row too.
 func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total int, graph *commitGraph) {
+	a.historyEntryRow(c, commit, nil, index, index+lead+1, total, graph)
+}
+
+func (a *app) historyEntryRow(c *ui.Context, commit gitrepo.Commit, stash *gitrepo.Stash, index, pos, total int, graph *commitGraph) {
 	tk := theme.TokensOf(c)
 	selected := a.selectedSHA == commit.SHA
+	if stash != nil {
+		selected = a.selectedStash == stash.SHA
+	}
 	rowHeight := a.historyRowHeight()
 	listWidth := a.commitListWidth()
 	// No tooltip on the row itself: the subject is already on the row, and a
@@ -850,11 +853,13 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 	// aria-selected, as the branch list does.
 	row := ui.ButtonBase(c).Label(commit.Subject).Row().FillWidth().Height(rowHeight).Padding(0, historyRowPadding).
 		Gap(historyRowGraphGap).Radius(tk.BorderRadius).AlignItems(ui.Center).
-		Role(ui.RoleOption).AccessSelected(selected).PositionInSet(index+lead+1, total)
+		Role(ui.RoleOption).AccessSelected(selected).PositionInSet(pos, total)
 	// A merge commit's shape says it merged two histories, and a screen reader
 	// hears only the title; the description carries that one state the row
 	// cannot show as text.
-	if len(commit.Parents) > 1 {
+	if stash != nil {
+		row.Description(stash.Ref)
+	} else if len(commit.Parents) > 1 {
 		row.Description(a.t("mergeCommitRow"))
 	}
 	// The node fills and the selected ring's halo paint the surface the node
@@ -871,7 +876,7 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 	a.revealIfSelected(row, selected)
 	row.Children(func() {
 		contentWidth := listWidth - 2*(historyListBorder+historyListPadding+historyRowPadding)
-		if a.showGraph {
+		if a.showGraph && graph != nil {
 			width := graph.Width
 			if width <= 0 {
 				width = 24
@@ -925,7 +930,14 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 						p.Fill(ui.Rect{X: x - ring, Y: center - ring, W: ring * 2, H: ring * 2}, rowBg, ring)
 						p.Stroke(ui.Rect{X: x - inner, Y: center - inner, W: inner * 2, H: inner * 2}, col, inner, 2)
 					}
+					if stash != nil {
+						shape = "stash"
+					}
 					switch shape {
+					case "stash":
+						box := ui.Rect{X: x - mergeSize, Y: center - mergeSize, W: 2 * mergeSize, H: 2 * mergeSize}
+						p.Fill(box, rowBg, 1)
+						p.Stroke(box, col, 1, max(1.5, line))
 					case "head", "merge":
 						p.Fill(ui.Rect{X: x - mergeSize, Y: center - mergeSize, W: mergeSize * 2, H: mergeSize * 2}, rowBg, mergeSize)
 						p.Stroke(ui.Rect{X: x - mergeSize, Y: center - mergeSize, W: mergeSize * 2, H: mergeSize * 2}, col, mergeSize, max(2, line))
@@ -968,6 +980,9 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 			date = formatDateTimeLayout(commit.Date, "01-02 15:04")
 		}
 		refs := commitRefs(commit.Refs)
+		if stash != nil {
+			refs = nil
+		}
 		head := headBranch(commit.Refs)
 		var refLayout historyRefLayout
 		refsOnTitle := len(refs) > 0 && a.hideAuthor && a.hideTime
@@ -1035,6 +1050,9 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 						titleText.Tooltip(commit.Subject)
 					}
 				}
+				if stash != nil && a.hideTime && a.hideAuthor {
+					a.stashBadge(c, *stash)
+				}
 				if refsOnTitle || overflowOnTitle {
 					a.commitRowRefs(c, commit, graph, index, rowBg, head, refLayout)
 				}
@@ -1053,6 +1071,9 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 						display.Text(c, commit.Author, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11.5)}).SingleLine().
 							Grow(1).Basis(0).MinWidth(0)
 					}
+					if stash != nil {
+						a.stashBadge(c, *stash)
+					}
 					if !overflowOnTitle && (len(refLayout.shown) > 0 || len(refLayout.folded) > 0) {
 						a.commitRowRefs(c, commit, graph, index, rowBg, head, refLayout)
 					}
@@ -1070,8 +1091,11 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 			}
 		})
 	})
-	_ = index
-	a.commitMenu(c, row, commit)
+	if stash != nil {
+		a.stashMenu(c, row, *stash)
+	} else {
+		a.commitMenu(c, row, commit)
+	}
 	// Opening a row's context menu selects the row, so the details on the
 	// right describe the commit the menu acts on, as Sublime Merge does. The
 	// context menu owns the right click, so this reads the menu's open state
@@ -1083,14 +1107,18 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 	// claims them and leaves the arrow selection alone.
 	row.OnShortcut(0, ui.KeyEnter, func() {})
 	row.OnShortcut(0, ui.KeySpace, func() {})
-	if row.Clicked() || (menuOpened && a.selectedSHA != commit.SHA) {
+	if row.Clicked() || (menuOpened && !selected) {
 		if a.showGraph {
 			// A deliberate click can recover the node after horizontal panning.
 			// Leave vertical scrolling alone when the pointer chose a visible row.
 			a.revealGraphSelection = true
 			c.After(0)
 		}
-		a.selectCommit(commit.SHA)
+		if stash != nil {
+			a.selectStash(stash.SHA)
+		} else {
+			a.selectCommit(commit.SHA)
+		}
 	}
 }
 
@@ -1306,7 +1334,26 @@ func (a *app) commitFileList(c *ui.Context) {
 	}
 	// A row's menu can replace commitFiles while this frame is still drawing.
 	// Keep the row count, heights and indexes on the same immutable snapshot.
-	files := a.commitFiles
+	if a.selectedStash != "" && a.stashTrackedCount < len(a.commitFiles) {
+		for i, files := range [][]gitrepo.ChangedFile{a.commitFiles[:a.stashTrackedCount], a.commitFiles[a.stashTrackedCount:]} {
+			if len(files) == 0 {
+				continue
+			}
+			group := c.Key(i)
+			title := a.t("changes")
+			if i == 1 {
+				title = a.t("fileGroupUntracked")
+			}
+			display.Text(group, fmt.Sprintf("%s (%d)", title, len(files)), display.TextProps{Strong: true, Type: display.TextSecondary, FontSize: scaledFont(11)}).Padding(5, 4)
+			a.commitFileRows(group, files)
+		}
+		return
+	}
+	a.commitFileRows(c, a.commitFiles)
+}
+
+func (a *app) commitFileRows(c *ui.Context, files []gitrepo.ChangedFile) {
+	tk := theme.TokensOf(c)
 	heights := make([]float32, len(files))
 	reveal, remembered := -1, -1
 	for i, file := range files {

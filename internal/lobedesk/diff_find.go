@@ -53,7 +53,7 @@ type diffFindState struct {
 }
 
 func (a *app) canFindInDiff() bool {
-	return a.detailPaneVisible() && a.selectedStash == "" && (a.worktreeSelected || a.selectedSHA != "" && !a.detailsDiffHidden) &&
+	return a.detailPaneVisible() && (a.worktreeSelected || a.currentDetailContext().CommitSHA != "" && !a.detailsDiffHidden) &&
 		!a.historyRefOpen && !a.repositoryChooserOpen && !a.conflictEditorTakesThePane() && !a.hasPendingDialog(toastMain)
 }
 

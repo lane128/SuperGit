@@ -224,7 +224,11 @@ func (a *app) detailOverview(c *ui.Context) {
 				a.worktreeOverview(c)
 				return
 			}
-			if commit, ok := a.selectedCommit(); ok {
+			commit, ok := a.selectedCommit()
+			if stash, selected := a.selectedStashObject(); selected {
+				commit, ok = stashCommit(stash), true
+			}
+			if ok {
 				if !a.detailsInfoHidden {
 					a.commitInfoContent(c, commit, tk)
 				}

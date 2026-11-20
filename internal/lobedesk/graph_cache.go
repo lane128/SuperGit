@@ -115,6 +115,9 @@ func (a *app) cachedCommitGraph(commits []gitrepo.Commit, palette []ui.Color, wi
 	revealNode := a.revealSelection || a.revealGraphSelection
 	a.revealGraphSelection = false
 	target := a.selectedSHA
+	if a.selectedStash != "" {
+		target = a.selectedStash
+	}
 	if anchor := a.historyMergeFolds.anchor; anchor != "" {
 		a.historyMergeFolds.anchor = ""
 		if !revealNode {

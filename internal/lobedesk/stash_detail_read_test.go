@@ -48,11 +48,14 @@ func TestStashDetailLoadsSavedPatchThroughWorkbenchControls(t *testing.T) {
 	tt.ClickAt(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2)
 	receiveStashDetailRead(t, done)()
 	tt.Frame()
-	if a.stashDiffLoading || a.stashDiffErr != "" || a.stashDiff.Text == "" {
-		t.Fatalf("stash patch unreadable: loading=%v error=%q", a.stashDiffLoading, a.stashDiffErr)
+	if a.commitDiffLoading || a.commitDiffErr != "" || a.commitDiff.Text == "" {
+		t.Fatalf("stash patch unreadable: loading=%v error=%q", a.commitDiffLoading, a.commitDiffErr)
 	}
 	if _, ok := tt.Find("+saved change to inspect"); !ok {
 		t.Fatal("saved patch not rendered")
+	}
+	if a.stashTrackedCount != 1 || len(a.commitSections) != 1 || a.commitSections[0].Path != "base.txt" || stash.Tree == "" || stash.Author == "" || len(stashCommit(stash).Parents) != 2 {
+		t.Fatalf("incomplete stash detail: %+v, sections: %+v", stash, a.commitSections)
 	}
 	if got := splitCommitGit(t, a.repo.Root, "show", "HEAD:base.txt"); got != "base\n" {
 		t.Fatal("reading stash changed HEAD")
@@ -70,9 +73,9 @@ func TestStashDetailLateReadCannotReplaceAnotherRepository(t *testing.T) {
 	a.repo = other.repo
 	// Navigation can replace the repository before its next list read clears the
 	// old selection. That intermediate state must not accept the previous read.
-	a.stashDiff = gitrepo.Diff{Text: "other repository placeholder"}
+	a.commitDiff = gitrepo.Diff{Text: "other repository placeholder"}
 	late()
-	if a.stashDiff.Text != "other repository placeholder" {
+	if a.commitDiff.Text != "other repository placeholder" {
 		t.Fatal("old repository read replaced current detail")
 	}
 }

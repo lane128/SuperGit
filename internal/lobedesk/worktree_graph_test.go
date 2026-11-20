@@ -70,6 +70,36 @@ func TestWorkingChangesUseDashedHeadConnection(t *testing.T) {
 	}
 }
 
+func TestStashesJoinHistoryAtTheirBase(t *testing.T) {
+	a := &app{stashes: []gitrepo.Stash{
+		{SHA: "stash2", Ref: "stash@{0}", Date: "2026-10-05T12:00:00Z", ParentSHAs: "base index untracked"},
+		{SHA: "stash1", Ref: "stash@{1}", Date: "2026-10-01T12:00:00Z", ParentSHAs: "base older-index"},
+	}}
+	commits := []gitrepo.Commit{
+		{SHA: "tip", Date: "2026-10-07T12:00:00Z", Parents: []string{"base"}},
+		{SHA: "base", Date: "2026-10-03T12:00:00Z"},
+	}
+	rows := a.historyWithStashes(commits)
+	if len(rows) != 4 || rows[0].SHA != "tip" || rows[1].SHA != "stash2" || rows[2].SHA != "stash1" || rows[3].SHA != "base" {
+		t.Fatalf("stash insertion reordered history or placed a stash below its base: %+v", rows)
+	}
+	g := newCommitGraph("tip", rows, nil)
+	for i := 1; i <= 2; i++ {
+		if len(rows[i].Parents) != 1 || rows[i].Parents[0] != "base" || g.Rows[i].Lane <= g.Rows[0].Lane {
+			t.Fatalf("invalid stash lane or graph parents: %+v in %+v", rows[i], g.Rows)
+		}
+		connected := false
+		for edge := range g.spans(i) {
+			if edge.Start == i && edge.End == 3 {
+				connected = true
+			}
+		}
+		if !connected {
+			t.Fatalf("stash %s has no edge to base", rows[i].SHA)
+		}
+	}
+}
+
 // Check the native painter as well as the lane numbers. The column through
 // a stash and a newer side tip must show both ink and gaps at the same x.
 func TestWorkingChangesPaintStraightThroughStashAndSideTip(t *testing.T) {

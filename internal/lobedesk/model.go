@@ -511,7 +511,7 @@ func (a *app) historyRows() []gitrepo.Commit {
 	if a.historyRowsSet && a.historyRowsFrame == a.frameSeq {
 		return a.historyRowsCache
 	}
-	return a.filteredHistoryRows()
+	return a.projectHistoryMerges(a.historyWithStashes(a.filteredHistoryRows()))
 }
 
 // selectedCommit is the commit the reader picked, looked up in the list they

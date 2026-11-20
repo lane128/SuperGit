@@ -1,6 +1,7 @@
 package lobedesk
 
 import (
+	"fmt"
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -26,6 +27,19 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 	// own.
 	scope := ui.Column(c).FillWidth().Padding(14).Gap(8).Selectable()
 	scope.Children(func() {
+		if stash, ok := a.selectedStashObject(); ok {
+			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+				display.Tag(c, stash.Ref, display.TagProps{Size: theme.Small, Color: display.TagWarning}).Shrink(0)
+				if a.commitFilesLoaded {
+					display.Text(c, fmt.Sprintf("%s (%d)", a.t("changes"), a.stashTrackedCount), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
+					display.Tag(c, fmt.Sprintf("−%d", a.stashDeleted), display.TagProps{Size: theme.Small, Color: display.TagError})
+					display.Tag(c, fmt.Sprintf("+%d", a.stashAdded), display.TagProps{Size: theme.Small, Color: display.TagSuccess})
+				}
+				ui.Row(c).Grow(1)
+				a.stashActions(c, stash)
+			})
+			display.Text(c, a.t("stashTree")+"  "+stash.Tree, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).SingleLine().Tooltip(stash.Tree)
+		}
 		subject := display.Text(c, commit.Subject, display.TextProps{Heading: 5, Strong: true, FontSize: scaledFont(tk.FontSize)})
 		a.commitMessageLinkMenu(c, subject, commit.Subject, scope)
 		// The refs sit with the subject and before the message body: they say
@@ -111,11 +125,20 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 		if len(commit.Parents) > 0 {
 			ui.Row(c).FillWidth().Gap(8).Wrap().AlignItems(ui.Center).Children(func() {
 				display.Text(c, a.t("parent"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).Width(54)
-				for _, parent := range commit.Parents {
+				for i, parent := range commit.Parents {
 					sha := parent
+					if a.selectedStash != "" && i > 0 {
+						// The index and untracked snapshots are not History tips.
+						display.Text(c, shortSHA(sha), display.TextProps{Code: true, FontSize: scaledFont(11)}).Tooltip(sha)
+						continue
+					}
 					button := workbenchButton(c, shortSHA(sha), buttonNormal, false).Shrink(0)
 					if button.Clicked() {
-						a.jumpWithHistory(sha)
+						if a.selectedStash != "" {
+							a.showCommit(sha)
+						} else {
+							a.jumpWithHistory(sha)
+						}
 					}
 				}
 			})

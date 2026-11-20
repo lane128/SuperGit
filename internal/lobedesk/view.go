@@ -741,6 +741,10 @@ func (a *app) openPage(page string) {
 		a.openChanges()
 	}
 	if wantStash && len(a.stashes) > 0 && a.stashesErr == "" {
+		a.historyQuery = ""
+		if a.fileFilter != "" || a.historyRef.Kind != "" {
+			a.applyHistoryRef(historyRef{})
+		}
 		a.revealSelection = true
 		if a.selectedStash == "" {
 			a.selectStash(a.stashes[0].SHA)

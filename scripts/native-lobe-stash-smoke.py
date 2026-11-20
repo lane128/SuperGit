@@ -86,6 +86,10 @@ def run():
                         raise AssertionError(f"Missing enabled {role} {label}: {entries}")
                     time.sleep(0.05)
 
+            def stash_action(label):
+                press("Stash actions", "menuButton")
+                press(label, "menuItem")
+
             def wait(text):
                 auto("wait", "--text", text, "--timeout", "25s", "--settle")
 
@@ -125,18 +129,18 @@ def run():
                 assert git("rev-parse", "HEAD") == original_head
                 print("PASS native Stash saves staged/unstaged and untracked Unicode paths without moving HEAD", flush=True)
 
-                press("Apply")
+                stash_action("Apply")
                 wait("Stash applied")
                 assert git("rev-parse", "refs/stash").strip() == stash_sha, "Apply dropped stash"
                 assert git("ls-files", "--stage") == original_index, "Apply lost original Index version"
                 assert tracked.read_text() == "working version\n" and extra.read_text() == "untracked version\n"
                 assert git("rev-parse", "HEAD") == original_head
                 before_drop = fingerprint()
-                press("Drop…")
+                stash_action("Drop…")
                 wait("Drop stash")
                 press("Cancel")
                 assert git("rev-parse", "refs/stash").strip() == stash_sha and fingerprint() == before_drop, "Drop cancellation changed data"
-                press("Drop…")
+                stash_action("Drop…")
                 wait("Drop stash")
                 press("Drop")
                 wait("Stash dropped")
@@ -144,7 +148,7 @@ def run():
                 print("PASS native Stash Apply restores Index and bytes; Drop cancellation and confirmed deletion target only stash", flush=True)
 
                 save("Native stash pop", include_untracked=True)
-                press("Pop (apply and drop)")
+                stash_action("Pop (apply and drop)")
                 wait("Stash popped")
                 assert not git("stash", "list").strip()
                 assert fingerprint() == before_drop, "Pop did not restore the exact staged/unstaged/untracked state"
@@ -154,7 +158,7 @@ def run():
                 blocked_sha = git("rev-parse", "refs/stash").strip()
                 tracked.write_text("overlapping local bytes\n")
                 before_failed = fingerprint()
-                press("Pop (apply and drop)")
+                stash_action("Pop (apply and drop)")
                 wait("Could not pop stash")
                 compact = find("Could not pop stash", "status", contains=True)
                 bounds = re.search(r"bounds=[^,]+,[^,]+,[^x]+x([0-9.]+)", compact[3])
@@ -193,7 +197,7 @@ def run():
                     git("add", "--", tracked.name)
                     git("commit", "--no-gpg-sign", "-m", "Native stash conflicting target")
                     conflict_head = git("rev-parse", "HEAD")
-                    press(action)
+                    stash_action(action)
                     deadline = time.monotonic() + 25
                     while not git("ls-files", "-u").strip():
                         if app.poll() is not None or time.monotonic() > deadline:

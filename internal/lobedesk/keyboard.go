@@ -229,28 +229,16 @@ func (a *app) moveHistorySelection(delta int) {
 	if a.historyErr != "" {
 		return
 	}
-	commits := a.projectHistoryMerges(a.filteredHistoryRows())
-	stashes := a.stashes
-	if len(commits) == 0 && len(stashes) == 0 {
+	commits := a.projectHistoryMerges(a.historyWithStashes(a.filteredHistoryRows()))
+	if len(commits) == 0 {
 		return
 	}
-	// Positions are the rows the list draws: the working tree first, then the
-	// stash entries, then the commits.
-	lead := len(stashes) + 1
-	total := len(commits) + lead
+	total := len(commits) + 1
 	position, found := 0, a.worktreeSelected
 	if !found {
-		for i, stash := range stashes {
-			if stash.SHA == a.selectedStash {
-				position, found = i+1, true
-				break
-			}
-		}
-	}
-	if !found && a.selectedStash == "" {
 		for i, commit := range commits {
-			if commit.SHA == a.selectedSHA {
-				position, found = lead+i, true
+			if commit.SHA == a.selectedSHA || commit.SHA == a.selectedStash {
+				position, found = i+1, true
 				break
 			}
 		}
@@ -260,21 +248,16 @@ func (a *app) moveHistorySelection(delta int) {
 	} else {
 		position = clampIndex(position+delta, total)
 	}
-	switch {
-	case position == 0:
-		a.revealSelection = true
+	a.revealSelection = true
+	if position == 0 {
 		a.selectWorktree()
 		return
-	case position < lead:
-		stash := stashes[position-1]
-		if stash.SHA == a.selectedStash {
-			return
-		}
-		a.revealSelection = true
+	}
+	index := position - 1
+	if stash := a.stashTimeline.bySHA[commits[index].SHA]; stash != nil {
 		a.selectStash(stash.SHA)
 		return
 	}
-	index := position - lead
 	if commits[index].SHA == a.selectedSHA {
 		// Down on the last loaded row still asks for the next page: the
 		// selection cannot move, but the list can grow under it.

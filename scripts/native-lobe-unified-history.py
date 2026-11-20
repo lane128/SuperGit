@@ -74,7 +74,8 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
     # changing the list's scope.
     git("tag", "-a", "root-tag", "-m", "Root release", root_sha)
     (repo / "base.txt").write_text("base\nmain tip\nstashed\n")
-    git("stash", "push", "-m", "Fixture stash")
+    (repo / "notes.txt").write_text("saved untracked note\n")
+    git("stash", "push", "--include-untracked", "-m", "Fixture stash")
     (repo / "base.txt").write_text("base\nmain tip\ndirty\n")
 
     def fingerprint():
@@ -155,10 +156,10 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
             assert stash, "the stash is not a row of the log"
             assert head_row, "the checked-out commit is not in the log"
             assert side_row, "the newer side branch is missing from the log"
-            positions = [found.index(e) for e in (worktree[0], stash[0], side_row[0], head_row[0])]
-            assert positions == sorted(positions), f"rows out of order: worktree={positions[0]} stash={positions[1]} side={positions[2]} head={positions[3]}"
+            positions = [found.index(e) for e in (worktree[0], side_row[0], stash[0], head_row[0])]
+            assert positions == sorted(positions), f"rows out of order: worktree={positions[0]} side={positions[1]} stash={positions[2]} head={positions[3]}"
             assert "checked" in head_row[0][3], "History did not open on the checked-out commit"
-            results["row_order"] = "worktree, stash, child on future, HEAD"
+            results["row_order"] = "worktree, child on future, stash, HEAD"
 
             worktree_ref = worktree[0][0]
             auto("focus", worktree_ref, "--settle")
@@ -170,12 +171,21 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
             stash_ref = stash[0][0]
             auto("focus", stash_ref, "--settle")
             auto("click", stash_ref, "--settle")
-            auto("wait", "--text", "Pop (apply and drop)", "--timeout", "10s", "--settle")
+            auto("wait", "--text", "Stash actions", "--timeout", "10s", "--settle")
+            auto("wait", "--text", "+stashed", "--timeout", "15s", "--settle")
+            auto("wait", "--text", "+saved untracked note", "--timeout", "10s", "--settle")
             auto("screenshot", str(artifacts / "stash-row.png"))
             found = entries()
             selected_stash = [e for e in found if e[2] == stash[0][2] and "offscreen" not in e[3]]
             assert selected_stash and any("checked" in e[3] or "selected" in e[3] for e in selected_stash), "the stash row was not selected"
             results["stash_row_opens_details"] = True
+            file_row = next(e for e in found if e[1] == "listItem" and e[2] == "notes.txt" and "offscreen" not in e[3])
+            auto("click", file_row[0], "--settle")
+            auto("wait", "--text", "+saved untracked note", "--timeout", "10s", "--settle")
+            assert any(e[1] == "tab" and e[2] == "notes.txt" and ("checked" in e[3] or "selected" in e[3]) for e in entries()), "stash file tab did not open"
+            assert not any(e[1] == "insertion" and e[2] == "+stashed" for e in entries()), "another file is visible in the stash tab"
+            auto("screenshot", str(artifacts / "stash-file.png"))
+            results["stash_untracked_file_tab"] = True
 
             # 4. Sidebar refs locate and select; they do not re-scope the list.
             def wait_for_all_commits():

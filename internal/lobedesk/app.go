@@ -165,11 +165,10 @@ type app struct {
 	worktreesErr      string
 	submodulesErr     string
 
-	selectedStash    string
-	stashDiff        gitrepo.Diff
-	stashDiffLoading bool
-	stashDiffErr     string
-	stashSeq         uint64
+	selectedStash            string
+	stashTrackedCount        int
+	stashAdded, stashDeleted int
+	stashTimeline            stashTimelineCache
 
 	page         string
 	locale       locale
@@ -1068,9 +1067,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 					clear(queue[len(kept):])
 					a.notices[owner] = kept
 				}
-				a.selectedStash = ""
-				a.stashDiff = gitrepo.Diff{}
-				a.stashDiffErr = ""
+				a.clearStashDetail()
 				a.clearBlame()
 			}
 			a.applyOperationMessage(operationMessage)
@@ -1201,8 +1198,7 @@ func (a *app) reconcileSelection() {
 			}
 		}
 		if !found {
-			a.selectedStash = ""
-			a.stashDiff = gitrepo.Diff{}
+			a.clearStashDetail()
 		}
 	}
 	// A stash is the subject only when the reader picks it: the list puts the
@@ -1460,6 +1456,10 @@ func (a *app) selectCommit(sha string) {
 }
 
 func (a *app) loadCommitDetail(force bool) {
+	if a.selectedStash != "" {
+		a.loadStashDiff()
+		return
+	}
 	if a.repo == nil || a.selectedSHA == "" {
 		return
 	}
@@ -1555,7 +1555,7 @@ func (a *app) loadCommitDetail(force bool) {
 // selectCommitFile opens or activates a file tab. The commit's patches are
 // already loaded, so opening the tab costs no additional Git command.
 func (a *app) selectCommitFile(path string) {
-	if a.repo == nil || a.selectedSHA == "" || path == "" {
+	if a.repo == nil || a.currentDetailContext().CommitSHA == "" || path == "" {
 		return
 	}
 	if selection := a.historicalFileSelectionState(); selection != nil {

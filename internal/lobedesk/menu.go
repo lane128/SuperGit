@@ -1116,6 +1116,12 @@ func (a *app) takeConflictSide(path, side string) {
 }
 
 func (a *app) fileDetailMenu(c *ui.Context, row ui.Element, path string) {
+	if a.selectedStash != "" {
+		if overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: []overlay.MenuItem{{Key: "copy-path", Label: a.t("copyPath"), Icon: lucide.Copy()}}}) == "copy-path" {
+			a.copyText(path)
+		}
+		return
+	}
 	open := ui.Local(row, "contextMenu", func() bool { return false })
 	target := ui.Local(row, "commit-file-patch-target", func() commitFilePatchTarget { return commitFilePatchTarget{} })
 	undoTarget := ui.Local(row, "commit-file-undo-target", func() commitFileUndoTarget { return commitFileUndoTarget{} })

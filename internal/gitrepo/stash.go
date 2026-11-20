@@ -7,7 +7,11 @@ import (
 	"strings"
 )
 
-type Stash struct{ SHA, Ref, Message, Date string }
+type Stash struct {
+	SHA, Ref, Message, Date        string
+	Author, AuthorEmail, Tree, Day string
+	ParentSHAs                     string
+}
 
 // StashApplyError keeps the legacy hint while allowing interfaces to localize
 // the reason and expose Git's original output. Failed restores can change files.
@@ -21,7 +25,7 @@ func (e *StashApplyError) Error() string { return e.hint }
 func (e *StashApplyError) Unwrap() error { return e.cause }
 
 func (r *Repository) Stashes(ctx context.Context) ([]Stash, error) {
-	out, err := run(ctx, r.Root, "", "stash", "list", "-z", "--format=%H%x00%gd%x00%gs%x00%aI")
+	out, err := run(ctx, r.Root, "", "stash", "list", "-z", "--format=%H%x00%gd%x00%gs%x00%aI%x00%an%x00%ae%x00%T%x00%P")
 	if err != nil {
 		return nil, err
 	}
@@ -29,12 +33,17 @@ func (r *Repository) Stashes(ctx context.Context) ([]Stash, error) {
 		return nil, nil
 	}
 	fields := strings.Split(strings.TrimSuffix(out, "\x00"), "\x00")
-	if len(fields)%4 != 0 {
+	if len(fields)%8 != 0 {
 		return nil, errors.New("无效的 Stash 列表")
 	}
 	var list []Stash
-	for i := 0; i < len(fields); i += 4 {
-		list = append(list, Stash{SHA: fields[i], Ref: fields[i+1], Message: fields[i+2], Date: fields[i+3]})
+	for i := 0; i < len(fields); i += 8 {
+		list = append(list, Stash{
+			SHA: fields[i], Ref: fields[i+1], Message: fields[i+2],
+			Date: fields[i+3], Day: localDay(fields[i+3]),
+			Author: fields[i+4], AuthorEmail: fields[i+5],
+			Tree: fields[i+6], ParentSHAs: fields[i+7],
+		})
 	}
 	return list, nil
 }
@@ -160,6 +169,37 @@ func (r *Repository) DisplayStashDiff(ctx context.Context, sha string, ignoreWhi
 	out, err := run(ctx, r.Root, "", args...)
 	return parseStashDiff(out), err
 }
+
+type StashSnapshot struct {
+	Tracked, Untracked         []ChangedFile
+	TrackedDiff, UntrackedDiff []FileDiff
+}
+
+// StashChanges compares the stash tree with its base. Git records untracked
+// files separately in a root commit referenced by the optional third parent.
+func (r *Repository) StashChanges(ctx context.Context, sha string, ignoreWhitespace bool) (StashSnapshot, error) {
+	stash, err := r.findStash(ctx, sha)
+	if err != nil {
+		return StashSnapshot{}, err
+	}
+	var snapshot StashSnapshot
+	snapshot.Tracked, err = r.CommitFiles(ctx, sha)
+	if err != nil {
+		return StashSnapshot{}, err
+	}
+	snapshot.TrackedDiff, err = r.DisplayCommitDiff(ctx, sha, ignoreWhitespace)
+	parents := strings.Fields(stash.ParentSHAs)
+	if err != nil || len(parents) < 3 {
+		return snapshot, err
+	}
+	snapshot.Untracked, err = r.CommitFiles(ctx, parents[2])
+	if err != nil {
+		return StashSnapshot{}, err
+	}
+	snapshot.UntrackedDiff, err = r.DisplayCommitDiff(ctx, parents[2], ignoreWhitespace)
+	return snapshot, err
+}
+
 func (r *Repository) ApplyStash(ctx context.Context, sha string) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()

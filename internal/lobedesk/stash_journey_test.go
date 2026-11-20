@@ -90,7 +90,7 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 		defer timer.Stop()
 		for {
 			tt.Frame()
-			pending := a.busy || a.loading || a.diffLoading || a.commitDiffLoading || a.commitFilesLoading || a.stashDiffLoading
+			pending := a.busy || a.loading || a.diffLoading || a.commitDiffLoading || a.commitFilesLoading
 			for _, entry := range a.overviewEntries {
 				pending = pending || entry.Loading
 			}
@@ -101,7 +101,7 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 			case fn := <-callbacks:
 				fn()
 			case <-timer.C:
-				t.Fatalf("stash journey did not settle: page=%s busy=%v loading=%v diff=%v commitFiles=%v commitDiff=%v stashDiff=%v selectedStash=%q seq=%d err=%q overview=%+v", a.page, a.busy, a.loading, a.diffLoading, a.commitFilesLoading, a.commitDiffLoading, a.stashDiffLoading, a.selectedStash, a.stashSeq, a.stashDiffErr, a.overviewEntries)
+				t.Fatalf("stash journey did not settle: page=%s busy=%v loading=%v diff=%v commitFiles=%v commitDiff=%v selectedStash=%q seq=%d err=%q overview=%+v", a.page, a.busy, a.loading, a.diffLoading, a.commitFilesLoading, a.commitDiffLoading, a.selectedStash, a.commitSeq, a.commitDiffErr, a.overviewEntries)
 			}
 		}
 		for range 3 {
@@ -215,16 +215,24 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 	}
 	click(ui.RoleOption, stashTitle(stash))
 	wait()
-	if a.stashDiffErr != "" || a.stashDiff.Text == "" {
-		t.Fatalf("saved patch unreadable: %q", a.stashDiffErr)
+	if a.commitDiffErr != "" || a.commitDiff.Text == "" {
+		t.Fatalf("saved patch unreadable: %q", a.commitDiffErr)
 	}
 	for _, text := range []string{"+staged notes", "+unstaged notes", "+untracked bytes"} {
 		if _, ok := tt.Find(text); !ok {
 			t.Fatalf("saved patch hides %q", text)
 		}
 	}
+	tracked, added := 1, 2 // notes.txt
+	if conflict {
+		tracked++ // This fixture also changes base.txt to provoke the conflict.
+		added++
+	}
+	if len(a.commitFiles) != tracked+1 || a.stashTrackedCount != tracked || a.stashAdded != added {
+		t.Fatalf("the summary must count tracked changes separately from the untracked snapshot: files=%+v tracked=%d added=%d", a.commitFiles, a.stashTrackedCount, a.stashAdded)
+	}
 	fileHeaders := 0
-	for _, row := range a.stashDiff.Lines {
+	for _, row := range a.commitDiff.Lines {
 		if strings.HasPrefix(row.Text, "diff --git ") {
 			fileHeaders++
 		}
@@ -234,14 +242,16 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 			}
 		}
 	}
-	if fileHeaders < 2 || a.stashDiff.CanStageHunks {
+	if fileHeaders < 2 || a.commitDiff.CanStageHunks {
 		t.Fatal("multi-file Stash preview lost boundaries or enabled partial writes")
 	}
 	shot("04-review-saved-patch-before-restore")
 	if conflict {
-		click(ui.RoleButton, a.t("popStash"))
+		click(ui.RoleMenuButton, a.t("stashActions"))
+		click(ui.RoleMenuItem, a.t("popStash"))
 	} else {
-		click(ui.RoleButton, a.t("applyStash"))
+		click(ui.RoleMenuButton, a.t("stashActions"))
+		click(ui.RoleMenuItem, a.t("applyStash"))
 	}
 	wait()
 	if conflict {
@@ -390,7 +400,8 @@ func runStashMergeRestoreJourney(t *testing.T, conflict bool) {
 	// A repeated Apply must fail without consuming the recovery copy or
 	// replacing the restored dirty work. Inspect actual operation feedback.
 	restoredIndex, restoredRefs := splitCommitGit(t, root, "ls-files", "--stage"), splitCommitGit(t, root, "show-ref")
-	click(ui.RoleButton, a.t("applyStash"))
+	click(ui.RoleMenuButton, a.t("stashActions"))
+	click(ui.RoleMenuItem, a.t("applyStash"))
 	wait()
 	if splitCommitGit(t, root, "ls-files", "--stage") != restoredIndex || splitCommitGit(t, root, "show-ref") != restoredRefs || read("notes.txt") != "staged notes\nunstaged notes\n" || read("scratch.txt") != "untracked bytes\n" {
 		t.Fatal("refused repeated Apply changed work or refs")

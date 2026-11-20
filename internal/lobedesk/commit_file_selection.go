@@ -19,7 +19,7 @@ type historicalFileOrigin struct {
 }
 
 func (a *app) historicalFileSelectionState() *historicalFileSelection {
-	if a.repo == nil || a.selectedSHA == "" || a.worktreeSelected {
+	if a.repo == nil || a.currentDetailContext().CommitSHA == "" || a.worktreeSelected {
 		return nil
 	}
 	tabs := a.detailTabs()
@@ -30,7 +30,7 @@ func (a *app) historicalFileSelectionState() *historicalFileSelection {
 }
 
 func (a *app) historicalFileOrigin() historicalFileOrigin {
-	origin := historicalFileOrigin{repo: a.repo, sha: a.selectedSHA, epoch: a.loadSeq, detail: a.commitSeq, selection: a.historicalFileSelectionState()}
+	origin := historicalFileOrigin{repo: a.repo, sha: a.currentDetailContext().CommitSHA, epoch: a.loadSeq, detail: a.commitSeq, selection: a.historicalFileSelectionState()}
 	if a.repo != nil {
 		origin.root = a.repo.Root
 	}
@@ -45,7 +45,7 @@ func (a *app) historicalFileSelected(path string) bool {
 }
 
 func (a *app) historicalFileOriginCurrent(origin historicalFileOrigin) bool {
-	return origin.repo != nil && a.repo == origin.repo && a.repo.Root == origin.root && a.selectedSHA == origin.sha &&
+	return origin.repo != nil && a.repo == origin.repo && a.repo.Root == origin.root && a.currentDetailContext().CommitSHA == origin.sha &&
 		a.loadSeq == origin.epoch && a.commitSeq == origin.detail && !a.worktreeSelected && a.page == "history" &&
 		!a.busy && !a.loading && !a.historyReloading && !a.repositoryChooserOpen && !a.hasPendingDialog(toastMain) &&
 		!a.detailsChangesHidden && !a.commitFilesLoading && a.commitFilesErr == "" && a.detailNavigationAllowed() &&
@@ -147,7 +147,7 @@ func (a *app) previewHistoricalSelection(path string) {
 }
 
 func (a *app) reconcileHistoricalFileSelection() {
-	if a.worktreeSelected || a.repo == nil || a.selectedSHA == "" || !a.commitFilesLoaded || a.commitFilesLoading || a.commitFilesErr != "" {
+	if a.worktreeSelected || a.repo == nil || a.currentDetailContext().CommitSHA == "" || !a.commitFilesLoaded || a.commitFilesLoading || a.commitFilesErr != "" {
 		return
 	}
 	s := a.historicalFileSelectionState()

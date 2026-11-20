@@ -94,6 +94,9 @@ func (a *app) currentDetailContext() detailContextKey {
 	}
 	if !key.Worktree {
 		key.CommitSHA = a.selectedSHA
+		if a.selectedStash != "" {
+			key.CommitSHA = a.selectedStash
+		}
 	}
 	return key
 }

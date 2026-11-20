@@ -7,7 +7,6 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
-	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/overlay"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
@@ -38,13 +37,18 @@ func (a *app) stashesLabel(n int, failed bool) string {
 // failed list reads as if that stash were still current. A single patch's own
 // failure keeps its selection and retry; only the list path calls this.
 func (a *app) clearStashDetail() {
+	if a.selectedStash == "" {
+		return
+	}
 	a.selectedStash = ""
-	a.stashDiff = gitrepo.Diff{}
-	a.stashDiffErr = ""
-	// The patch read in flight belongs to the row being dropped; its result
-	// is discarded by the sequence, and the spinner must stop with it.
-	a.stashDiffLoading = false
-	a.stashSeq++
+	a.commitSeq++
+	a.commitFiles, a.commitFilesLoaded = nil, false
+	a.commitFilesLoading, a.commitDiffLoading = false, false
+	a.commitFilesErr, a.commitDiffErr = "", ""
+	a.commitPath = ""
+	a.stashTrackedCount = 0
+	a.resetCommitDiff()
+	a.clearCommitSelection()
 }
 
 func (a *app) stashSaveMenu(c *ui.Context) {
@@ -109,138 +113,17 @@ func stashTitle(stash gitrepo.Stash) string {
 	return stash.Ref
 }
 
+func stashCommit(s gitrepo.Stash) gitrepo.Commit {
+	return gitrepo.Commit{SHA: s.SHA, Subject: stashTitle(s), Author: s.Author, AuthorEmail: s.AuthorEmail, Date: s.Date, Day: s.Day, Parents: strings.Fields(s.ParentSHAs)}
+}
+
+// The same row can be rendered independently of a full History graph.
 func (a *app) stashRow(c *ui.Context, stash gitrepo.Stash, pos, size int) {
-	tk := theme.TokensOf(c)
-	selected := a.selectedStash == stash.SHA
-	message := stashTitle(stash)
-	// The same single selection as the branches and commits: an option, so a
-	// screen reader hears which stash the details describe.
-	row := ui.ButtonBase(c).Label(message).Row().FillWidth().MinHeight(46).Padding(5, 8).
-		Gap(8).Radius(tk.BorderRadius).AlignItems(ui.Center).Tooltip(message).
-		Role(ui.RoleOption).AccessSelected(selected).PositionInSet(pos, size)
-	switch {
-	case selected:
-		row.Background(selectionBg(tk, tk.BgContainer))
-	case row.Hovered():
-		row.Background(tk.FillTertiary)
-	}
-	a.continueWorktreeThrough(row, tk, 8, 5)
-	a.revealIfSelected(row, selected)
-	row.Children(func() {
-		ui.Box(c).Size(30, 30).Shrink(0).Radius(9).Center().Background(tk.FillTertiary).Children(func() {
-			ui.Icon(c, lucide.Archive()).FontSize(scaledFont(15)).TextColor(tk.TextSecondary)
-		})
-		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(2).Children(func() {
-			text := display.Text(c, message, display.TextProps{FontSize: scaledFont(12), Strong: selected}).SingleLine().AccessHidden(true)
-			if selected {
-				text.TextColor(tk.Text)
-			}
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				display.Text(c, stash.Ref, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary})
-				// The same timestamp the history list prints: the app keeps one
-				// date format everywhere.
-				display.Text(c, formatDateTime(stash.Date), display.TextProps{FontSize: scaledFont(10), Type: display.TextSecondary}).
-					Shrink(0)
-			})
-		})
-	})
-	// The row is a button, and a focused button takes Enter and Space for
-	// itself. Neither has a stash action, and activating the row would pull the
-	// selection back to the last-clicked stash after the arrows moved it; claim
-	// both keys and do nothing, as the history and branch rows do.
-	row.OnShortcut(0, ui.KeyEnter, func() {})
-	row.OnShortcut(0, ui.KeySpace, func() {})
-	a.stashMenu(c, row, stash)
-	if row.Clicked() {
-		a.selectStash(stash.SHA)
-	}
-	// Opening the row's menu also selects the stash, so the diff beside it and
-	// the menu describe the same entry, as the history list does.
-	if *ui.Local(row, "contextMenu", func() bool { return false }) {
-		a.selectStash(stash.SHA)
-	}
+	a.historyEntryRow(c, stashCommit(stash), &stash, 0, pos, size, nil)
 }
 
-// stashDetailPane draws the chosen stash: its header with the apply, pop and
-// drop actions, then its patch. History gives it the whole details column.
-func (a *app) stashDetailPane(c *ui.Context, share float32) {
-	tk := theme.TokensOf(c)
-	ui.Column(c).Grow(share).Basis(0).MinWidth(0).AlignSelf(ui.Stretch).Children(func() {
-		// The header describes one stash and offers its actions, so it only
-		// exists once a stash is chosen. Without one, a bare divider above the
-		// pane's empty state reads as a rendering gap.
-		if a.selectedStash != "" {
-			a.stashDetailHeader(c, tk)
-		}
-		switch {
-		case a.selectedStash == "":
-			a.diffPlaceholder(c, lucide.Archive(), a.t("stashDetailHint"))
-		case a.stashDiffLoading:
-			a.diffPlaceholder(c, lucide.LoaderCircle(), a.t("diffLoading"))
-		case a.stashDiffErr != "":
-			ui.Column(c).Fill().Center().Gap(8).Padding(24).Children(func() {
-				display.Text(c, a.stashDiffErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(12), Rows: 4}).
-					MaxWidth(520).TextAlign(ui.Center)
-				if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
-					a.loadStashDiff()
-				}
-			})
-		case a.stashDiff.Text == "":
-			a.diffPlaceholder(c, lucide.Archive(), a.t("stashEmpty"))
-		default:
-			width := a.diffWidth(a.stashDiff)
-			layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Both}, func() {
-				// One selectable scope for the whole patch, as in the other diff
-				// views: a drag across lines copies the text it covers.
-				ui.Column(c).Width(width).AlignSelf(ui.Start).Shrink(0).Selectable().Children(func() {
-					for _, line := range a.stashDiff.Lines {
-						a.diffLineFor(c, line, width, false, -1)
-					}
-				})
-			}).Grow(1).Basis(0).MinHeight(0)
-		}
-	})
-}
-
-// stashDetailHeader names the chosen stash and keeps its actions beside it,
-// the way Sublime Merge does, instead of hiding them in the list's menu.
-func (a *app) stashDetailHeader(c *ui.Context, tk *theme.Tokens) {
-	ui.Row(c).Height(36).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
-		BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary).Children(func() {
-		// The title can be elided in a narrow pane; the tooltip is where the
-		// whole message is read. It used to carry the stash's SHA, which the
-		// header never shows and which told the reader nothing about the text
-		// under the pointer.
-		display.Text(c, a.selectedStashLabel(), display.TextProps{Strong: true, FontSize: scaledFont(12)}).
-			SingleLine().Tooltip(a.selectedStashLabel())
-		ui.Row(c).Grow(1).Basis(0)
-		if len(a.stashDiff.Hunks) > 0 {
-			display.Tag(c, a.hunksLabel(len(a.stashDiff.Hunks)), display.TagProps{
-				Variant: display.TagBorderless, Size: theme.Small,
-			})
-		}
-		if stash, ok := a.selectedStashObject(); ok {
-			blocked := a.busy || a.loading
-			if workbenchButton(c, a.t("applyStash"), buttonNormal, blocked).Clicked() {
-				a.applyStash(stash)
-			}
-			if workbenchButton(c, a.t("popStash"), buttonNormal, blocked).Clicked() {
-				a.popStash(stash)
-			}
-			if workbenchButton(c, a.t("dropStashAction"), buttonDanger, blocked).Clicked() {
-				a.confirmDropStash(stash)
-			}
-		}
-	})
-}
-
-func (a *app) selectedStashLabel() string {
-	for _, stash := range a.stashes {
-		if stash.SHA == a.selectedStash {
-			return stashTitle(stash)
-		}
-	}
-	return a.selectedStash
+func (a *app) stashBadge(c *ui.Context, stash gitrepo.Stash) {
+	display.Tag(c, "stash", display.TagProps{Size: theme.Small, Color: display.TagWarning}).Shrink(0).Tooltip(stash.Ref)
 }
 
 func (a *app) selectedStashObject() (gitrepo.Stash, bool) {
@@ -257,22 +140,25 @@ func (a *app) selectStash(sha string) {
 		return
 	}
 	a.pendingJumpSHA = ""
-	if a.selectedStash == sha && a.stashDiff.Text != "" {
+	a.pendingJumpSHA = ""
+	if a.selectedStash == sha && (a.commitFilesLoaded || a.commitFilesLoading) {
 		return
 	}
-	// The stash becomes the details' subject: the working tree's row and any
-	// historical commit stop describing the pane beside the list.
-	if a.worktreeSelected || a.selectedSHA != "" {
-		a.saveDetailScroll()
-		a.worktreeSelected = false
-		a.setSelectedCommit("")
-		a.commitFiles = nil
-		a.commitFilesLoaded = false
-		a.commitPath = ""
-	}
+	a.saveDetailScroll()
+	a.messageCommitRequest = nil
+	a.messageMenuGeneration++
+	a.clearHistoryNavigation()
+	a.worktreeSelected = false
+	a.setSelectedCommit("")
 	a.selectedStash = sha
-	a.stashDiff = gitrepo.Diff{}
-	a.stashDiffErr = ""
+	a.commitPath, a.commitMessage, a.commitMessageErr = "", "", ""
+	a.commitSig = gitrepo.Signature{}
+	a.commitFiles, a.commitFilesLoaded = nil, false
+	a.commitCollapsed = nil
+	a.resetCommitDiff()
+	a.clearCommitSelection()
+	a.commitInfoScroll, a.commitDiffScroll, a.commitFilesScroll = ui.ScrollState{}, ui.ScrollState{}, ui.ScrollState{}
+	a.detailTabs()
 	a.loadStashDiff()
 	a.invalidate()
 }
@@ -281,31 +167,47 @@ func (a *app) loadStashDiff() {
 	if a.repo == nil || a.selectedStash == "" {
 		return
 	}
-	a.stashSeq++
-	seq := a.stashSeq
-	repo, sha := a.repo, a.selectedStash
+	a.commitSeq++
+	seq, repo, sha := a.commitSeq, a.repo, a.selectedStash
 	ignoreWhitespace := a.ignoreDiffWhitespace
-	a.stashDiffLoading = true
-	a.stashDiffErr = ""
+	a.commitFilesLoading, a.commitDiffLoading = true, true
+	a.commitFilesErr, a.commitDiffErr = "", ""
 	go func() {
-		diff, err := repo.DisplayStashDiff(a.ctx, sha, ignoreWhitespace)
+		snapshot, err := repo.StashChanges(a.ctx, sha, ignoreWhitespace)
+		var added, deleted int
+		for _, patch := range snapshot.TrackedDiff {
+			for _, line := range patch.Diff.Lines {
+				switch line.Kind {
+				case "add":
+					added++
+				case "del":
+					deleted++
+				}
+			}
+		}
+		diff, sections := buildCommitDiff(append(snapshot.TrackedDiff, snapshot.UntrackedDiff...))
 		a.hopToMain(func() {
-			if seq != a.stashSeq || a.repo == nil || a.repo.Root != repo.Root || a.selectedStash != sha {
+			if seq != a.commitSeq || a.repo != repo || a.selectedStash != sha {
 				return
 			}
-			a.stashDiffLoading = false
+			a.commitFilesLoading, a.commitDiffLoading = false, false
 			if err != nil {
-				a.stashDiffErr = err.Error()
+				a.commitFilesErr, a.commitDiffErr = err.Error(), err.Error()
+				a.commitFilesLoaded = false
 			} else {
-				a.stashDiff = diff
+				a.stashTrackedCount = len(snapshot.Tracked)
+				a.commitFiles = append(snapshot.Tracked, snapshot.Untracked...)
+				a.commitFilesLoaded = true
+				a.commitDiff, a.commitSections = diff, sections
+				a.stashAdded, a.stashDeleted = added, deleted
 			}
 			a.invalidate()
 		})
 	}()
 }
 
-func (a *app) stashMenu(c *ui.Context, row ui.Element, stash gitrepo.Stash) {
-	items := []overlay.MenuItem{
+func (a *app) stashMenuItems() []overlay.MenuItem {
+	return []overlay.MenuItem{
 		{Key: "apply", Label: a.t("applyStash"), Icon: lucide.ArchiveRestore(), Disabled: a.busy || a.loading},
 		{Key: "pop", Label: a.t("popStash"), Icon: lucide.ArchiveX(), Disabled: a.busy || a.loading},
 		{Divider: true},
@@ -313,7 +215,28 @@ func (a *app) stashMenu(c *ui.Context, row ui.Element, stash gitrepo.Stash) {
 		{Divider: true},
 		{Key: "drop", Label: a.t("dropStashAction"), Icon: lucide.Trash2(), Danger: true, Disabled: a.busy || a.loading},
 	}
-	switch overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: items}) {
+}
+
+func (a *app) stashMenu(c *ui.Context, row ui.Element, stash gitrepo.Stash) {
+	a.runStashAction(overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: a.stashMenuItems()}), stash)
+}
+
+func (a *app) stashActions(c *ui.Context, stash gitrepo.Stash) {
+	c = c.Key(stash.SHA)
+	anchor := ui.Row(c).Shrink(0)
+	open := ui.Local(anchor, "stash-actions", func() bool { return false })
+	anchor.Children(func() {
+		chosen := overlay.DropdownMenu(c, open, overlay.DropdownMenuProps{Items: a.stashMenuItems()}, func(trigger ui.Element) {
+			styleWorkbenchButton(c, trigger, buttonNormal, false, *open)
+			trigger.Label(a.t("stashActions")).Tooltip(a.t("stashActions"))
+			trigger.Children(func() { ui.Text(c, "•••") })
+		})
+		a.runStashAction(chosen, stash)
+	})
+}
+
+func (a *app) runStashAction(chosen string, stash gitrepo.Stash) {
+	switch chosen {
 	case "apply":
 		a.applyStash(stash)
 	case "pop":

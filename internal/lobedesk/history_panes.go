@@ -238,12 +238,6 @@ func (a *app) applyDetailTab(previous detailTabKey) {
 // and the patch side by side. The details toggle in the page header collapses
 // both columns at once.
 func (a *app) historyDetailsPane(c *ui.Context, share, width float32) {
-	if a.selectedStash != "" {
-		// A stash row's subject is the stash itself: its patch and actions,
-		// not a commit's files and metadata.
-		a.stashDetailPane(c, share)
-		return
-	}
 	row := ui.Row(c).Grow(share).Basis(0).MinWidth(0).AlignSelf(ui.Stretch)
 	a.filesSplit.rowWidth = width
 	// The three-way merge editor needs the whole details area: its two source
