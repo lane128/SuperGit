@@ -91,7 +91,7 @@ def control(role,label,description=None):
         assert app.poll() is None and time.monotonic()<end,('Missing control',role,label)
         time.sleep(.05)
 
-def ready():control('button','Refresh')
+def ready():control('menuButton','Sync')
 
 def press(role,label,description=None):auto('press',control(role,label,description)[0],'--settle')
 

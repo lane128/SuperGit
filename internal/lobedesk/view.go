@@ -111,89 +111,94 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 			inset = max(bar.Left+8, 80) - 12
 		}
 	}
-	toolbar := ui.Row(c).Height(height).Shrink(0).AlignItems(ui.Center).Padding(0, 12, 0, 12)
+	toolbar := ui.Row(c).Height(height).Shrink(0).AlignItems(ui.Center).Gap(8).Padding(0, 12, 0, 12)
 	if nativeChrome {
 		toolbar.DragWindow()
 	}
 	toolbar.Children(func() {
-		left := ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Gap(8).Padding(0, 0, 0, inset)
-		left.Children(func() {
-			if a.repo != nil && !a.restoredCheckout {
-				// History is the window. The working tree is its first row and
-				// the stashes are rows of its list, so the bar names the branch
-				// the way Sublime Merge's window does, without page tabs.
-				ui.Row(c).Grow(1).Basis(0).MinWidth(0).MaxWidth(180).Children(func() { a.branchSelector(c) })
-				if a.status.Ahead > 0 || a.status.Behind > 0 {
-					display.Text(c, aheadBehind(a.status.Ahead, a.status.Behind), display.TextProps{
-						Type: display.TextSecondary, FontSize: scaledFont(11), Code: true,
-					}).Margin(0, 0, 0, 2).Tooltip(a.tf("aheadBehind", a.status.Ahead, a.status.Behind))
-				}
+		showBranch := a.repo != nil && !a.restoredCheckout
+		progress := a.progressText()
+		// Equal space on each side keeps the branch centered as status changes.
+		ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Children(func() {
+			if inset > 0 {
+				ui.Box(c).Width(inset).Shrink(0)
+			}
+			ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Gap(6).Children(func() {
+				a.toolbarCommandButton(c, progress != "" || a.operation.Kind != "")
 				// A merge, rebase or cherry-pick can outlive the command that
 				// started it: a cancelled rebase leaves the repository in the
 				// middle of it, and the page the reader was on says nothing.
 				// The title bar is on every page, so the state is never hidden.
-				if a.operation.Kind != "" {
+				if showBranch && a.operation.Kind != "" {
 					// Changes keeps continue, skip and abort beside the files.
 					guidance := "operationWhere"
 					if a.operation.Kind == "merge" {
 						guidance = "operationWhereMerge"
 					}
 					op := workbenchButton(c, a.tf("operation", a.operation.Kind), buttonNormal, false).
-						TextColor(tk.Warning).Tooltip(a.t(guidance))
+						MinWidth(0).Shrink(1).TextColor(tk.Warning).Tooltip(a.t(guidance))
 					if op.Clicked() {
 						a.openPage("changes")
 						a.selectWorktree()
 						a.invalidate()
 					}
 				}
-			}
-		})
-		ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(6).Children(func() {
-			// Background work can outlast the moment a toast would be read,
-			// so the bar says what it is doing while it runs instead of
-			// leaving a disabled button as the only sign. Fetching names
-			// itself; every other long operation shares one general line.
-			if a.loading && a.repo != nil && !a.restoredCheckout && !a.loadSince.IsZero() {
-				if remaining := progressDelay - time.Since(a.loadSince); remaining > 0 {
-					c.After(remaining)
-				}
-			}
-			if text := a.progressText(); text != "" {
-				icon := ui.Icon(c, lucide.LoaderCircle()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary)
-				icon.Rotate(icon.Loop("spin", 900*time.Millisecond, ui.Linear) * 360)
-				display.Text(c, text, display.TextProps{
-					Type: display.TextSecondary, FontSize: scaledFont(11),
-				}).SingleLine().MaxWidth(110).Tooltip(text)
-				// A git command can hang on a network that stopped answering;
-				// without this the only way out is the three-minute timeout.
-				if a.busy || a.fetching {
-					if cancel := workbenchIconButton(c, lucide.X(), a.t("cancel"), buttonNormal, false); cancel.Clicked() {
-						a.cancelOperation()
+				// Background work can outlast the moment a toast would be read,
+				// so the bar says what it is doing while it runs instead of
+				// leaving a disabled button as the only sign. Fetching names
+				// itself; every other long operation shares one general line.
+				if a.loading && showBranch && !a.loadSince.IsZero() {
+					if remaining := progressDelay - time.Since(a.loadSince); remaining > 0 {
+						c.After(remaining)
 					}
 				}
-			}
-			// Fetch, pull and push used to sit in the workspace page header.
-			// They belong to the repository rather than to one page, and the
-			// history page is the main window now, so they moved here.
+				if progress != "" {
+					icon := ui.Icon(c, lucide.LoaderCircle()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary)
+					icon.Rotate(icon.Loop("spin", 900*time.Millisecond, ui.Linear) * 360)
+					display.Text(c, progress, display.TextProps{
+						Type: display.TextSecondary, FontSize: scaledFont(11),
+					}).SingleLine().MinWidth(0).MaxWidth(110).Shrink(1).Tooltip(progress)
+					// A git command can hang on a network that stopped answering;
+					// without this the only way out is the three-minute timeout.
+					if a.busy || a.fetching {
+						if cancel := workbenchIconButton(c, lucide.X(), a.t("cancel"), buttonNormal, false); cancel.Clicked() {
+							a.cancelOperation()
+						}
+					}
+				}
+			})
+		})
+		if showBranch {
+			a.branchSelector(c)
+		}
+		ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Justify(ui.End).Gap(6).Children(func() {
 			if a.repo != nil {
-				// Saving the working tree is not a page's action any more;
-				// the stash rows live in History, so the bar keeps the one
-				// control that creates them.
 				a.stashSaveMenu(c)
-				a.remoteActions(c)
-				layout.Divider(c, layout.DividerProps{Vertical: true}).Margin(0, 3)
-			}
-			commands := workbenchIconButton(c, lucide.Search(), a.t("commandPalette"), buttonNormal, !a.canOpenCommandPalette())
-			if commands.Clicked() {
-				commands.Focus()
-				a.openCommandPalette()
-			}
-			refresh := workbenchIconButton(c, lucide.RefreshCw(), a.t("refresh"), buttonNormal, a.loading || a.busy || a.repo == nil)
-			if refresh.Clicked() {
-				a.reload()
+				a.syncMenu(c)
 			}
 		})
 	})
+}
+
+func (a *app) toolbarCommandButton(c *ui.Context, compact bool) {
+	label := a.t("commandPalette")
+	keys := shortcutKeys("palette.open")
+	button := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, !a.canOpenCommandPalette(), false).
+		Label(label).Tooltip(label + " (" + keys + ")").Shrink(0)
+	if compact {
+		button.Width(scaledFont(workbenchButtonBaseHeight)).PaddingX(0)
+	}
+	button.Children(func() {
+		ui.Icon(c, lucide.SquareTerminal()).FontSize(scaledFont(14))
+		if !compact {
+			ui.Text(c, a.t("toolbarCommands")).SingleLine()
+			ui.Text(c, keys).FontSize(scaledFont(11)).TextColor(theme.TokensOf(c).TextSecondary)
+		}
+	})
+	if button.Clicked() {
+		button.Focus()
+		a.openCommandPalette()
+	}
 }
 
 // progressDelay is how long an operation must run before the title bar says
@@ -278,19 +283,6 @@ func (a *app) repoMenu(c *ui.Context, target ui.Element) {
 			}
 		}
 	}
-}
-
-func aheadBehind(ahead, behind int) string {
-	if ahead == 0 && behind == 0 {
-		return ""
-	}
-	if behind == 0 {
-		return "↑" + itoa(ahead)
-	}
-	if ahead == 0 {
-		return "↓" + itoa(behind)
-	}
-	return "↑" + itoa(ahead) + " ↓" + itoa(behind)
 }
 
 func itoa(n int) string {

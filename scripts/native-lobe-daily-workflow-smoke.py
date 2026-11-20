@@ -148,7 +148,7 @@ def wait(text):
 
 
 def ready():
-    control('button', 'Refresh')
+    control('menuButton', 'Sync')
 
 
 def evidence(name):
@@ -247,10 +247,10 @@ try:
             raise RuntimeError('Native automation did not start')
         time.sleep(.05)
     auto('open', '--socket', str(socket))
-    wait('Commit summary (required)')
     ready()
     step = '01-open-edit-refresh'
-    press('tab', 'Changes')
+    press('listItem', 'No changes')
+    wait('Commit summary (required)')
     fill_message(summary, body)
     before = save_state('opened')
     file.write_bytes(working_bytes)
@@ -258,7 +258,7 @@ try:
     wait('+BETA')
     current = entries()
     assert any(e[1] == 'textField' and e[2] == 'Description (optional)' and 'focused' in e[3] for e in current), 'External edit stole editor focus'
-    press('button', 'Refresh')
+    auto("key", "cmd+r", "--settle")
     wait('+ALPHA')
     ready()
     same(git('rev-parse', 'HEAD'), initial_head, 'Refresh changed HEAD')
@@ -298,7 +298,8 @@ try:
     step = '07-push-cancel'
     local_remote_only()
     before_push = state()
-    press('button', 'Push')
+    press('menuButton', 'Sync')
+    press('menuItem', 'Push branch…')
     wait('Push main at commit ' + second_head.decode().strip()[:8] + ' to origin/main.')
     press('button', 'Cancel')
     same(git('for-each-ref', '--format=%(refname)', 'refs/heads', directory=remote), b'', 'Cancelled Push wrote remote')
@@ -308,7 +309,8 @@ try:
     note('UI Push Cancel preserves empty local remote, upstream and local Git state')
 
     step = '08-push-confirm'
-    press('button', 'Push')
+    press('menuButton', 'Sync')
+    press('menuItem', 'Push branch…')
     wait('Push main at commit ' + second_head.decode().strip()[:8] + ' to origin/main.')
     press('button', 'Push')
     # A first Push creates this ref asynchronously; absence must remain pollable.
@@ -336,7 +338,8 @@ try:
     peer_head = git('rev-parse', 'HEAD', directory=peer)
     before_fetch = state()
     local_remote_only()
-    press('button', 'Fetch')
+    press('menuButton', 'Sync')
+    press('menuItem', 'Fetch')
     wait('Fetched from remotes')
     wait_git(('rev-parse', 'refs/remotes/origin/main'), peer_head)
     after_fetch = state()
@@ -348,7 +351,8 @@ try:
 
     step = '10-ff-pull'
     local_remote_only()
-    press('button', 'Pull (fast-forward only)')
+    press('menuButton', 'Sync')
+    press('menuItem', 'Pull (fast-forward only)')
     wait('Fast-forwarded to upstream')
     wait_git(('rev-parse', 'HEAD'), peer_head)
     same(git('show', '-s', '--format=%P', 'HEAD').strip(), second_head.strip(), 'Pull did not FF onto expected parent')

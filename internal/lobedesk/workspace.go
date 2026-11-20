@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	unicodewidth "golang.org/x/text/width"
 
@@ -23,94 +24,6 @@ import (
 // row, the commit form, and the cards for an operation in progress. The
 // separate workspace page is gone; its first row lives on in history.
 
-func (a *app) remoteActions(c *ui.Context) {
-	blocked := a.busy || a.loading || a.repo == nil || a.tabSnapshotUnavailable()
-	noRemote := len(a.remotes) == 0
-	fetchHint := ""
-	if noRemote {
-		fetchHint = a.t("noRemote")
-	}
-	fetch := a.remoteActionButton(c, lucide.CloudDownload(), a.t("fetch"),
-		blocked || noRemote, fetchHint, func() { a.fetchAll() })
-	a.fetchButtonMenu(c, fetch)
-	pullHint := ""
-	if a.status.Upstream == "" {
-		pullHint = a.t("noUpstream")
-	}
-	a.remoteActionButton(c, lucide.ArrowDown(), a.t("pull"),
-		blocked || a.status.Upstream == "", pullHint, func() { a.pullFF() })
-	pushHint := ""
-	switch {
-	case noRemote:
-		pushHint = a.t("noRemote")
-	case a.status.Branch == "":
-		pushHint = a.t("pushNoBranch")
-	}
-	push := a.remoteActionButton(c, lucide.ArrowUp(), a.t("pushButton"),
-		blocked || noRemote || a.status.Branch == "", pushHint, func() { a.confirmPush() })
-	a.pushButtonMenu(c, push)
-}
-
-// remoteActionButton draws one toolbar icon. A disabled button hides its own
-// tooltip, so the reason it is disabled sits on a wrapper Box, the way the
-// branch details footer explains its locked actions. The busy state keeps no
-// hint: it ends by itself, and it is not something the reader has to fix.
-func (a *app) remoteActionButton(c *ui.Context, icon *ui.SVG, title string, disabled bool, hint string, onClick func()) ui.Element {
-	var button ui.Element
-	draw := func() {
-		button = workbenchIconButton(c, icon, title, buttonNormal, disabled)
-		if hint != "" {
-			// The wrapper explains why on hover; the button carries the same
-			// reason to assistive technology, which a disabled element's own
-			// tooltip would not reach.
-			button.Description(hint)
-		}
-		if button.Clicked() && !disabled {
-			onClick()
-		}
-	}
-	if disabled && hint != "" {
-		ui.Box(c).Shrink(0).Tooltip(hint).Children(draw)
-	} else {
-		draw()
-	}
-	return button
-}
-
-// fetchButtonMenu keeps the one-click fetch and puts the pruning variant
-// behind a right click, the same shortcut Sublime Merge's fetch button uses.
-func (a *app) fetchButtonMenu(c *ui.Context, button ui.Element) {
-	if len(a.remotes) == 0 || a.busy || a.loading {
-		return
-	}
-	switch overlay.ContextMenu(c, button, overlay.DropdownMenuProps{Items: []overlay.MenuItem{
-		{Key: "fetch", Label: a.t("fetch"), Icon: lucide.CloudDownload()},
-		{Key: "prune", Label: a.t("fetchPrune"), Icon: lucide.Scissors()},
-	}}) {
-	case "fetch":
-		a.fetchAll()
-	case "prune":
-		a.fetchPruneAll()
-	}
-}
-
-// pushButtonMenu adds the force variant behind a right click on the push
-// button, so a normal push stays a single click.
-func (a *app) pushButtonMenu(c *ui.Context, button ui.Element) {
-	if len(a.remotes) == 0 || a.status.Branch == "" || a.busy || a.loading {
-		return
-	}
-	switch overlay.ContextMenu(c, button, overlay.DropdownMenuProps{Items: []overlay.MenuItem{
-		{Key: "push", Label: a.t("pushBranchAction"), Icon: lucide.Upload()},
-		{Key: "force", Label: a.t("forcePushAction"), Icon: lucide.ShieldAlert(), Danger: true},
-	}}) {
-	case "push":
-		a.confirmPush()
-	case "force":
-		a.confirmForcePush()
-	}
-}
-
 func (a *app) branchSelector(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	branch := a.status.Branch
@@ -119,12 +32,41 @@ func (a *app) branchSelector(c *ui.Context) {
 		a.statusTag(c, branch, display.TagProps{Variant: display.TagOutlined, Color: display.TagWarning, Size: theme.Small, Round: true})
 		return
 	}
+	caption := branch
+	status := a.branchTrackingStatus()
+	if status != "" {
+		status = "(" + status + ")"
+		caption += " " + status
+	}
+	windowWidth, _ := c.Size()
+	// Reserve the same space for both sides so the branch button stays centered.
+	limit := min(580, max(150, windowWidth-2*min(240, windowWidth*.32)))
+	fontSize := scaledFont(12)
+	statusWidth, _ := c.MeasureText(0, ui.Span{Text: status, Size: fontSize, Weight: 500})
+	chromeWidth := 20 + scaledFont(24) + 12
+	if status != "" {
+		chromeWidth += statusWidth + 6
+	}
+	name := fitToolbarBranchName(c, branch, fontSize, limit-chromeWidth-2)
+	open := &a.branchOpen
+	drawTrigger := func(trigger ui.Element, disabled bool) {
+		styleWorkbenchButton(c, trigger, buttonNormal, disabled, *open)
+		trigger.Role(ui.RoleButton).Label(a.t("branches")).Description(caption).Tooltip(caption).
+			Shrink(0).MinWidth(0).MaxWidth(limit)
+		trigger.Gap(6).Children(func() {
+			ui.Icon(c, lucide.GitBranch()).FontSize(scaledFont(13)).TextColor(tk.TextSecondary).Shrink(0)
+			ui.Text(c.Key("branch-name"), name).FontSize(fontSize).SingleLine().MinWidth(0).Shrink(1)
+			if status != "" {
+				ui.Text(c.Key("branch-tracking"), status).FontSize(fontSize).TextColor(tk.TextSecondary).SingleLine().Shrink(0)
+			}
+			ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(11)).TextColor(tk.TextTertiary).Shrink(0)
+		})
+	}
 	if len(a.branches) == 0 {
-		tag := a.statusTag(c, elideMiddle(branch, 24), display.TagProps{Variant: display.TagFilled, Color: display.TagInfo, Size: theme.Small, Round: true, Icon: lucide.GitBranch()})
-		tag.MaxWidth(220).Tooltip(branch).Description(branch)
+		*open = false
+		drawTrigger(ui.ButtonBase(c), true)
 		return
 	}
-	open := &a.branchOpen
 	items := make([]overlay.MenuItem, 0, len(a.branches))
 	for _, item := range a.branches {
 		items = append(items, overlay.MenuItem{
@@ -136,20 +78,32 @@ func (a *app) branchSelector(c *ui.Context) {
 		})
 	}
 	chosen := overlay.DropdownMenu(c, open, overlay.DropdownMenuProps{Items: items}, func(trigger ui.Element) {
-		styleWorkbenchButton(c, trigger, buttonNormal, false, *open)
-		// The trigger shows only the branch name and an icon; without a name
-		// of its own a reader hears just the branch and cannot tell it is the
-		// branch switch.
-		trigger.Role(ui.RoleButton).Label(a.t("branches")).Description(branch).Tooltip(branch).FillWidth().MinWidth(0).MaxWidth(220)
-		trigger.Gap(6).Children(func() {
-			ui.Icon(c, lucide.GitBranch()).FontSize(scaledFont(13)).TextColor(tk.TextSecondary)
-			ui.Text(c, elideMiddle(branch, 24)).FontSize(scaledFont(12)).SingleLine().MinWidth(0).Shrink(1)
-			ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(11)).TextColor(tk.TextTertiary)
-		})
+		drawTrigger(trigger, false)
 	})
 	if chosen != "" {
 		a.switchBranch(chosen)
 	}
+}
+
+// Fit the visible name to the space left after reserving the complete tracking
+// status. The same prefix and suffix strategy is used by the other ref labels.
+func fitToolbarBranchName(c *ui.Context, name string, size, available float32) string {
+	width, _ := c.MeasureText(0, ui.Span{Text: name, Size: size, Weight: 500})
+	if width <= available {
+		return name
+	}
+	fit := elidedPrefix("")
+	for low, high := 5, utf8.RuneCountInString(name)-1; low <= high; {
+		mid := low + (high-low)/2
+		candidate := elideMiddle(name, mid)
+		width, _ := c.MeasureText(0, ui.Span{Text: candidate, Size: size, Weight: 500})
+		if width <= available {
+			fit, low = candidate, mid+1
+		} else {
+			high = mid - 1
+		}
+	}
+	return fit
 }
 
 // filesToolbar holds the working tree's bulk stage actions. They sit in the

@@ -16,17 +16,23 @@ func TestLongCurrentBranchKeepsTitleActionsWithinWindow(t *testing.T) {
 				setUIFontScale(scale)
 				t.Cleanup(func() { setUIFontScale(fontScaleStandard) })
 				name := "stress/" + strings.Repeat("跨平台-descriptive-segment-", 12)
-				a := &app{locale: language, repo: &gitrepo.Repository{Root: t.TempDir()}, status: gitrepo.Status{Branch: name}, branches: []gitrepo.Branch{{Name: name, Current: true}}, remotes: []gitrepo.Remote{{Name: "origin"}}}
-				tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); ui.Column(c).Fill().Children(func() { a.titleBar(c) }) }, 980, 44)
-				for _, label := range []string{a.t("branches"), a.t("fetch"), a.t("pull"), a.t("pushButton"), a.t("refresh")} {
-					control, ok := tt.AccessByRole(ui.RoleButton, label)
-					if !ok || control.Bounds.X < 0 || control.Bounds.X+control.Bounds.W > 980.5 {
-						t.Errorf("%s outside window: %+v", label, control.Bounds)
-					}
-				}
+				a := &app{locale: language, repo: &gitrepo.Repository{Root: t.TempDir()}, status: gitrepo.Status{Branch: name, Upstream: "origin/main", Ahead: 102}, branches: []gitrepo.Branch{{Name: name, Current: true}}, remotes: []gitrepo.Remote{{Name: "origin"}}}
+				tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); ui.Column(c).Fill().Children(func() { a.titleBar(c) }) }, 900, 44)
 				selector, ok := tt.AccessByRole(ui.RoleButton, a.t("branches"))
-				if !ok || selector.Description != name {
-					t.Fatal("branch selector lost complete reference identity")
+				status := "(" + a.tf("branchAhead", 102) + ")"
+				if !ok || selector.Description != name+" "+status {
+					t.Fatal("branch selector lost complete reference identity or tracking status")
+				}
+				if center := selector.Bounds.X + selector.Bounds.W/2; center < 449.5 || center > 450.5 {
+					t.Fatalf("long branch is not centered: %+v", selector.Bounds)
+				}
+				tracking, shown := tt.Find(status)
+				if !shown || tracking.X+tracking.W > selector.Bounds.X+selector.Bounds.W {
+					t.Fatalf("long branch clipped its tracking status: %+v", tracking)
+				}
+				sync, ok := tt.AccessByRole(ui.RoleMenuButton, a.t("syncMenu"))
+				if !ok || sync.Bounds.X+sync.Bounds.W > 900.5 || sync.Bounds.X < selector.Bounds.X+selector.Bounds.W {
+					t.Fatalf("long branch obstructs Sync: %+v", sync.Bounds)
 				}
 			})
 		}
@@ -36,9 +42,9 @@ func TestLongCurrentBranchKeepsTitleActionsWithinWindow(t *testing.T) {
 func TestLongCurrentBranchBeforeReferencesLoadKeepsActionsWithinWindow(t *testing.T) {
 	a := &app{locale: localeEnglish, repo: &gitrepo.Repository{Root: t.TempDir()}, status: gitrepo.Status{Branch: strings.Repeat("跨平台-descriptive-", 30)}, remotes: []gitrepo.Remote{{Name: "origin"}}}
 	tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); ui.Column(c).Fill().Children(func() { a.titleBar(c) }) }, 980, 44)
-	refresh, ok := tt.AccessByRole(ui.RoleButton, a.t("refresh"))
-	if !ok || refresh.Bounds.X+refresh.Bounds.W > 980.5 {
-		t.Fatalf("refresh outside window before references load: %+v", refresh.Bounds)
+	sync, ok := tt.AccessByRole(ui.RoleMenuButton, a.t("syncMenu"))
+	if !ok || sync.Bounds.X+sync.Bounds.W > 980.5 {
+		t.Fatalf("Sync outside window before references load: %+v", sync.Bounds)
 	}
 }
 

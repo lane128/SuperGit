@@ -457,6 +457,7 @@ type app struct {
 	lastAutoFetch                   time.Time
 	branchOpen                      bool
 	stashSaveOpen                   bool
+	syncOpen                        bool
 	confirm                         confirmState
 	prompt                          promptState
 	reset                           resetState

@@ -105,7 +105,7 @@ for action in ("Abort", "Skip", "Continue"):
 
             def ready():
                 deadline = time.monotonic() + 25
-                while not any('[button] "Refresh"' in line and "disabled" not in line for line in snapshot().splitlines()):
+                while not any('[menuButton] "Sync"' in line and "disabled" not in line for line in snapshot().splitlines()):
                     if time.monotonic() > deadline:
                         raise AssertionError("repository did not finish reading")
                     time.sleep(0.05)

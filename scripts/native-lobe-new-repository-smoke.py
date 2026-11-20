@@ -95,7 +95,7 @@ def control(role,label,description=None,enabled=True):
 def press(role,label):auto('press',control(role,label)[0],'--settle')
 def fill(label,value):auto('fill',control('textField',label)[0],value,'--settle')
 def wait(text):auto('wait','--text',text,'--timeout','25s','--settle')
-def ready():control('button','Refresh')
+def ready():control('menuButton','Sync')
 
 def evidence(name):
     text=snapshot();(root/(name+'.snapshot.txt')).write_text(text);auto('screenshot',str(root/(name+'.png')))
@@ -175,7 +175,7 @@ def row_enter(path,group,expected):
     (root/(step+'-row-focused.snapshot.txt')).write_text(text)
     (root/(step+'-windows-after-focus.txt')).write_text(auto('windows'))
     assert any(e[1]=='listItem' and e[2]==path and 'focused' in e[3] and 'description='+json.dumps(group) in e[3] for e in entries(text)),'File row not focused'
-    assert any(e[1]=='button' and e[2]=='Refresh' and 'disabled' not in e[3] for e in entries(text)),'Repository loading before file-row Enter'
+    assert any(e[1]=="menuButton" and e[2]=="Sync" and 'disabled' not in e[3] for e in entries(text)),'Repository loading before file-row Enter'
     key_at=time.monotonic()
     auto('key','Enter','--settle')
     after=snapshot()
@@ -235,7 +235,7 @@ try:
     press('button','History');wait('No commits yet.');evidence(step+'-history')
     note('PASS UI Create opens precise Unicode/space root: unborn main/no refs/empty Index/clean/no remotes/No commits yet, old draft reset')
     (destination/text_name).write_bytes(text_bytes);(destination/'binary.bin').write_bytes(binary_bytes)
-    press('tab','Changes');press('button','Refresh');ready();control('listItem',text_name,'Untracked Files');control('listItem','binary.bin','Untracked Files')
+    press('tab','Changes');auto("key", "cmd+r", "--settle");ready();control('listItem',text_name,'Untracked Files');control('listItem','binary.bin','Untracked Files')
     step='06-unborn-ui-stage-text'
     row_enter(text_name,'Untracked Files',text_name.encode()+b'\x00')
     same(git(destination,'show',':'+text_name),text_bytes,'Staged text blob mismatch')

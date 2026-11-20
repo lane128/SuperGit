@@ -63,11 +63,15 @@ def run():
                         entries.append((match[1], match[2], json.loads(match[3]) if match[3] else "", match[4]))
                 return entries
 
-            def press(label):
-                matches = [e for e in controls() if e[1] == "button" and e[2] == label and "disabled" not in e[3]]
+            def press(label, role="button"):
+                matches = [e for e in controls() if e[1] == role and e[2] == label and "disabled" not in e[3]]
                 if not matches:
                     raise AssertionError(f"Missing enabled button {label}: {controls()}")
                 auto("press", matches[-1][0], "--settle")
+
+            def sync(label):
+                press("Sync", "menuButton")
+                press(label, "menuItem")
 
             def wait(text):
                 auto("wait", "--text", text, "--timeout", "25s", "--settle")
@@ -90,16 +94,17 @@ def run():
                         raise TimeoutError("Native automation socket unavailable")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
-                auto("wait", "--text", "Commit summary (required)", "--timeout", "30s", "--settle")
                 auto("key", "cmd+1", "--settle")
                 wait("Sync fixture base")
-                assert any(e[2] == "Pull (fast-forward only)" and "disabled" in e[3] for e in controls()), "Pull enabled without upstream"
-                press("Push")
+                press("Sync", "menuButton")
+                assert any(e[1] == "menuItem" and e[2] == "Pull (fast-forward only)" and "disabled" in e[3] for e in controls()), "Pull enabled without upstream"
+                auto("key", "Escape", "--settle")
+                sync("Push branch…")
                 wait(f"Push main at commit {original_head[:8]} to origin/main.")
                 press("Cancel")
                 assert not git("for-each-ref", "--format=%(refname)", "refs/heads", directory=remote).strip(), "Cancelled Push wrote remote"
                 assert not git("for-each-ref", "--format=%(upstream)", "refs/heads/main").strip(), "Cancelled Push set upstream"
-                press("Push")
+                sync("Push branch…")
                 wait(f"Push main at commit {original_head[:8]} to origin/main.")
                 press("Push")
                 wait_git(("for-each-ref", "--format=%(objectname)", "refs/heads/main"), original_head, directory=remote)
@@ -118,13 +123,13 @@ def run():
                 git("push", "origin", "main", directory=peer)
                 peer_head = git("rev-parse", "HEAD", directory=peer).strip()
                 index_before = git("ls-files", "--stage")
-                press("Fetch")
+                sync("Fetch")
                 wait("Fetched from remotes")
                 wait_git(("rev-parse", "refs/remotes/origin/main"), peer_head)
                 assert git("rev-parse", "HEAD").strip() == original_head, "Fetch changed HEAD"
                 assert git("ls-files", "--stage") == index_before, "Fetch changed Index"
                 assert (repo / "文件 space.txt").read_text() == "base\n", "Fetch changed working file"
-                press("Pull (fast-forward only)")
+                sync("Pull (fast-forward only)")
                 wait("Fast-forwarded to upstream")
                 wait_git(("rev-parse", "HEAD"), peer_head)
                 assert (repo / "文件 space.txt").read_text() == "external fast-forward\n"
@@ -139,10 +144,10 @@ def run():
                 git("add", "--", "remote.txt", directory=peer)
                 git("commit", "--no-gpg-sign", "-m", "Sync remote divergence", directory=peer)
                 git("push", "origin", "main", directory=peer)
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait("Sync local divergence")
                 local_head, local_index = git("rev-parse", "HEAD"), git("ls-files", "--stage")
-                press("Pull (fast-forward only)")
+                sync("Pull (fast-forward only)")
                 wait("Pull failed")
                 assert git("rev-parse", "HEAD") == local_head, "Non-fast-forward Pull rewrote HEAD"
                 assert git("ls-files", "--stage") == local_index, "Failed Pull changed Index"
@@ -197,7 +202,7 @@ def run():
 
                 def ready():
                     deadline = time.monotonic() + 25
-                    while not any(e[1] == "button" and e[2] == "Refresh" and "disabled" not in e[3] for e in controls()):
+                    while not any(e[1] == "menuButton" and e[2] == "Sync" and "disabled" not in e[3] for e in controls()):
                         if time.monotonic() > deadline:
                             raise AssertionError("Refresh did not finish")
                         time.sleep(0.05)
@@ -210,15 +215,15 @@ def run():
                     assert staged.read_bytes() == b"keep staged bytes\x00\xff\n"
                     assert (repo / "文件 space.txt").read_text() == "keep unstaged Unicode file\n"
 
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 ready()
-                press("Push")
+                sync("Push branch…")
                 wait(f"Push main at commit {local_head.strip()[:8]} to backup/{destination}.")
                 press("Cancel")
                 assert git("for-each-ref", "--format=%(refname) %(objectname)", directory=remote) == origin_refs
                 assert git("for-each-ref", "--format=%(refname) %(objectname)", directory=backup) == backup_refs
                 protected_local()
-                press("Push")
+                sync("Push branch…")
                 wait(f"Push main at commit {local_head.strip()[:8]} to backup/{destination}.")
                 press("Push")
                 wait_git(("for-each-ref", "--format=%(objectname)", f"refs/heads/{destination}"), local_head.strip(), directory=backup)
@@ -237,7 +242,7 @@ def run():
                 origin_tip = git("rev-parse", "refs/heads/main", directory=remote).strip()
                 git("update-ref", "refs/heads/origin-only", origin_tip, directory=remote)
                 git("update-ref", "refs/heads/backup-only", local_head.strip(), directory=backup)
-                press("Fetch")
+                sync("Fetch")
                 wait("Fetched from remotes")
                 ready()
                 wait_git(("rev-parse", "refs/remotes/origin/origin-only"), origin_tip)

@@ -105,7 +105,8 @@ func TestAddRemoteFromSidebar(t *testing.T) {
 		t.Fatalf("retry should add the corrected remote without replacing the original: %+v", a.remotes)
 	}
 	tt.Frame()
-	clickRepositoryTabsControl(t, tt, ui.RoleButton, "Fetch")
+	clickRepositoryTabsControl(t, tt, ui.RoleMenuButton, "Sync")
+	clickRepositoryTabsControl(t, tt, ui.RoleMenuItem, "Fetch")
 	if !a.busy {
 		t.Fatal("manual Fetch did not start after adding a remote")
 	}

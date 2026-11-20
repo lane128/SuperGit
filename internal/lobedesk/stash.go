@@ -55,11 +55,11 @@ func (a *app) stashSaveMenu(c *ui.Context) {
 		{Key: "untracked", Label: a.t("saveStashUntracked"), Icon: lucide.Archive()},
 	}}, func(trigger ui.Element) {
 		styleWorkbenchButton(c, trigger, buttonNormal, false, *open)
-		trigger.Label(a.t("saveStashAction"))
+		label := a.t("saveStashAction")
+		trigger.Label(label).Tooltip(label).MinWidth(0).Shrink(1)
 		trigger.Children(func() {
-			ui.Icon(c, lucide.Archive()).FontSize(scaledFont(14)).TextColor(tk.TextSecondary)
-			ui.Text(c, a.t("saveStashAction")).SingleLine()
-			ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(14)).TextColor(tk.TextSecondary)
+			ui.Text(c, label).SingleLine().MinWidth(0).Shrink(1)
+			ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(14)).TextColor(tk.TextSecondary).Shrink(0)
 		})
 	})
 	switch chosen {

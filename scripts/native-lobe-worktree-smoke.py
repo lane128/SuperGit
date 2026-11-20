@@ -136,7 +136,7 @@ def run():
 
                 # A lock loaded into the UI must disable removal.
                 git("worktree", "lock", "--reason", "native lock protection", str(checkout))
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait_current("workspace")
                 row = find("review space", "listItem")
                 auto("focus", row[0], "--settle")
@@ -149,7 +149,7 @@ def run():
                 assert git("rev-parse", "HEAD", directory=checkout) == original_head
                 main_unchanged()
                 git("worktree", "unlock", str(checkout))
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait_current("workspace")
                 print("PASS native locked-worktree menu disables removal and preserves checkout", flush=True)
 
@@ -166,7 +166,7 @@ def run():
                 assert git("ls-files", "--stage", directory=checkout) == original_index
                 main_unchanged()
                 git("worktree", "unlock", str(checkout))
-                press("Refresh")
+                auto("key", "cmd+r", "--settle")
                 wait_current("workspace")
                 print("PASS native pending removal refuses a newly locked target without changing either checkout", flush=True)
 

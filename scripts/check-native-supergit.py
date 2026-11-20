@@ -32,7 +32,7 @@ subprocess.run([
     str(app), str(trial / "mygo-automation"),
 ], cwd=project, check=True)
 env = {**os.environ, "SUPERGIT_NATIVE_BUILD_DIR": str(trial), "SUPERGIT_NATIVE_BINARY": str(binary)}
-for flow in ("daily-workflow", "stash", "conflict-side", "submodule"):
+for flow in ("toolbar-sync", "daily-workflow", "stash", "conflict-side", "submodule"):
     command = [sys.executable, "-I", str(project / "scripts" / f"native-lobe-{flow}-smoke.py")]
     if flow == "daily-workflow":
         command.extend(["--artifacts-parent", str(trial)])

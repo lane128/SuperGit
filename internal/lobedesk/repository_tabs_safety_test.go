@@ -210,10 +210,13 @@ func TestRepositoryTabsPreventPullIntoParentAfterFailedRefresh(t *testing.T) {
 	b := tabs.active
 	tt := ui.NewTester(tabs.view, 980, 760)
 	tt.Frame()
-	button, ok := tt.AccessByRole(ui.RoleButton, b.t("pull"))
-	if b == a || !ok || button.Disabled {
+	clickRepositoryTabsControl(t, tt, ui.RoleMenuButton, b.t("syncMenu"))
+	pull, ok := tt.AccessByRole(ui.RoleMenuItem, b.t("pull"))
+	if b == a || !ok || pull.Disabled {
 		t.Fatal("nested checkout did not expose its configured Pull")
 	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
 	clickRepositoryTabsControl(t, tt, ui.RoleTab, filepath.Base(parent))
 	for a.loading {
 		runContinuation(t, callbacks)
@@ -227,17 +230,16 @@ func TestRepositoryTabsPreventPullIntoParentAfterFailedRefresh(t *testing.T) {
 		runContinuation(t, callbacks)
 	}
 	tt.Frame()
-	button, ok = tt.AccessByRole(ui.RoleButton, b.t("pull"))
-	if ok && !button.Disabled {
-		clickRepositoryTabsControl(t, tt, ui.RoleButton, b.t("pull"))
-	} else {
-		b.pullFF() // A stale dispatch must be rejected even without the toolbar.
+	sync, ok := tt.AccessByRole(ui.RoleMenuButton, b.t("syncMenu"))
+	if !ok || !sync.Disabled {
+		t.Fatalf("a failed nested checkout refresh left Sync available: %+v", sync)
 	}
+	b.pullFF() // A stale dispatch must be rejected even without the toolbar.
 	for b.busy || b.loading {
 		runContinuation(t, callbacks)
 	}
-	if head := git(parent, "rev-parse", "HEAD"); head != parentHead || ok && !button.Disabled {
-		t.Fatalf("failed nested checkout refresh left Pull enabled or mutated the parent: enabled=%v parent HEAD=%s want %s", ok && !button.Disabled, head, parentHead)
+	if head := git(parent, "rev-parse", "HEAD"); head != parentHead {
+		t.Fatalf("failed nested checkout refresh allowed a Pull into the parent: HEAD=%s want %s", head, parentHead)
 	}
 }
 

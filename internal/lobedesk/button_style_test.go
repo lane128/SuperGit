@@ -1,8 +1,11 @@
 package lobedesk
 
 import (
-	"github.com/egoist/mygo/ui"
 	"testing"
+
+	"github.com/egoist/mygo/ui"
+
+	"supergit/internal/gitrepo"
 )
 
 func TestWorkbenchButtonColorsFollowSpecification(t *testing.T) {
@@ -69,18 +72,12 @@ func TestWorkbenchButtonPreservesNativeActivationAndDisabledState(t *testing.T) 
 func TestWorkbenchToolbarButtonsUseStandardSize(t *testing.T) {
 	setUIFontScale(fontScaleStandard)
 	defer setUIFontScale(fontScaleStandard)
-	a := &app{locale: localeEnglish}
-	tt := remoteActionsTester(a)
-	for _, label := range []string{a.t("fetch"), a.t("pull"), a.t("pushButton")} {
-		info, ok := tt.AccessByRole(ui.RoleButton, label)
-		if !ok {
-			t.Fatalf("missing %q", label)
-		}
-		if info.Bounds.W != 29 || info.Bounds.H != 29 {
-			t.Errorf("%s bounds=%v; want 29 × 29", label, info.Bounds)
-		}
-		if !info.Disabled {
-			t.Errorf("%s enabled without repository", label)
+	a := &app{locale: localeEnglish, repo: &gitrepo.Repository{Root: t.TempDir()}}
+	tt := titleBarTester(a)
+	for _, label := range []string{a.t("saveStashAction"), a.t("syncMenu")} {
+		info, ok := tt.AccessByRole(ui.RoleMenuButton, label)
+		if !ok || info.Bounds.W < 29 || info.Bounds.H != 29 {
+			t.Errorf("%s bounds=%v; want a button at least 29 points wide and 29 points tall", label, info.Bounds)
 		}
 	}
 }

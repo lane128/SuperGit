@@ -86,12 +86,15 @@ def run(bundle, driver, artifacts, scratch):
         assert len(matches) == 1, (role, label, matches)
         return matches[0]
 
+    def rect(line):
+        bounds = re.search(r'\bbounds=([-\d.]+),([-\d.]+),([\d.]+)x([\d.]+)', line)
+        assert bounds, line
+        return tuple(map(float, bounds.groups()))
+
     def click(role, label):
         line = one(snapshot(), role, label)
         assert ' disabled' not in line and ' offscreen' not in line, line
-        bounds = re.search(r'\bbounds=([-\d.]+),([-\d.]+),([\d.]+)x([\d.]+)', line)
-        assert bounds, line
-        x, y, width, height = map(float, bounds.groups())
+        x, y, width, height = rect(line)
         auto('click', x + width / 2, y + height / 2, '--settle')
 
     def selected(label, ready=False):
@@ -100,7 +103,7 @@ def run(bundle, driver, artifacts, scratch):
             tabs = control(tree, 'tab', label)
             if len(tabs) != 1 or ' checked ' not in tabs[0]:
                 return None
-            if ready and not any(' disabled' not in item for item in control(tree, 'button', 'Refresh')):
+            if ready and not any(' disabled' not in item for item in control(tree, 'menuButton', 'Sync')):
                 return None
             return tree
         return until(check, f'Tab did not activate: {label}')
@@ -132,8 +135,9 @@ def run(bundle, driver, artifacts, scratch):
         process = open_app(1)
         selected('Welcome')
         command('/usr/bin/open', '-a', str(app), str(alpha))
-        tree = selected(alpha.name, ready=True)
-        field = one(tree, 'textField', 'Commit summary (required)').split()[0]
+        selected(alpha.name, ready=True)
+        click('listItem', '1 change')
+        field = one(snapshot(), 'textField', 'Commit summary (required)').split()[0]
         auto('fill', field, 'Alpha fixture draft', '--settle')
         body = one(snapshot(), 'textField', 'Description (optional)').split()[0]
         auto('fill', body, 'Alpha fixture body', '--settle')
@@ -141,7 +145,14 @@ def run(bundle, driver, artifacts, scratch):
         opener = one(loaded, 'button', 'Open Repository…')
         assert ' disabled' not in opener and ' offscreen' not in opener, opener
         assert ' key=open-repository ' in opener, opener
-        auto('screenshot', artifacts / 'open-repository.png')
+        branch = one(loaded, 'button', 'Branches')
+        x, _, width, _ = rect(branch)
+        window_width = int(test_env['SUPERGIT_WINDOW_SIZE'].split('x')[0])
+        assert abs(x + width / 2 - window_width / 2) <= 1, branch
+        auto('screenshot', artifacts / 'workbench.png')
+        click('button', 'Branches')
+        assert ' expanded ' in one(snapshot(), 'button', 'Branches')
+        auto('key', 'Escape', '--settle')
         click('button', 'New Tab')
         welcome = selected('Welcome')
         open_button = one(welcome, 'button', 'Open Repository…')
@@ -152,7 +163,8 @@ def run(bundle, driver, artifacts, scratch):
         tree = selected(beta.name, ready=True)
         one(tree, 'tab', alpha.name)
         assert not control(tree, 'tab', 'Welcome'), 'Beta did not reuse Welcome'
-        field = one(tree, 'textField', 'Commit summary (required)').split()[0]
+        click('listItem', '1 change')
+        field = one(snapshot(), 'textField', 'Commit summary (required)').split()[0]
         auto('fill', field, 'Beta fixture draft', '--settle')
         body = one(snapshot(), 'textField', 'Description (optional)').split()[0]
         auto('fill', body, 'Beta fixture body', '--settle')
@@ -175,12 +187,16 @@ def run(bundle, driver, artifacts, scratch):
         for repo in fixtures:
             one(reused, 'tab', repo.name)
         assert not control(reused, 'tab', nested_alpha.name)
+        click('listItem', '1 change')
+        reused = snapshot()
         assert 'Alpha fixture draft' in reused and 'Beta fixture draft' not in reused
         (artifacts / 'nested-checkout-reused.txt').write_text(reused)
         click('button', f'Close {gamma}')
         until(lambda: not control(snapshot(), 'tab', gamma.name), 'Clean fixture tab did not close')
         click('tab', beta.name)
-        assert 'Beta fixture draft' in selected(beta.name, ready=True)
+        selected(beta.name, ready=True)
+        click('listItem', '1 change')
+        assert 'Beta fixture draft' in snapshot()
         auto('screenshot', artifacts / 'tabs.png')
         auto('menu', app.stem, f'Quit {app.stem}')
         process.wait(timeout=15)
@@ -193,7 +209,9 @@ def run(bundle, driver, artifacts, scratch):
         for repo in (beta, alpha):
             if repo == alpha:
                 click('tab', alpha.name)
-            tree = selected(repo.name, ready=True)
+            selected(repo.name, ready=True)
+            click('listItem', '1 change')
+            tree = snapshot()
             for name in ('Alpha', 'Beta'):
                 for part in ('draft', 'body'):
                     assert (f'{name} fixture {part}' in tree) == repo.name.startswith(name), f'{name} {part} did not restore in its own tab'

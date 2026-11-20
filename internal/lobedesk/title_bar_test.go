@@ -23,11 +23,23 @@ func TestTitleBarKeepsRepositoryActionsWithoutPageTabs(t *testing.T) {
 		for _, scale := range []float32{fontScaleStandard, fontScaleLarge} {
 			setUIFontScale(scale)
 			a := &app{locale: language, page: "history", repo: &gitrepo.Repository{Root: t.TempDir()},
-				status:   gitrepo.Status{Branch: "feature/a-long-current-branch", Ahead: 12, Behind: 34},
+				status:   gitrepo.Status{Branch: "feature/a-long-current-branch", Upstream: "origin/main", Ahead: 12, Behind: 34},
 				branches: []gitrepo.Branch{{Name: "feature/a-long-current-branch", Current: true}},
 				remotes:  []gitrepo.Remote{{Name: "origin"}}, busy: true,
 				operation: gitrepo.Operation{Kind: "cherry-pick"}}
-			tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); ui.Column(c).Fill().Children(func() { a.titleBar(c) }) }, 900, 44) // Reserve 80 DIP for native window controls at 980 DIP.
+			tt := ui.NewTester(func(c *ui.Context) {
+				theme.Apply(c)
+				ui.Column(c).Fill().Children(func() { a.workbenchToolbar(c, false) })
+			}, 900, 44)
+			branch, ok := tt.AccessByRole(ui.RoleButton, a.t("branches"))
+			if center := branch.Bounds.X + branch.Bounds.W/2; !ok || center < 449.5 || center > 450.5 {
+				t.Errorf("%s/%v: branch selector is not centered: %+v", language, scale, branch.Bounds)
+			}
+			status := "(" + a.tf("aheadBehind", 12, 34) + ")"
+			statusBounds, visible := tt.Find(status)
+			if !visible || statusBounds.X < branch.Bounds.X || statusBounds.X+statusBounds.W > branch.Bounds.X+branch.Bounds.W {
+				t.Errorf("%s/%v: tracking text must fit inside the branch button: %q %+v; branch %+v", language, scale, status, statusBounds, branch.Bounds)
+			}
 			for _, page := range []string{"changes", "history", "stash"} {
 				if tab, ok := tt.AccessByRole(ui.RoleTab, a.t(page)); ok {
 					t.Fatalf("%s/%v: the title bar still offers a %q page tab: %+v", language, scale, page, tab.Bounds)
@@ -38,15 +50,13 @@ func TestTitleBarKeepsRepositoryActionsWithoutPageTabs(t *testing.T) {
 				role  ui.Role
 				label string
 			}{
-				{ui.RoleButton, a.t("branches")},
-				{ui.RoleText, "↑12 ↓34"},
+				{ui.RoleButton, a.t("commandPalette")},
 				{ui.RoleButton, a.tf("operation", "cherry-pick")},
 				{ui.RoleText, a.progressText()},
 				{ui.RoleButton, a.t("cancel")},
-				{ui.RoleButton, a.t("fetch")},
-				{ui.RoleButton, a.t("pull")},
-				{ui.RoleButton, a.t("pushButton")},
-				{ui.RoleButton, a.t("refresh")},
+				{ui.RoleButton, a.t("branches")},
+				{ui.RoleMenuButton, a.t("saveStashAction")},
+				{ui.RoleMenuButton, a.t("syncMenu")},
 			} {
 				item, ok := tt.AccessByRole(control.role, control.label)
 				if !ok || item.Bounds.X < end-0.5 || item.Bounds.X+item.Bounds.W > 900.5 || item.Bounds.W <= 0 {
@@ -82,7 +92,7 @@ func TestTheTitleBarKeepsTheBranchSwitchAndRemoteActions(t *testing.T) {
 		branches: []gitrepo.Branch{{Name: "main", Current: true}, {Name: "feat"}},
 		remotes:  []gitrepo.Remote{{Name: "origin"}},
 	}
-	tt := titleBarTester(a)
+	tt := pageTester(a, a.titleBar)
 	switchRow, ok := tt.AccessByRole(ui.RoleButton, a.t("branches"))
 	if !ok {
 		t.Fatal("the title bar has no branch switch")
@@ -90,9 +100,16 @@ func TestTheTitleBarKeepsTheBranchSwitchAndRemoteActions(t *testing.T) {
 	if switchRow.Description != "main" {
 		t.Errorf("the branch switch describes itself as %q; want the checked-out branch", switchRow.Description)
 	}
-	for _, title := range []string{a.t("fetch"), a.t("pull"), a.t("pushButton")} {
-		if _, ok := tt.AccessByRole(ui.RoleButton, title); !ok {
-			t.Errorf("the title bar lost the %q action", title)
+	for _, title := range []string{a.t("fetch"), a.t("pull"), a.t("pushButton"), a.t("refresh")} {
+		if _, ok := tt.AccessByRole(ui.RoleButton, title); ok {
+			t.Errorf("the title bar still shows the %q button", title)
+		}
+	}
+	clickRepositoryTabsControl(t, tt, ui.RoleMenuButton, a.t("syncMenu"))
+	for _, title := range []string{a.t("fetch"), a.t("pull"), a.t("pushBranchAction"), a.t("fetchPrune"), a.t("forcePushAction")} {
+		item, ok := tt.AccessByRole(ui.RoleMenuItem, title)
+		if !ok || item.Disabled {
+			t.Errorf("no enabled %q in Sync: %+v", title, item)
 		}
 	}
 	// A checkout is the one action the switch cannot undo in place, so the

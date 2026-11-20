@@ -19,9 +19,9 @@ func TestSlowRepositoryReadHasVisibleTitleBarProgress(t *testing.T) {
 			if _, ok := tt.AccessByRole(ui.RoleButton, a.t("cancel")); ok {
 				t.Fatal("repository read offers a cancel action that only stops writes")
 			}
-			refresh, ok := tt.AccessByRole(ui.RoleButton, a.t("refresh"))
-			if !ok || !refresh.Disabled {
-				t.Fatal("active read can start another refresh")
+			sync, ok := tt.AccessByRole(ui.RoleMenuButton, a.t("syncMenu"))
+			if !ok || !sync.Disabled || a.canRefreshShortcut() {
+				t.Fatal("active read allows a sync or another refresh")
 			}
 			a.loading = false
 			tt.Frame()
