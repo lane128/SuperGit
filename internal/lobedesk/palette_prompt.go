@@ -17,7 +17,7 @@ func (a *app) palettePromptDialog(c *ui.Context) {
 	confirmed := false
 	var input ui.Element
 	c.Key(commandPickerOverlayKey)
-	ui.DialogBase(c, &a.prompt.open, func(backdrop, panel ui.Element) {
+	commandPickerDialog(c, &a.prompt.open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(0, 0, 0, .4))
 		panel.Column().Label(a.prompt.title).Width(min(400, max(0, width-32))).MaxHeight(max(0, height-32)).Padding(18).Gap(10).
 			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
@@ -28,6 +28,12 @@ func (a *app) palettePromptDialog(c *ui.Context) {
 			input = field.Input(c, &a.prompt.value, field.InputProps{
 				Variant: field.InputFilled, Placeholder: a.prompt.placeholder, Size: theme.Middle,
 			}).Label(a.prompt.placeholder)
+			a.commandPickerBackspace(input, a.prompt.value, func() {
+				if a.prompt.paletteCancel != nil {
+					a.prompt.paletteCancel()
+				}
+				a.prompt = promptState{}
+			})
 			ready := strings.TrimSpace(a.prompt.value) != ""
 			if ready && input.Submitted() {
 				confirmed = true

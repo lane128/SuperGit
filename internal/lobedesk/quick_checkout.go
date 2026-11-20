@@ -130,7 +130,7 @@ func (a *app) quickCheckoutDialog(c *ui.Context) {
 	var search ui.Element
 	var chosen *quickCheckoutCandidate
 	c.Key(commandPickerOverlayKey)
-	ui.DialogBase(c, &a.quickCheckout.open, func(backdrop, panel ui.Element) {
+	commandPickerDialog(c, &a.quickCheckout.open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(0, 0, 0, .4))
 		if a.quickCheckout.step != "" {
 			panel.OnShortcut(0, ui.KeyEscape, func() { a.quickCheckoutBack() })
@@ -155,6 +155,9 @@ func (a *app) quickCheckoutDialog(c *ui.Context) {
 				a.quickCheckout.cursor = stepPickerCursor(len(matches), a.quickCheckout.cursor, delta, selectable)
 				a.quickCheckout.reveal = true
 			}).Label(a.t("filterBranches"))
+			if a.quickCheckout.step == "" {
+				a.commandPickerBackspace(search, *query, func() { a.quickCheckout = quickCheckoutState{} })
+			}
 			if a.quickCheckout.step == "targets" {
 				search.OnShortcut(0, ui.KeyEscape, func() { a.quickCheckoutBack() })
 			}

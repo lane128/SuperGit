@@ -72,12 +72,22 @@ func initLoadFixture(t *testing.T) string {
 
 func loadRepository(t *testing.T, root string) *app {
 	t.Helper()
-	a := &app{ctx: context.Background(), page: "history", locale: localeEnglish}
+	ctx, cancel := context.WithCancel(context.Background())
+	a := &app{ctx: ctx, cancel: cancel, page: "history", locale: localeEnglish}
+	t.Cleanup(func() { cancel(); a.resetHistoryTraversal(); a.resetFileHistory() })
 	done := make(chan func(), 64)
-	a.runOnMain = func(fn func()) { done <- fn }
+	a.runOnMain = func(fn func()) {
+		select {
+		case done <- fn:
+		case <-ctx.Done():
+		}
+	}
 	a.readRepository(root, true)
 	deadline := time.After(20 * time.Second)
-	for a.loading || len(done) > 0 {
+	// These fixtures have an unsigned commit. Status N is delivered only
+	// after the separate signature process has exited; an empty queue alone
+	// does not prove that this independently scheduled reader has finished.
+	for a.loading || a.commitFilesLoading || a.commitDiffLoading || a.historyLoadingMore || a.fileHistoryLoading || a.selectedSHA != "" && a.commitSig.Status == "" || len(done) > 0 {
 		select {
 		case fn := <-done:
 			fn()
@@ -108,5 +118,33 @@ func TestOpeningRepositoryRunsStatusOnce(t *testing.T) {
 	}
 	if a.localWatch.stamp == "" {
 		t.Fatal("opening did not record the local baseline")
+	}
+}
+
+// The opening snapshot starts detail reads. Returning before they finish lets
+// the caller delete the fixture while those processes still write shim logs.
+func TestLoadRepositoryOwnsAndFinishesDetailReads(t *testing.T) {
+	root := initLoadFixture(t)
+	log := gitCallLog(t)
+	shim := filepath.Join(filepath.Dir(log), "git")
+	script, err := os.ReadFile(shim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Deliberately delay the independent signature process beyond the files
+	// and diff reads, so removing its completion wait reliably fails.
+	script = []byte(strings.Replace(string(script), "exec \"$SUPERGIT_REAL_GIT\"", "case \"$*\" in *'%G?'*) sleep 0.2;; esac\nexec \"$SUPERGIT_REAL_GIT\"", 1))
+	if err := os.WriteFile(shim, script, 0755); err != nil {
+		t.Fatal(err)
+	}
+	a := loadRepository(t, root)
+	if a.commitSig.Status != "N" {
+		t.Errorf("fixture returned before its unsigned signature read: %+v", a.commitSig)
+	}
+	if a.ctx.Done() == nil {
+		t.Error("fixture workers have no cancellable lifetime")
+	}
+	if a.commitFilesLoading || a.commitDiffLoading || !a.commitFilesLoaded {
+		t.Errorf("fixture returned before detail reads completed: filesLoading=%v diffLoading=%v loaded=%v", a.commitFilesLoading, a.commitDiffLoading, a.commitFilesLoaded)
 	}
 }

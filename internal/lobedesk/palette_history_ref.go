@@ -52,7 +52,7 @@ func (a *app) historyRefPaletteDialog(c *ui.Context) {
 	var search ui.Element
 	var chosen *historyRef
 	c.Key(commandPickerOverlayKey)
-	ui.DialogBase(c, &a.historyRefOpen, func(backdrop, panel ui.Element) {
+	commandPickerDialog(c, &a.historyRefOpen, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(0, 0, 0, .4))
 		panel.Column().Label(a.t("historyRefCommand")).Width(min(400, max(0, width-32))).MaxHeight(max(0, height-32)).Padding(16).Gap(10).
 			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
@@ -67,6 +67,10 @@ func (a *app) historyRefPaletteDialog(c *ui.Context) {
 				}
 				chosen = &ref
 				a.historyRefOpen = false
+			})
+			a.commandPickerBackspace(search, a.historyRefQuery, func() {
+				a.historyRefPalette = historyRefPaletteState{}
+				a.historyRefOpen, a.historyRefQuery = false, ""
 			})
 		})
 	})

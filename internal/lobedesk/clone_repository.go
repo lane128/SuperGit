@@ -232,7 +232,7 @@ func (a *app) renderCloneRepositoryDialog(c *ui.Context, palette bool) {
 	if palette {
 		width, height := c.Size()
 		c.Key(commandPickerOverlayKey)
-		ui.DialogBase(c, &open, func(backdrop, panel ui.Element) {
+		commandPickerDialog(c, &open, func(backdrop, panel ui.Element) {
 			backdrop.Background(ui.RGBA(0, 0, 0, 0.4))
 			content(panel.Column().Label(a.t("cloneRepoTitle")).Width(min(480, max(0, width-32))).MaxHeight(max(0, height-32)))
 		})

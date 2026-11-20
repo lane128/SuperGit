@@ -225,7 +225,7 @@ func (a *app) quickRepositorySwitchDialog(c *ui.Context) {
 		title, searchLabel = a.t("switchRepositoryTab"), a.t("searchRepositoryTabs")
 	}
 	c.Key(commandPickerOverlayKey)
-	ui.DialogBase(c, &a.quickRepositorySwitch.open, func(backdrop, panel ui.Element) {
+	commandPickerDialog(c, &a.quickRepositorySwitch.open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(0, 0, 0, .4))
 		panel.Column().Label(title).Width(min(520, max(0, width-32))).MaxHeight(max(0, height-32)).Padding(16).Gap(10).Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
 			display.Text(c, title, display.TextProps{Strong: true, FontSize: scaledFont(14)})
@@ -241,6 +241,9 @@ func (a *app) quickRepositorySwitchDialog(c *ui.Context) {
 				s.cursor = stepPickerCursor(len(matches), s.cursor, delta, func(int) bool { return true })
 				s.reveal = true
 			}).Label(searchLabel)
+			if !s.tabsOnly {
+				a.commandPickerBackspace(search, s.query, func() { a.quickRepositorySwitch = quickRepositorySwitchState{} })
+			}
 			var active ui.Element
 			hasActive := false
 			layout.ScrollArea(c, layout.ScrollAreaProps{}, func() {

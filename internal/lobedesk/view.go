@@ -183,6 +183,11 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 				a.remoteActions(c)
 				layout.Divider(c, layout.DividerProps{Vertical: true}).Margin(0, 3)
 			}
+			commands := workbenchIconButton(c, lucide.Search(), a.t("commandPalette"), buttonNormal, !a.canOpenCommandPalette())
+			if commands.Clicked() {
+				commands.Focus()
+				a.openCommandPalette()
+			}
 			refresh := workbenchIconButton(c, lucide.RefreshCw(), a.t("refresh"), buttonNormal, a.loading || a.busy || a.repo == nil)
 			if refresh.Clicked() {
 				a.reload()

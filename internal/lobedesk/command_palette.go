@@ -2,7 +2,7 @@ package lobedesk
 
 import (
 	"runtime"
-	"strings"
+	"sort"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -53,23 +53,25 @@ func paletteCommand(id string) bool {
 
 func (a *app) commandPaletteEntries() []appShortcut {
 	var entries []appShortcut
-	words := strings.Fields(strings.ToLower(a.commandPalette.query))
+	scores := map[string]int{}
 	for _, s := range commandPaletteTable() {
 		if !paletteCommand(s.ID) {
 			continue
 		}
-		text := strings.ToLower(a.t(s.Label) + " " + s.ID)
-		matches := true
-		for _, word := range words {
-			if !strings.Contains(text, word) {
-				matches = false
-				break
-			}
+		alias := ""
+		if s.ID == "branch.create" {
+			alias = "Create Branch"
 		}
-		if matches {
+		if s.ID == "branch.quickCheckout" {
+			alias = "Checkout"
+		}
+		score := commandMatchScore(a.commandPalette.query, a.t(s.Label), messages[localeEnglish][s.Label], s.ID, alias)
+		if score >= 0 {
+			scores[s.ID] = score
 			entries = append(entries, s)
 		}
 	}
+	sort.SliceStable(entries, func(i, j int) bool { return scores[entries[i].ID] > scores[entries[j].ID] })
 	return entries
 }
 
@@ -200,7 +202,7 @@ func (a *app) commandPaletteDialog(c *ui.Context) {
 	chosen := ""
 	var search ui.Element
 	c.Key(commandPickerOverlayKey)
-	ui.DialogBase(c, &a.commandPalette.open, func(backdrop, panel ui.Element) {
+	commandPickerDialog(c, &a.commandPalette.open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(0, 0, 0, 0.4))
 		panel.Column().Label(a.t("commandPalette")).Width(min(520, max(0, width-32))).MaxHeight(max(0, height-32)).Padding(16).Gap(10).
 			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
