@@ -82,7 +82,10 @@ func (r *Repository) SaveStash(ctx context.Context, message string, untracked bo
 	}
 	// Git stash internally builds magic pathspecs for untracked cleanup.
 	// No user pathspec is passed here; inherited literal mode breaks that cleanup.
-	args := []string{"--no-literal-pathspecs", "stash", "push", "-m", message}
+	args := []string{"--no-literal-pathspecs", "stash", "push"}
+	if strings.TrimSpace(message) != "" {
+		args = append(args, "-m", message)
+	}
 	if untracked {
 		args = append(args, "--include-untracked")
 	}
@@ -142,10 +145,19 @@ func (r *Repository) SaveStashPaths(ctx context.Context, message string, untrack
 }
 
 func (r *Repository) StashDiff(ctx context.Context, sha string) (Diff, error) {
+	return r.DisplayStashDiff(ctx, sha, false)
+}
+
+func (r *Repository) DisplayStashDiff(ctx context.Context, sha string, ignoreWhitespace bool) (Diff, error) {
 	if _, err := r.findStash(ctx, sha); err != nil {
 		return Diff{}, err
 	}
-	out, err := run(ctx, r.Root, "", "stash", "show", "--include-untracked", "--patch", "--no-ext-diff", "--no-textconv", "--no-color", sha)
+	args := []string{"stash", "show", "--include-untracked", "--patch", "--no-ext-diff", "--no-textconv", "--no-color"}
+	if ignoreWhitespace {
+		args = append(args, "--ignore-all-space")
+	}
+	args = append(args, sha)
+	out, err := run(ctx, r.Root, "", args...)
 	return parseStashDiff(out), err
 }
 func (r *Repository) ApplyStash(ctx context.Context, sha string) error {

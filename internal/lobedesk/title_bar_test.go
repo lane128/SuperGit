@@ -32,9 +32,10 @@ func TestTitleBarKeepsRepositoryActionsWithoutPageTabs(t *testing.T) {
 				ui.Column(c).Fill().Children(func() { a.workbenchToolbar(c, false) })
 			}, 900, 44)
 			branch, ok := tt.AccessByRole(ui.RoleButton, a.t("branches"))
-			if center := branch.Bounds.X + branch.Bounds.W/2; !ok || center < 449.5 || center > 450.5 {
-				t.Errorf("%s/%v: branch selector is not centered: %+v", language, scale, branch.Bounds)
+			if !ok {
+				t.Fatal("missing branch selector")
 			}
+			assertCommandControlBounds(t, tt, a, 900)
 			status := "(" + a.tf("aheadBehind", 12, 34) + ")"
 			statusBounds, visible := tt.Find(status)
 			if !visible || statusBounds.X < branch.Bounds.X || statusBounds.X+statusBounds.W > branch.Bounds.X+branch.Bounds.W {
@@ -50,10 +51,10 @@ func TestTitleBarKeepsRepositoryActionsWithoutPageTabs(t *testing.T) {
 				role  ui.Role
 				label string
 			}{
-				{ui.RoleButton, a.t("commandPalette")},
 				{ui.RoleButton, a.tf("operation", "cherry-pick")},
 				{ui.RoleText, a.progressText()},
 				{ui.RoleButton, a.t("cancel")},
+				{ui.RoleButton, a.t("commandPalette")},
 				{ui.RoleButton, a.t("branches")},
 				{ui.RoleMenuButton, a.t("saveStashAction")},
 				{ui.RoleMenuButton, a.t("syncMenu")},
@@ -67,6 +68,21 @@ func TestTitleBarKeepsRepositoryActionsWithoutPageTabs(t *testing.T) {
 		}
 	}
 	setUIFontScale(fontScaleStandard)
+}
+
+func assertCommandControlBounds(t *testing.T, tt *ui.Tester, a *app, windowWidth float32) {
+	t.Helper()
+	icon, hasIcon := tt.AccessByRole(ui.RoleButton, a.t("commandPalette"))
+	branch, hasBranch := tt.AccessByRole(ui.RoleButton, a.t("branches"))
+	const wantedWidth = 360
+	left := (windowWidth - wantedWidth) / 2
+	withinPixel := func(x, y float32) bool { return x >= y-1 && x <= y+1 }
+	if !hasIcon || !hasBranch || !withinPixel(icon.Bounds.X, left) ||
+		!withinPixel(icon.Bounds.X+icon.Bounds.W, branch.Bounds.X) ||
+		!withinPixel(branch.Bounds.X+branch.Bounds.W, left+wantedWidth) ||
+		icon.Bounds.Y != branch.Bounds.Y || icon.Bounds.H != branch.Bounds.H {
+		t.Fatalf("expected one centered %d pt control, got icon %+v and branch %+v", wantedWidth, icon.Bounds, branch.Bounds)
+	}
 }
 
 func TestSidebarNamesRepositoryAndPreservesFullPath(t *testing.T) {

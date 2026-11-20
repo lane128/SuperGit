@@ -91,6 +91,9 @@ func (tabs *repositoryTabs) newSession(source *app) *app {
 // positions remain in their original session.
 func (a *app) copyWindowPreferences(source *app) {
 	a.locale, a.themeMode, a.palette, a.dockIcon = source.locale, source.themeMode, source.palette, source.dockIcon
+	a.sidebarHidden, a.expandMerges = source.sidebarHidden, source.expandMerges
+	a.syncHiddenBranches(source.hiddenBranches)
+	a.setIgnoreDiffWhitespace(source.ignoreDiffWhitespace)
 	a.codeFontSize, a.splitDiff = source.codeFontSize, source.splitDiff
 	a.showGraph, a.historyLine, a.historyNode = source.showGraph, source.historyLine, source.historyNode
 	a.hideAuthor, a.hideTime = source.hideAuthor, source.hideTime

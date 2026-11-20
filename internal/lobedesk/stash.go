@@ -279,10 +279,11 @@ func (a *app) loadStashDiff() {
 	a.stashSeq++
 	seq := a.stashSeq
 	repo, sha := a.repo, a.selectedStash
+	ignoreWhitespace := a.ignoreDiffWhitespace
 	a.stashDiffLoading = true
 	a.stashDiffErr = ""
 	go func() {
-		diff, err := repo.StashDiff(a.ctx, sha)
+		diff, err := repo.DisplayStashDiff(a.ctx, sha, ignoreWhitespace)
 		a.hopToMain(func() {
 			if seq != a.stashSeq || a.repo == nil || a.repo.Root != repo.Root || a.selectedStash != sha {
 				return

@@ -51,6 +51,10 @@ func (a *app) renderWorkbench(c *ui.Context, repositoryStrip func()) {
 		content := ui.Row(c).Grow(1).Basis(0).MinHeight(0).AlignItems(ui.Stretch)
 		a.sidebarSplit.rowWidth, _ = c.Size()
 		content.Children(func() {
+			if a.sidebarHidden {
+				a.contentCardAtWidth(c, a.sidebarSplit.rowWidth)
+				return
+			}
 			sidebar := a.sidebar(c)
 			def := shareForWidth(a.sidebarSplit.rowWidth-splitterWidth, sidebarWidth)
 			a.splitHandle(c, &a.sidebarSplit, def, sidebarPaneMin, a.workbenchContentMin(), a.t("resizeSidebarPane"))
@@ -70,6 +74,7 @@ func (a *app) renderWorkbench(c *ui.Context, repositoryStrip func()) {
 		a.cloneRepositoryDialog(c)
 		a.newRepositoryDialog(c)
 		a.blameDialog(c)
+		a.snapshotFileDialog(c)
 		a.toastHost(c, toastMain)
 		if !settingsFocused {
 			// A settings notice whose panel closed is not lost: the main
@@ -111,7 +116,7 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 			inset = max(bar.Left+8, 80) - 12
 		}
 	}
-	toolbar := ui.Row(c).Height(height).Shrink(0).AlignItems(ui.Center).Gap(8).Padding(0, 12, 0, 12)
+	toolbar := ui.Row(c).FillWidth().Height(height).Shrink(0).AlignItems(ui.Center).Gap(8).Padding(0, 12, 0, 12)
 	if nativeChrome {
 		toolbar.DragWindow()
 	}
@@ -124,7 +129,6 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 				ui.Box(c).Width(inset).Shrink(0)
 			}
 			ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Gap(6).Children(func() {
-				a.toolbarCommandButton(c, progress != "" || a.operation.Kind != "")
 				// A merge, rebase or cherry-pick can outlive the command that
 				// started it: a cancelled rebase leaves the repository in the
 				// middle of it, and the page the reader was on says nothing.
@@ -168,9 +172,7 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 				}
 			})
 		})
-		if showBranch {
-			a.branchSelector(c)
-		}
+		a.toolbarCommandControl(c, showBranch)
 		ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Justify(ui.End).Gap(6).Children(func() {
 			if a.repo != nil {
 				a.stashSaveMenu(c)
@@ -180,25 +182,37 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 	})
 }
 
-func (a *app) toolbarCommandButton(c *ui.Context, compact bool) {
-	label := a.t("commandPalette")
-	keys := shortcutKeys("palette.open")
-	button := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, !a.canOpenCommandPalette(), false).
-		Label(label).Tooltip(label + " (" + keys + ")").Shrink(0)
-	if compact {
-		button.Width(scaledFont(workbenchButtonBaseHeight)).PaddingX(0)
-	}
-	button.Children(func() {
-		ui.Icon(c, lucide.SquareTerminal()).FontSize(scaledFont(14))
-		if !compact {
-			ui.Text(c, a.t("toolbarCommands")).SingleLine()
-			ui.Text(c, keys).FontSize(scaledFont(11)).TextColor(theme.TokensOf(c).TextSecondary)
+// Keep one silhouette and two keyboard-accessible targets. The branch and its
+// tracking status stay centered in the whole control, including the icon.
+const toolbarCommandWidth float32 = 360
+
+func (a *app) toolbarCommandControl(c *ui.Context, showBranch bool) {
+	ui.Row(c).Width(toolbarCommandWidth).Shrink(0).AlignItems(ui.Center).Children(func() {
+		label := a.t("commandPalette")
+		keys := shortcutKeys("palette.open")
+		button := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, !a.canOpenCommandPalette(), false).
+			Label(label).Tooltip(label + " (" + keys + ")")
+		iconWidth := scaledFont(32)
+		if showBranch {
+			button.Width(iconWidth).Shrink(0).PaddingX(0).Radius(6, 0, 0, 6)
+		} else {
+			button.FillWidth()
+		}
+		button.Children(func() {
+			ui.Icon(c, lucide.SquareTerminal()).FontSize(scaledFont(14))
+			if !showBranch {
+				ui.Text(c, a.t("toolbarCommands")).SingleLine()
+				ui.Text(c, keys).FontSize(scaledFont(11)).TextColor(theme.TokensOf(c).TextSecondary)
+			}
+		})
+		if button.Clicked() {
+			button.Focus()
+			a.openCommandPalette()
+		}
+		if showBranch {
+			a.branchSelector(c, iconWidth)
 		}
 	})
-	if button.Clicked() {
-		button.Focus()
-		a.openCommandPalette()
-	}
 }
 
 // progressDelay is how long an operation must run before the title bar says
@@ -341,15 +355,18 @@ func (a *app) sidebar(c *ui.Context) float32 {
 }
 
 func (a *app) sidebarRefGroups(c *ui.Context) {
-	a.sidebarGroup(c, "branches", a.t("branches"), len(a.branches), func() {
+	a.sidebarGroup(c, "branches", a.t("branches"), a.visibleBranchCount(a.branches, "refs/heads/"), func() {
 		a.sidebarBranchItems(c)
 	})
-	remoteHeading := a.sidebarGroup(c, "remotes", a.t("remotes"), len(a.remoteBranches), func() {
+	remoteHeading := a.sidebarGroup(c, "remotes", a.t("remotes"), a.visibleBranchCount(a.remoteBranches, "refs/remotes/"), func() {
 		if a.repo != nil {
 			row := a.sidebarRefRow(c.Key("add-remote"), lucide.Plus(), a.t("addRemoteEntry"), false, false, a.openAddRemote)
 			row.Disabled(!a.canAddRemote())
 		}
 		for _, remote := range a.remoteBranches {
+			if a.branchHidden("refs/remotes/" + remote.Name) {
+				continue
+			}
 			ref := historyRef{Kind: historyRefRemote, Name: remote.Name}
 			a.sidebarRefRow(c, lucide.Cloud(), remote.Name,
 				a.historyRef == ref, false, func() { a.locateRef(ref.Kind, ref.Name) })
@@ -551,6 +568,9 @@ func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state s
 // the list is how the sidebar answers "where am I" without another page.
 func (a *app) sidebarBranchItems(c *ui.Context) {
 	for _, branch := range a.branches {
+		if a.branchHidden("refs/heads/" + branch.Name) {
+			continue
+		}
 		ref := historyRef{Kind: historyRefLocal, Name: branch.Name}
 		row := a.sidebarRefRow(c, lucide.GitBranch(), branch.Name, a.historyRef == ref, branch.Current, func() {
 			a.locateRef(ref.Kind, ref.Name)

@@ -3,6 +3,7 @@ package lobedesk
 import (
 	"runtime"
 	"sort"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -25,10 +26,22 @@ func commandPaletteShortcutBindings() []appShortcut {
 // metadata. Only the palette consumes these additions; window registration and
 // the Settings shortcut card still read the actual shortcut table.
 func commandPaletteTable() []appShortcut {
-	return append(shortcutTable(), fetchPaletteCommand(), stashPaletteCommand(), createBranchPaletteCommand(), historyRefPaletteCommand(), createTagPaletteCommand(), clonePaletteCommand(), copySHAPaletteCommand())
+	entries := append(shortcutTable(), fetchPaletteCommand(), mergePaletteCommand(), stashPaletteCommand(), createBranchPaletteCommand(), historyRefPaletteCommand(), createTagPaletteCommand(), clonePaletteCommand(), copySHAPaletteCommand())
+	for i := range entries {
+		if entries[i].ID == "window.settings" {
+			entries[i].Label = "palettePreferences"
+		}
+	}
+	return append(entries, paletteActionShortcuts...)
 }
 
 type commandPaletteState struct {
+	scroll       ui.ScrollState
+	viewport     ui.Rect
+	step         *paletteStep
+	actionID     string
+	stage        paletteStage
+	fetchOption  string
 	open         bool
 	root         string
 	epoch        uint64
@@ -45,33 +58,41 @@ type commandPaletteState struct {
 // table supplies labels, execution functions and keys where one exists.
 func paletteCommand(id string) bool {
 	switch id {
-	case "repo.open", "repo.reopenClosedTab", "repo.clone", "window.settings", "page.history", "page.branches", "page.stash", "page.worktrees", "repo.reload", "history.head", "workspace.focusCommitMessage", "branch.quickCheckout", "repo.quickSwitch", "repo.fetch", "stash.saveTracked", "branch.create", "history.chooseRef", "tag.create", "commit.copySHA":
+	case "repo.open", "repo.reopenClosedTab", "repo.clone", "window.settings", "page.history", "page.branches", "page.stash", "page.worktrees", "repo.reload", "history.head", "workspace.focusCommitMessage", "branch.quickCheckout", "branch.merge", "repo.quickSwitch", "repo.fetch", "stash.saveTracked", "branch.create", "history.chooseRef", "tag.create", "commit.copySHA":
 		return true
 	}
-	return false
+	_, ok := paletteActionsByID[id]
+	return ok
 }
 
 func (a *app) commandPaletteEntries() []appShortcut {
 	var entries []appShortcut
 	scores := map[string]int{}
+	query := paletteCaptionStem(a.commandPalette.query)
 	for _, s := range commandPaletteTable() {
 		if !paletteCommand(s.ID) {
 			continue
 		}
 		alias := ""
-		if s.ID == "branch.create" {
-			alias = "Create Branch"
+		if s.ID == "repo.fetch" {
+			alias = a.t("fetchAllCommand")
 		}
-		if s.ID == "branch.quickCheckout" {
-			alias = "Checkout"
+		en, zh := messages[localeEnglish][s.Label], messages[localeChinese][s.Label]
+		score := commandMatchScore(a.commandPalette.query, a.t(s.Label), en, zh, s.ID, alias, referenceCommandNames[s.ID])
+		if query != "" && (query == paletteCaptionStem(s.ID) || query == paletteCaptionStem(en) || query == paletteCaptionStem(zh)) {
+			// An exact command must beat a longer command with the same prefix.
+			score = 1 << 30
 		}
-		score := commandMatchScore(a.commandPalette.query, a.t(s.Label), messages[localeEnglish][s.Label], s.ID, alias)
 		if score >= 0 {
 			scores[s.ID] = score
 			entries = append(entries, s)
 		}
 	}
-	sort.SliceStable(entries, func(i, j int) bool { return scores[entries[i].ID] > scores[entries[j].ID] })
+	if strings.TrimSpace(a.commandPalette.query) == "" {
+		sort.SliceStable(entries, func(i, j int) bool { return a.t(entries[i].Label) < a.t(entries[j].Label) })
+	} else {
+		sort.SliceStable(entries, func(i, j int) bool { return scores[entries[i].ID] > scores[entries[j].ID] })
+	}
 	return entries
 }
 
@@ -112,6 +133,20 @@ func (a *app) commandPaletteUnavailable(id string) string {
 		}
 		return ""
 	}
+	if action, ok := paletteActionsByID[id]; ok {
+		if !action.Global {
+			if a.repo == nil {
+				return a.t("commandPaletteNeedRepo")
+			}
+			if a.repositoryOpenPending() || a.tabSnapshotUnavailable() {
+				return a.t("commandPaletteWait")
+			}
+		}
+		if action.Unavailable != nil {
+			return action.Unavailable(a)
+		}
+		return ""
+	}
 	if a.repo == nil {
 		switch id {
 		case "repo.open", "repo.clone", "window.settings":
@@ -122,6 +157,12 @@ func (a *app) commandPaletteUnavailable(id string) string {
 		default:
 			return a.t("commandPaletteNeedRepo")
 		}
+	}
+	if (id == "branch.merge" || id == "repo.fetch") && (a.repositoryOpenPending() || a.tabSnapshotUnavailable()) {
+		return a.t("commandPaletteWait")
+	}
+	if id == "branch.merge" {
+		return a.paletteMergeUnavailable()
 	}
 	if id == "tag.create" {
 		return a.createTagUnavailable()
@@ -156,15 +197,12 @@ func (a *app) openCommandPalette() {
 	if !a.canOpenCommandPalette() {
 		return
 	}
-	a.commandPaletteGeneration++
-	a.commandPalette = commandPaletteState{open: true, root: a.paletteRoot(), epoch: a.loadSeq,
-		generation: a.commandPaletteGeneration, cursor: -1, reveal: true, searchFocus: true}
-	a.invalidate()
+	a.setPaletteStage(paletteCommands, "")
 }
 
 func (a *app) runPaletteCommand(id string, generation uint64) {
 	a.discardStaleCommandPalette()
-	if !a.commandPalette.open || a.commandPalette.generation != generation || a.commandPaletteUnavailable(id) != "" {
+	if !a.commandPalette.open || a.commandPalette.stage != paletteCommands || a.commandPalette.generation != generation || a.commandPaletteUnavailable(id) != "" {
 		return
 	}
 	for _, s := range commandPaletteTable() {
@@ -174,7 +212,11 @@ func (a *app) runPaletteCommand(id string, generation uint64) {
 		a.commandPalette = commandPaletteState{}
 		// Closing first lets the existing action see the real remaining dialogs.
 		if a.commandPaletteUnavailable(id) == "" && (s.Available == nil || s.Available(a)) {
+			a.commandPalette.actionID = id
 			s.Run(a)
+			if !a.commandPalette.open {
+				a.commandPalette = commandPaletteState{}
+			}
 		}
 		a.invalidate()
 		return
@@ -186,91 +228,108 @@ func (a *app) commandPaletteDialog(c *ui.Context) {
 	if !a.commandPalette.open {
 		return
 	}
-	tk := theme.TokensOf(c)
-	matches := a.commandPaletteEntries()
-	selectable := func(index int) bool { return a.commandPaletteUnavailable(matches[index].ID) == "" }
-	first := func() int { return pickerCursorAt(len(matches), -1, selectable) }
-	if placePicker(&a.commandPalette.cursor, &a.commandPalette.cursorQuery, &a.commandPalette.cursorPlaced, a.commandPalette.query, first) ||
-		repairPicker(&a.commandPalette.cursor, len(matches), first) {
-		a.commandPalette.reveal = true
+	s := &a.commandPalette
+	rows := a.paletteChoices()
+	selectable := func(i int) bool { return rows[i].reason == "" }
+	first := func() int { return pickerCursorAt(len(rows), -1, selectable) }
+	if placePicker(&s.cursor, &s.cursorQuery, &s.cursorPlaced, s.query, first) ||
+		repairPicker(&s.cursor, len(rows), first) || s.cursor >= 0 && !selectable(s.cursor) {
+		s.cursor = pickerCursorAt(len(rows), s.cursor, selectable)
+		s.reveal = true
 	}
-	if a.commandPalette.cursor >= 0 && !selectable(a.commandPalette.cursor) {
-		a.commandPalette.cursor = first()
-	}
-	width, height := c.Size()
-	generation := a.commandPalette.generation
-	chosen := ""
+	title, chip, placeholder := a.paletteInputLabels()
+	generation := s.generation
 	var search ui.Element
+	var chosen *paletteChoice
+	var submitted func()
+	textStep := s.step != nil && s.step.submit != nil
 	c.Key(commandPickerOverlayKey)
-	commandPickerDialog(c, &a.commandPalette.open, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(0, 0, 0, 0.4))
-		panel.Column().Label(a.t("commandPalette")).Width(min(520, max(0, width-32))).MaxHeight(max(0, height-32)).Padding(16).Gap(10).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
-			display.Text(c, a.t("commandPalette"), display.TextProps{Strong: true, FontSize: scaledFont(14)})
-			search = a.pickerSearchBar(c, &a.commandPalette.query, a.t("commandPaletteSearch"), func() {
-				// Never substitute another action if the highlighted row became invalid.
-				index := a.commandPalette.cursor
-				if index >= 0 && index < len(matches) && selectable(index) {
-					chosen = matches[index].ID
+	commandPickerDialog(c, &s.open, func(backdrop, panel ui.Element) {
+		commandPanel(c, backdrop, panel, title).Children(func() {
+			search = a.paletteInput(c.Key(generation), chip, placeholder, &s.query, func() {
+				if textStep && (s.step.allowEmpty || strings.TrimSpace(s.query) != "") {
+					step, value := s.step, s.query
+					submitted = func() { step.submit(value) }
+					return
+				}
+				if s.cursor >= 0 && s.cursor < len(rows) && selectable(s.cursor) {
+					chosen = &rows[s.cursor]
 				}
 			}, func(delta int) {
-				a.commandPalette.cursor = stepPickerCursor(len(matches), a.commandPalette.cursor, delta, selectable)
-				a.commandPalette.reveal = true
-			}).Label(a.t("commandPaletteSearch"))
-			var active ui.Element
-			hasActive := false
-			layout.ScrollArea(c, layout.ScrollAreaProps{}, func() {
+				s.cursor = stepPickerCursor(len(rows), s.cursor, delta, selectable)
+				s.reveal = true
+			})
+			if s.stage != paletteCommands {
+				search.OnTextKey(func(k ui.TextKey) bool {
+					if k.Mods != 0 || k.Key != ui.KeyBackspace || k.Text() != "" || generation != s.generation {
+						return false
+					}
+					a.paletteStepBack()
+					return true
+				})
+			}
+			_, height := c.Size()
+			tk := theme.TokensOf(c)
+			scroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &s.scroll}, func() {
 				ui.Column(c).FillWidth().Gap(1).Role(ui.RoleList).Children(func() {
-					for index, s := range matches {
-						reason := a.commandPaletteUnavailable(s.ID)
-						highlighted := index == a.commandPalette.cursor && reason == ""
-						row := pickerRowBase(c, a.t(s.Label), index+1, len(matches), highlighted)
-						switch {
-						case reason != "":
-							row.AccessDisabled(true).Description(reason).Cursor(ui.CursorDefault)
-						case highlighted:
+					draw := func(rc *ui.Context, i int) {
+						item := rows[i]
+						selected := i == s.cursor && selectable(i)
+						row := pickerRowBase(rc.Key(item.id), item.label, i+1, len(rows), selected)
+						if item.prefix != "" {
+							row.Description(item.id)
+						}
+						if selected {
 							row.Background(selectionBg(tk, tk.BgElevated))
-						case row.Hovered():
+							search.ActiveDescendant(row)
+						} else if item.reason != "" {
+							row.AccessDisabled(true).Description(item.reason)
+						} else if row.Hovered() {
 							row.Background(tk.FillTertiary.Over(tk.BgElevated))
 						}
-						row.Children(func() {
-							ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(2).Children(func() {
-								display.Text(c, a.t(s.Label), display.TextProps{FontSize: scaledFont(12)}).SingleLine()
-								if reason != "" {
-									display.Text(c, reason, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).SingleLine()
-								}
-							})
-							display.Text(c, s.Keys, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).Shrink(0)
-						})
-						pickerReveal(row, highlighted, &a.commandPalette.reveal)
-						if highlighted {
-							active, hasActive = row, true
-						}
-						if reason == "" && row.Clicked() {
-							chosen = s.ID
+						row.Children(func() { drawPaletteChoice(rc, item, s.query) })
+						pickerReveal(row, selected, &s.reveal)
+						if row.Clicked() && selectable(i) {
+							chosen = &rows[i]
 						}
 					}
-					if len(matches) == 0 {
+					if len(rows) > 128 {
+						heights := make([]float32, len(rows))
+						for i, row := range rows {
+							heights[i] = max(30, scaledFont(28))
+							if row.reason != "" || row.detail != "" {
+								heights[i] = max(heights[i], scaledFont(40))
+							}
+						}
+						virtualPatchRows(c, s.viewport, &s.scroll, heights, s.cursor, func(rc *ui.Context, i int) {
+							ui.Column(rc).FillWidth().Height(heights[i]).Shrink(0).Children(func() { draw(rc, i) })
+						})
+					} else {
+						for i := range rows {
+							draw(c, i)
+						}
+					}
+					if len(rows) == 0 && !textStep {
 						display.Text(c, a.t("commandPaletteNoResults"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12)}).Padding(6, 8)
 					}
 				})
-			}).MaxHeight(min(float32(pickerListMaxHeight), max(0, height-150)))
-			if hasActive {
-				search.ActiveDescendant(active)
+			}).MaxHeight(min(float32(570), max(0, height-170)))
+			s.viewport = scroll.Bounds()
+			if s.stage == paletteMergeRef && s.cursor >= 0 {
+				preview := a.tf("paletteMergePreview", rows[s.cursor].id, a.status.Branch)
+				display.Text(c.Key("preview"), preview, display.TextProps{FontSize: scaledFont(12), Rows: 2}).Padding(6, 8).Tooltip(preview)
 			}
 		})
 	})
-	// Overlay captures its opener after building its children. Focus only after
-	// that capture, or cancellation would try to restore the search itself.
-	if a.commandPalette.open && a.commandPalette.searchFocus {
+	if s.open && s.searchFocus {
 		search.Focus()
-		a.commandPalette.searchFocus = false
+		s.searchFocus = false
 	}
-	if chosen != "" {
-		a.runPaletteCommand(chosen, generation)
-		return
-	}
-	if !a.commandPalette.open {
+	if submitted != nil {
+		a.finishPaletteStep(generation, submitted)
+	} else if chosen != nil {
+		a.acceptPaletteChoice(*chosen, generation)
+	} else if !s.open {
 		a.commandPalette = commandPaletteState{}
 	}
 }

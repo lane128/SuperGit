@@ -26,6 +26,10 @@ type HistoryStream struct {
 // OpenHistoryStream continues already pinned tips from offset. Unlike repeated
 // HistoryPage calls, it skips the prefix just once for the entire traversal.
 func (r *Repository) OpenHistoryStream(ctx context.Context, tips []string, offset int) (*HistoryStream, error) {
+	return r.OpenVisibleHistoryStream(ctx, tips, offset, nil)
+}
+
+func (r *Repository) OpenVisibleHistoryStream(ctx context.Context, tips []string, offset int, hidden []string) (*HistoryStream, error) {
 	if tips == nil || offset < 0 {
 		return nil, fmt.Errorf("无效的历史流范围")
 	}
@@ -47,6 +51,7 @@ func (r *Repository) OpenHistoryStream(ctx context.Context, tips []string, offse
 	go func() {
 		output := historyStreamOutput{ctx: ctx, commits: stream.commits}
 		args := []string{"log", "-z", historyFormat, "--topo-order", "--skip=" + strconv.FormatInt(int64(offset), 10), "--stdin", "--"}
+		args = historyDecorationArgs(args, hidden)
 		stream.err = runOutputContext(ctx, r.Root, strings.Join(stream.tips, "\n")+"\n", &output, args...)
 		if stream.err == nil && len(output.record) != 0 {
 			stream.err = errors.New("无效的提交历史记录")

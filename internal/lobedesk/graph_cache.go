@@ -62,7 +62,7 @@ func (a *app) cachedCommitGraph(commits []gitrepo.Commit, palette []ui.Color, wi
 			graphRows = slices.Clone(commits)
 			for i := range graphRows {
 				sha := graphRows[i].SHA
-				if folds.branches[sha] && !folds.expanded[sha] {
+				if folds.branches[sha] && !folds.isExpanded(sha) {
 					graphRows[i].Parents = graphRows[i].Parents[:1]
 				}
 			}

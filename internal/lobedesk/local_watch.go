@@ -109,7 +109,7 @@ func (a *app) beginLocalProbe(now time.Time) (localWatchRequest, bool) {
 	w := &a.localWatch
 	if w.closed || a.repo == nil || a.loading || a.busy || a.repositoryChooserOpen || w.reading || now.Before(w.next) ||
 		(a.repositoryTabs != nil && (a.repositoryTabs.active != a || a.repositoryTabs.opening != nil)) ||
-		a.confirm.open || a.prompt.open || a.worktreeForm.open || a.reset.open {
+		a.hasPendingDialog(toastMain) {
 		return localWatchRequest{}, false
 	}
 	interval := localBackgroundInterval
@@ -129,9 +129,9 @@ func (a *app) acceptLocalProbe(req localWatchRequest, stamp string, err error, n
 	}
 	w.reading = false
 	w.cancel = nil
-	if a.repositoryChooserOpen {
-		// The native picker keeps pumping events. Retry the probe after it
-		// closes, without starting a refresh that could drop its selection.
+	if a.repositoryChooserOpen || a.hasPendingDialog(toastMain) {
+		// An external change can arrive between keystrokes or picker stages.
+		// Retry once the dialog closes so a reload cannot discard its input.
 		w.next = time.Time{}
 		return false
 	}

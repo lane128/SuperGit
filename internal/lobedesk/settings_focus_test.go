@@ -132,7 +132,7 @@ func TestTheBranchSelectorNamesItself(t *testing.T) {
 			{Name: "dev"},
 		},
 	}
-	tt := pageTester(a, a.branchSelector)
+	tt := pageTester(a, func(c *ui.Context) { a.toolbarCommandControl(c, true) })
 	trigger, ok := tt.AccessByRole(ui.RoleButton, a.t("branches"))
 	if !ok {
 		t.Fatal("the branch selector has no accessible name")

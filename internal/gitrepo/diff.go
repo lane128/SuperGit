@@ -106,10 +106,17 @@ func parseDiff(text string) Diff {
 	return d
 }
 func (r *Repository) Diff(ctx context.Context, path string, staged bool) (Diff, error) {
+	return r.DisplayDiff(ctx, path, staged, false)
+}
+
+func (r *Repository) DisplayDiff(ctx context.Context, path string, staged, ignoreWhitespace bool) (Diff, error) {
 	if err := r.path(path); err != nil {
 		return Diff{}, err
 	}
 	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=3", "--submodule=short", "--src-prefix=a/", "--dst-prefix=b/"}
+	if ignoreWhitespace {
+		args = append(args, "--ignore-all-space")
+	}
 	if staged {
 		args = append(args, "--cached")
 	}
@@ -148,7 +155,14 @@ func (r *Repository) Diff(ctx context.Context, path string, staged bool) (Diff, 
 			}
 		}
 	}
-	return parseDiff(out), nil
+	diff := parseDiff(out)
+	// A whitespace-ignoring patch can have different hunk boundaries and old context.
+	// Only canonical patches may be used for partial index or worktree writes.
+	if ignoreWhitespace && diff.CanStageHunks {
+		canonical, readErr := r.Diff(ctx, path, staged)
+		diff.CanStageHunks = readErr == nil && canonical.CanStageHunks && canonical.Text == diff.Text
+	}
+	return diff, nil
 }
 
 // FileDiff is one file's part of a commit's diff. A commit's details show
@@ -162,6 +176,10 @@ type FileDiff struct {
 // answers for the whole commit; splitting it per file here is cheaper than one
 // `git show` per path and keeps the sections in the order git printed them.
 func (r *Repository) ShowAll(ctx context.Context, sha string) ([]FileDiff, error) {
+	return r.DisplayCommitDiff(ctx, sha, false)
+}
+
+func (r *Repository) DisplayCommitDiff(ctx context.Context, sha string, ignoreWhitespace bool) ([]FileDiff, error) {
 	if !oidRE.MatchString(sha) {
 		return nil, fmt.Errorf("无效的提交 SHA")
 	}
@@ -174,6 +192,9 @@ func (r *Repository) ShowAll(ctx context.Context, sha string) ([]FileDiff, error
 		args = []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--submodule=short", p[0], sha}
 	} else {
 		args = []string{"show", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "--submodule=short", sha}
+	}
+	if ignoreWhitespace {
+		args = append(args, "--ignore-all-space")
 	}
 	out, err := run(ctx, r.Root, "", args...)
 	if err != nil {

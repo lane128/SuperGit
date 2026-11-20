@@ -34,13 +34,14 @@ func (a *app) loadMoreHistory() {
 	ctx := a.historyTraversalContext()
 	repo, tips, offset, seq := a.repo, append([]string(nil), a.historyTips...), len(a.commits), a.loadSeq
 	reload := a.historyReload
+	hidden := a.hiddenBranches[repo.Root]
 	stream := a.historyStream
 	a.historyLoadingMore = true
 	a.invalidate()
 	go func() {
 		var err error
 		if stream == nil {
-			stream, err = repo.OpenHistoryStream(ctx, tips, offset)
+			stream, err = repo.OpenVisibleHistoryStream(ctx, tips, offset, hidden)
 		}
 		var page gitrepo.HistoryPage
 		if err == nil {
@@ -611,7 +612,9 @@ func (a *app) commitList(c *ui.Context) {
 	})
 }
 
-func (a *app) showFileHistory(path string) {
+func (a *app) showFileHistory(path string) { a.showFileHistoryAt(path, "") }
+
+func (a *app) showFileHistoryAt(path, rev string) {
 	if a.repo == nil || path == "" {
 		return
 	}
@@ -628,6 +631,8 @@ func (a *app) showFileHistory(path string) {
 	a.commitPath = ""
 	a.resetCommitDiff()
 	a.commitDiffErr = ""
+	a.selectedStash = ""
+	a.fileHistoryRevision = rev
 	a.switchFileHistory(path)
 	a.invalidate()
 }
@@ -641,7 +646,7 @@ func (a *app) switchFileHistory(path string) {
 	a.fileCommits = nil
 	a.fileHistoryErr = ""
 	a.resetFileHistory()
-	a.fileHistoryTips = nil
+	a.fileHistoryTips = a.startFileHistoryTips()
 	a.fileHistoryMore = true
 	a.loadFileHistory()
 }
@@ -1110,7 +1115,7 @@ const (
 
 func (a *app) historyMergeDisclosure(c *ui.Context, sha string, x, rowHeight float32, ground, ink ui.Color) {
 	tk := theme.TokensOf(c)
-	expanded := a.historyMergeFolds.expanded[sha]
+	expanded := a.historyMergeFolds.isExpanded(sha)
 	label, icon := a.t("expandMergedCommits"), lucide.ChevronRight()
 	if expanded {
 		label, icon = a.t("collapseMergedCommits"), lucide.ChevronDown()

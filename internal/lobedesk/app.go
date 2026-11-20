@@ -93,8 +93,12 @@ const (
 )
 
 type app struct {
-	window         *mygo.Window
-	repositoryTabs *repositoryTabs
+	sidebarHidden, ignoreDiffWhitespace, expandMerges bool
+	hiddenBranches                                    map[string][]string // Immutable snapshots keyed by checkout root.
+	snapshotView                                      snapshotFileView
+	fileHistoryRevision                               string
+	window                                            *mygo.Window
+	repositoryTabs                                    *repositoryTabs
 	// openDirectoryDialog defaults to the native chooser; tests exercise the same dispatch boundary.
 	openDirectoryDialog   func(mygo.OpenDialogOptions) ([]string, error)
 	saveFileDialog        func(mygo.SaveDialogOptions) (string, error)
@@ -455,7 +459,6 @@ type app struct {
 	// the periodic check does not fetch again before the interval has passed
 	// and a manual fetch restarts the clock.
 	lastAutoFetch                   time.Time
-	branchOpen                      bool
 	stashSaveOpen                   bool
 	syncOpen                        bool
 	confirm                         confirmState
@@ -746,6 +749,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 	// Scope changes may cancel pagination while this snapshot is still loading.
 	// Its loadSeq guard already rejects superseded repository snapshots.
 	historyCtx := a.ctx
+	hiddenBranches := a.hiddenBranches
 	// A reload keeps a ref filter's walk pinned to that ref instead of
 	// swapping the list back to every ref behind the filter.
 	pinned := ""
@@ -809,7 +813,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 				if pinned != "" {
 					history, historyErr = repo.HistoryPage(historyCtx, []string{pinned}, 0, historyLimit)
 				} else {
-					history, historyErr = repo.ReadHistory(historyCtx, historyLimit)
+					history, historyErr = repo.ReadVisibleHistory(historyCtx, historyLimit, hiddenBranches[repo.Root])
 				}
 			})
 			// The displayed rows and the watcher's baseline are read from one
@@ -1073,7 +1077,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 				// while repository status was loading is the current scope too.
 				a.resetFileHistory()
 				a.fileCommits = nil
-				a.fileHistoryTips = nil
+				a.fileHistoryTips = a.startFileHistoryTips()
 				a.fileHistoryMore = true
 				a.fileHistoryErr = ""
 				a.loadFileHistory()
@@ -1303,11 +1307,12 @@ func (a *app) loadDiff() {
 	a.diffSeq++
 	seq := a.diffSeq
 	repo, path, staged := a.repo, a.selectedPath, a.selectedStaged
+	ignoreWhitespace := a.ignoreDiffWhitespace
 	epoch := a.loadSeq
 	a.diffLoading = true
 	a.diffErr = ""
 	go func() {
-		diff, err := repo.Diff(a.ctx, path, staged)
+		diff, err := repo.DisplayDiff(a.ctx, path, staged, ignoreWhitespace)
 		a.hopToMain(func() {
 			if seq != a.diffSeq || a.loadSeq != epoch || a.repo == nil || a.repo.Root != repo.Root || a.selectedPath != path || a.selectedStaged != staged {
 				return
@@ -1460,6 +1465,7 @@ func (a *app) loadCommitDetail(force bool) {
 	seq := a.commitSeq
 	repo, sha := a.repo, a.selectedSHA
 	root := repo.Root
+	ignoreWhitespace := a.ignoreDiffWhitespace
 	keepPath := a.commitPath
 	if !force && keepPath != "" {
 		keepPath = ""
@@ -1500,7 +1506,7 @@ func (a *app) loadCommitDetail(force bool) {
 		if filesErr == nil {
 			// One command answers for every file, so the details can show the
 			// whole commit's diff instead of waiting for a click per file.
-			diffs, diffErr = repo.ShowAll(a.ctx, sha)
+			diffs, diffErr = repo.DisplayCommitDiff(a.ctx, sha, ignoreWhitespace)
 		}
 		a.hopToMain(func() {
 			if seq != a.commitSeq || a.selectedSHA != sha || a.repo == nil || a.repo.Root != root || a.worktreeSelected {
@@ -1754,23 +1760,25 @@ func (a *app) fetchOnOpen() {
 // be repeated by the timer. The attempt is recorded before it runs, so a
 // failure waits a full interval instead of retrying every tick.
 func (a *app) startFetch(label, success string, prune bool) {
-	if a.repo == nil || a.busy || a.loading || a.tabSnapshotUnavailable() || len(a.remotes) == 0 {
+	mode := gitrepo.FetchDefault
+	if prune {
+		mode = gitrepo.FetchWithPrune
+	}
+	a.fetchRemotes(a.remotes, mode, label, success)
+}
+
+func (a *app) fetchRemotes(targets []gitrepo.Remote, mode gitrepo.FetchMode, label, success string) {
+	if a.repo == nil || a.busy || a.loading || a.tabSnapshotUnavailable() || len(targets) == 0 {
 		return
 	}
-	remotes := append([]gitrepo.Remote(nil), a.remotes...)
+	remotes := append([]gitrepo.Remote(nil), targets...)
 	a.lastAutoFetch = time.Now()
 	a.fetching = true
 	a.performDone(label, success, func(error) {
 		a.fetching = false
 	}, func(ctx context.Context, repo *gitrepo.Repository) error {
 		for _, remote := range remotes {
-			var err error
-			if prune {
-				err = repo.FetchPrune(ctx, remote.Name)
-			} else {
-				err = repo.Fetch(ctx, remote.Name)
-			}
-			if err != nil {
+			if err := repo.FetchRemote(ctx, remote.Name, mode); err != nil {
 				return err
 			}
 		}
@@ -1803,7 +1811,7 @@ func (a *app) watchAutoFetch() {
 // shares fetchOnOpen's guards, so a busy app or a repository without remotes
 // simply waits for the next tick.
 func (a *app) tickAutoFetch() {
-	if a.localWatch.closed || a.repositoryChooserOpen || a.repositoryOpenPending() {
+	if a.localWatch.closed || a.repositoryChooserOpen || a.repositoryOpenPending() || a.hasPendingDialog(toastMain) {
 		return
 	}
 	if !autoFetchDue(a.autoFetch, a.autoFetchEvery, a.lastAutoFetch, time.Now()) {

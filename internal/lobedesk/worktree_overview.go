@@ -59,6 +59,7 @@ func (a *app) loadWorktreeOverview() {
 	a.overviewSeq++
 	seq, repo := a.overviewSeq, a.repo
 	epoch := a.loadSeq
+	ignoreWhitespace := a.ignoreDiffWhitespace
 	root := repo.Root
 	keys := a.overviewKeys()
 	a.overviewRoot = root
@@ -85,7 +86,7 @@ func (a *app) loadWorktreeOverview() {
 			if !ok {
 				return
 			}
-			diff, err := repo.Diff(ctx, key.Path, key.Staged)
+			diff, err := repo.DisplayDiff(ctx, key.Path, key.Staged, ignoreWhitespace)
 			if ctx.Err() != nil {
 				return
 			}

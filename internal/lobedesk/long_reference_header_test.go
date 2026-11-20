@@ -23,9 +23,7 @@ func TestLongCurrentBranchKeepsTitleActionsWithinWindow(t *testing.T) {
 				if !ok || selector.Description != name+" "+status {
 					t.Fatal("branch selector lost complete reference identity or tracking status")
 				}
-				if center := selector.Bounds.X + selector.Bounds.W/2; center < 449.5 || center > 450.5 {
-					t.Fatalf("long branch is not centered: %+v", selector.Bounds)
-				}
+				assertCommandControlBounds(t, tt, a, 900)
 				tracking, shown := tt.Find(status)
 				if !shown || tracking.X+tracking.W > selector.Bounds.X+selector.Bounds.W {
 					t.Fatalf("long branch clipped its tracking status: %+v", tracking)
@@ -42,6 +40,7 @@ func TestLongCurrentBranchKeepsTitleActionsWithinWindow(t *testing.T) {
 func TestLongCurrentBranchBeforeReferencesLoadKeepsActionsWithinWindow(t *testing.T) {
 	a := &app{locale: localeEnglish, repo: &gitrepo.Repository{Root: t.TempDir()}, status: gitrepo.Status{Branch: strings.Repeat("跨平台-descriptive-", 30)}, remotes: []gitrepo.Remote{{Name: "origin"}}}
 	tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); ui.Column(c).Fill().Children(func() { a.titleBar(c) }) }, 980, 44)
+	assertCommandControlBounds(t, tt, a, 980)
 	sync, ok := tt.AccessByRole(ui.RoleMenuButton, a.t("syncMenu"))
 	if !ok || sync.Bounds.X+sync.Bounds.W > 980.5 {
 		t.Fatalf("Sync outside window before references load: %+v", sync.Bounds)

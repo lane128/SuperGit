@@ -18,6 +18,10 @@ type HistoryPage struct {
 // HistoryPage reads a bounded output page. --skip still traverses earlier
 // commits in Git; this bounds response size rather than traversal complexity.
 func (r *Repository) HistoryPage(ctx context.Context, tips []string, offset, limit int) (HistoryPage, error) {
+	return r.historyPage(ctx, tips, offset, limit, nil)
+}
+
+func (r *Repository) historyPage(ctx context.Context, tips []string, offset, limit int, hidden []string) (HistoryPage, error) {
 	if offset < 0 || limit < 1 || limit > 2000 || tips == nil && offset != 0 {
 		return HistoryPage{}, fmt.Errorf("无效的历史分页范围")
 	}
@@ -57,6 +61,7 @@ func (r *Repository) HistoryPage(ctx context.Context, tips []string, offset, lim
 		return page, nil
 	}
 	args := []string{"log", "-z", historyFormat, "--topo-order", "--skip=" + strconv.Itoa(offset), "-n", strconv.Itoa(limit + 1), "--stdin", "--"}
+	args = historyDecorationArgs(args, hidden)
 	out, err := run(ctx, r.Root, strings.Join(tips, "\n")+"\n", args...)
 	if err != nil {
 		return HistoryPage{}, err

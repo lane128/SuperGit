@@ -8,6 +8,12 @@ import (
 
 type locale string
 
+// A typed command name may omit the dialog ellipsis or spell it with three dots.
+func paletteCaptionStem(caption string) string {
+	caption = strings.TrimSuffix(strings.TrimSpace(caption), "…")
+	return strings.ToLower(strings.TrimSuffix(caption, "..."))
+}
+
 const (
 	localeChinese locale = "zh"
 	localeEnglish locale = "en"
@@ -805,6 +811,19 @@ var messages = map[locale]map[string]string{
 		"conflictPreviewHint":             "文本冲突可在这里比较并编辑。不支持的文件请用外部工具保存，再选择「标记为已解决」暂存内容。进行中的操作仍需单独完成。",
 		"conflictDeletionHint":            "此冲突包含删除。选择不存在文件的一侧，会删除并暂存此路径。",
 		"fetch":                           "获取",
+		"paletteFetchCommand":             "获取…",
+		"paletteMergeCommand":             "合并分支…",
+		"palettePreferences":              "偏好设置…",
+		"paletteFetchOptions":             "抓取选项",
+		"paletteMergeBranch":              "合并分支",
+		"paletteMergePreview":             "将 %s 合并到 %s",
+		"paletteMergeNeedBranch":          "请先检出有提交的本地分支。",
+		"fetchOneHint":                    "从一个远端获取变更",
+		"fetchOnePruneHint":               "获取变更并清理已删除的远端分支引用",
+		"fetchOneTagsHint":                "从一个远端获取变更和所有标签",
+		"fetchAllHint":                    "从所有远端获取变更",
+		"fetchAllPruneHint":               "从所有远端获取变更并清理过期引用",
+		"fetchAllTagsHint":                "从所有远端获取变更和所有标签",
 		"fetchAllCommand":                 "获取全部远端",
 		"fetchingNow":                     "正在获取…",
 		"busyNow":                         "正在处理…",
@@ -905,7 +924,7 @@ var messages = map[locale]map[string]string{
 		"stageSelectedFiles":              "Stage %d selected files",
 		"unstageSelectedFiles":            "Unstage %d selected files",
 		"filesSelectedCount":              "%d selected",
-		"quickRepositorySwitchCommand":    "Switch repository…",
+		"quickRepositorySwitchCommand":    "Switch Repository…",
 		"quickRepositorySwitch":           "Switch repository",
 		"quickRepositorySwitchScope":      "Switch to another open or recently used repository.",
 		"quickRepositorySwitchSearch":     "Search repository name or path…",
@@ -921,7 +940,7 @@ var messages = map[locale]map[string]string{
 		"childNavigationNone":             "No child commit found in the current history range.",
 		"childNavigationIncomplete":       "Leave file history and select a commit in ordinary history, then retry.",
 		"quickCheckout":                   "Check out branch",
-		"quickCheckoutCommand":            "Check out branch…",
+		"quickCheckoutCommand":            "Checkout…",
 		"quickCheckoutBack":               "Back",
 		"quickCheckoutCreate":             "Create and check out",
 		"quickCheckoutNameRequired":       "Enter a new local branch name.",
@@ -1541,7 +1560,7 @@ var messages = map[locale]map[string]string{
 		"stashEmpty":                      "This stash has no text changes to show.",
 		"createTag":                       "Create tag…",
 		"createTagTitle":                  "Create tag",
-		"createTagCommand":                "Create lightweight tag at selected commit…",
+		"createTagCommand":                "Create Tag…",
 		"createLightweightTagTitle":       "Create lightweight tag",
 		"createTagStart":                  "Local lightweight tag · Commit %s",
 		"createTagNeedCommit":             "Select a commit in the history list.",
@@ -1583,7 +1602,7 @@ var messages = map[locale]map[string]string{
 		"historyRefCommand":               "Choose history reference range…",
 		"historyRefScope":                 "Only affects history. Does not switch branches.",
 		"historyRefExitFile":              "Exit file history first.",
-		"createBranchCommand":             "New branch from HEAD and switch…",
+		"createBranchCommand":             "Create Branch…",
 		"createBranchSwitch":              "Create and switch",
 		"createBranchStart":               "Start: HEAD · %s",
 		"createBranchChanged":             "Repository state changed. Open New branch again.",
@@ -1660,6 +1679,19 @@ var messages = map[locale]map[string]string{
 		"conflictPreviewHint":             "Compare and edit text conflicts here. For unsupported files, edit and save with an external tool, then use Mark resolved to stage the contents. Finish the pending operation separately.",
 		"conflictDeletionHint":            "This conflict includes a deletion. Choosing a side with no file deletes and stages this path.",
 		"fetch":                           "Fetch",
+		"paletteFetchCommand":             "Fetch…",
+		"paletteMergeCommand":             "Merge Branch…",
+		"palettePreferences":              "Preferences…",
+		"paletteFetchOptions":             "Fetch Options",
+		"paletteMergeBranch":              "Merge Branch",
+		"paletteMergePreview":             "Merge %s into %s",
+		"paletteMergeNeedBranch":          "Check out a local branch with a commit first.",
+		"fetchOneHint":                    "Retrieve changes from one remote",
+		"fetchOnePruneHint":               "Fetch and prune deleted remote-tracking branches",
+		"fetchOneTagsHint":                "Fetch changes and all tags from one remote",
+		"fetchAllHint":                    "Retrieve changes from all remotes",
+		"fetchAllPruneHint":               "Fetch from all remotes and prune deleted branches",
+		"fetchAllTagsHint":                "Fetch changes and all tags from all remotes",
 		"fetchAllCommand":                 "Fetch all remotes",
 		"fetchingNow":                     "Fetching…",
 		"busyNow":                         "Working…",
@@ -1735,7 +1767,7 @@ var messages = map[locale]map[string]string{
 // word in a Chinese string, so a new term is a decision rather than a slip.
 var chineseEnglishTerms = []string{
 	// Products and platforms.
-	"Git", "SuperGit", "Lobe", "MyGo", "Catppuccin", "Frappe", "Macchiato", "Finder", "UI",
+	"Git", "SuperGit", "Sublime", "Text", "LFS", "Flow", "Lobe", "MyGo", "Catppuccin", "Frappe", "Macchiato", "Finder", "UI",
 	// Git objects and flags that the interface names in Git's own words.
 	"Stash", "HEAD", "detached", "SHA", "Ours", "Theirs", "hooks", "force-with-lease", ".gitmodules",
 }

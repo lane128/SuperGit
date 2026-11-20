@@ -13,7 +13,7 @@
 | 功能 | 当前位置 | 已有 ID / 方法 | 可用条件与行为 | 状态 / 空缺 |
 |---|---|---|---|---|
 | 仓库身份、仓库菜单 | 顶栏左侧 | 仓库名菜单；无统一 ID | 已打开仓库时显示身份，保留相关仓库操作 | 侧栏重复身份已移除；不是删除顶栏身份 |
-| 分支选择 | 顶栏左侧 | `branchSelector`；无统一 ID | 结合当前仓库、分支列表及现有切换守卫 | 已有选择入口；系统菜单未接入 |
+| 分支选择 | 顶栏居中命令栏的分支名 | `branch.quickCheckout` | 结合当前仓库、分支列表及现有切换守卫 | 已有选择入口；系统菜单未接入 |
 | ahead / behind | 分支选择旁 | `status.Ahead` / `Behind` | 至少一项非零时显示数量和说明 | 已有只读状态 |
 | 未完成 Git 操作 | 顶栏状态按钮、Commit 操作卡 | `selectWorktree` / Continue / Skip / Abort | 按 merge / rebase / cherry-pick / revert 的现有状态提供动作 | 顶栏跳转到实际操作卡，危险操作保留确认 |
 | Fetch | 顶栏右侧，右键有 prune | `fetchAll` / `fetchPruneAll`；无统一 ID | 有仓库、有 remote，且不在 loading / busy | 使用已有凭据机制；缺少 remote 有禁用说明 |

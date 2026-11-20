@@ -59,6 +59,27 @@ func TestTopCommandPaletteToolbarAndPosition(t *testing.T) {
 		a.registerShortcuts(c)
 		ui.Column(c).Fill().Children(func() { a.titleBar(c); a.commitMessageFields(c); a.commandPickerDialogs(c) })
 	}, 900, 640)
+	assertCommandControlBounds(t, tt, a, 900)
+	branch, _ := tt.AccessByRole(ui.RoleButton, a.t("branches"))
+	tt.ClickAt(branch.Bounds.X+branch.Bounds.W/2, branch.Bounds.Y+branch.Bounds.H/2)
+	tt.Frame()
+	checkout, ok := tt.AccessByRole(ui.RoleDialog, a.t("quickCheckout"))
+	if !ok || !tt.Focused(a.t("filterBranches")) {
+		t.Fatal("branch did not open the focused Checkout picker")
+	}
+	tt.Key(0, ui.KeyBackspace)
+	tt.Frame()
+	tt.Frame()
+	palette, ok := tt.AccessByRole(ui.RoleDialog, a.t("commandPalette"))
+	if !ok || !tt.Focused(a.t("commandPaletteSearch")) || checkout.Bounds.Y != palette.Bounds.Y {
+		t.Fatal("empty Checkout did not return to all commands in place")
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+	tt.Frame()
+	if !tt.Focused(a.t("branches")) {
+		t.Fatal("Escape did not restore focus to the branch opener")
+	}
 	b, ok := tt.AccessByRole(ui.RoleButton, a.t("commandPalette"))
 	if !ok {
 		t.Fatal("toolbar command entry missing")

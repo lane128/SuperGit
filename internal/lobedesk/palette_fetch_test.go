@@ -262,6 +262,22 @@ func TestPaletteFetchOwnedInputs(t *testing.T) {
 				}
 				tt.Frame()
 				tt.Frame()
+				if !a.commandPalette.open || a.busy || a.fetching || !tt.Focused(a.t("paletteFetchOptions")) {
+					t.Fatal("choosing Fetch should focus options before starting Git")
+				}
+				option, ok := tt.AccessByRole(ui.RoleOption, "fetch --all")
+				if !ok {
+					t.Fatal("missing fetch --all")
+				}
+				if activation == "enter" {
+					tt.Type("fetch --all")
+					tt.Frame()
+					tt.Key(0, ui.KeyEnter)
+				} else {
+					tt.ClickAt(option.Bounds.X+option.Bounds.W/2, option.Bounds.Y+option.Bounds.H/2)
+				}
+				tt.Frame()
+				tt.Frame()
 				if a.commandPalette.open || !a.busy || !a.fetching {
 					t.Fatal("Fetch did not start after closing palette")
 				}
@@ -334,6 +350,9 @@ func TestPaletteFetchFailureFeedback(t *testing.T) {
 	tt.Type(entry.ID)
 	tt.Frame()
 	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
+	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
 	for a.busy || a.loading {
 		runContinuation(t, done)
 	}

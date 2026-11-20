@@ -212,27 +212,43 @@ func (r *Repository) deleteRemoteBranch(ctx context.Context, remote, branch stri
 	}
 	return err
 }
+
+type FetchMode uint8
+
+const (
+	FetchDefault FetchMode = iota
+	FetchWithPrune
+	FetchWithTags
+)
+
 func (r *Repository) Fetch(ctx context.Context, remote string) error {
+	return r.FetchRemote(ctx, remote, FetchDefault)
+}
+
+func (r *Repository) FetchPrune(ctx context.Context, remote string) error {
+	return r.FetchRemote(ctx, remote, FetchWithPrune)
+}
+
+func (r *Repository) FetchRemote(ctx context.Context, remote string, mode FetchMode) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 	if err := r.checkRemote(ctx, remote, false); err != nil {
 		return err
 	}
-	_, err := run(ctx, r.Root, "", "fetch", "--no-recurse-submodules", "--", remote)
+	args := []string{"fetch", "--no-recurse-submodules"}
+	switch mode {
+	case FetchWithPrune:
+		args = append(args, "--prune")
+	case FetchWithTags:
+		args = append(args, "--tags")
+	case FetchDefault:
+	default:
+		return errors.New("unknown fetch option")
+	}
+	_, err := run(ctx, r.Root, "", append(args, "--", remote)...)
 	return err
 }
 
-// FetchPrune fetches a remote and drops remote-tracking refs whose branch no
-// longer exists upstream.
-func (r *Repository) FetchPrune(ctx context.Context, remote string) error {
-	r.writeMu.Lock()
-	defer r.writeMu.Unlock()
-	if err := r.checkRemote(ctx, remote, false); err != nil {
-		return err
-	}
-	_, err := run(ctx, r.Root, "", "fetch", "--prune", "--no-recurse-submodules", "--", remote)
-	return err
-}
 func (r *Repository) PullFF(ctx context.Context) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()

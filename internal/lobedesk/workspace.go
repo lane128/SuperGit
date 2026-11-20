@@ -24,64 +24,43 @@ import (
 // row, the commit form, and the cards for an operation in progress. The
 // separate workspace page is gone; its first row lives on in history.
 
-func (a *app) branchSelector(c *ui.Context) {
+func (a *app) branchSelector(c *ui.Context, iconWidth float32) {
 	tk := theme.TokensOf(c)
 	branch := a.status.Branch
 	if branch == "" {
 		branch = a.t("detached")
-		a.statusTag(c, branch, display.TagProps{Variant: display.TagOutlined, Color: display.TagWarning, Size: theme.Small, Round: true})
-		return
 	}
 	caption := branch
 	status := a.branchTrackingStatus()
+	fontSize := scaledFont(12)
+	// Match the leading icon with trailing inset, so a short name is centered
+	// and a long name elides before the complete tracking status.
+	const padding = 4
+	available := toolbarCommandWidth - 2*(iconWidth+padding)
 	if status != "" {
 		status = "(" + status + ")"
 		caption += " " + status
+		statusWidth, _ := c.MeasureText(0, ui.Span{Text: status, Size: fontSize, Weight: 500})
+		available -= statusWidth + 6
 	}
-	windowWidth, _ := c.Size()
-	// Reserve the same space for both sides so the branch button stays centered.
-	limit := min(580, max(150, windowWidth-2*min(240, windowWidth*.32)))
-	fontSize := scaledFont(12)
-	statusWidth, _ := c.MeasureText(0, ui.Span{Text: status, Size: fontSize, Weight: 500})
-	chromeWidth := 20 + scaledFont(24) + 12
-	if status != "" {
-		chromeWidth += statusWidth + 6
-	}
-	name := fitToolbarBranchName(c, branch, fontSize, limit-chromeWidth-2)
-	open := &a.branchOpen
-	drawTrigger := func(trigger ui.Element, disabled bool) {
-		styleWorkbenchButton(c, trigger, buttonNormal, disabled, *open)
-		trigger.Role(ui.RoleButton).Label(a.t("branches")).Description(caption).Tooltip(caption).
-			Shrink(0).MinWidth(0).MaxWidth(limit)
-		trigger.Gap(6).Children(func() {
-			ui.Icon(c, lucide.GitBranch()).FontSize(scaledFont(13)).TextColor(tk.TextSecondary).Shrink(0)
-			ui.Text(c.Key("branch-name"), name).FontSize(fontSize).SingleLine().MinWidth(0).Shrink(1)
-			if status != "" {
-				ui.Text(c.Key("branch-tracking"), status).FontSize(fontSize).TextColor(tk.TextSecondary).SingleLine().Shrink(0)
-			}
-			ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(11)).TextColor(tk.TextTertiary).Shrink(0)
-		})
-	}
-	if len(a.branches) == 0 {
-		*open = false
-		drawTrigger(ui.ButtonBase(c), true)
-		return
-	}
-	items := make([]overlay.MenuItem, 0, len(a.branches))
-	for _, item := range a.branches {
-		items = append(items, overlay.MenuItem{
-			Key:      item.Name,
-			Label:    item.Name,
-			Icon:     lucide.GitBranch(),
-			Extra:    item.Upstream,
-			Disabled: item.Current,
-		})
-	}
-	chosen := overlay.DropdownMenu(c, open, overlay.DropdownMenuProps{Items: items}, func(trigger ui.Element) {
-		drawTrigger(trigger, false)
+	name := fitToolbarBranchName(c, branch, fontSize, available-2)
+	disabled := !a.canOpenQuickCheckout() || a.repositoryOpenPending() || a.historyRefPalette.active
+	button := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, disabled, false).
+		Label(a.t("branches")).Description(caption).
+		Tooltip(caption+"\n"+a.t("quickCheckout")+" ("+shortcutKeys("branch.quickCheckout")+")").
+		Grow(1).Basis(0).MinWidth(0).Padding(0, iconWidth+padding, 0, padding).Radius(0, 6, 6, 0)
+	button.Children(func() {
+		label := ui.Text(c.Key("branch-name"), name).FontSize(fontSize).SingleLine().MinWidth(0).Shrink(1)
+		if a.status.Branch == "" && !disabled {
+			label.TextColor(tk.Warning)
+		}
+		if status != "" {
+			ui.Text(c.Key("branch-tracking"), status).FontSize(fontSize).TextColor(tk.TextSecondary).SingleLine().Shrink(0)
+		}
 	})
-	if chosen != "" {
-		a.switchBranch(chosen)
+	if button.Clicked() {
+		button.Focus()
+		a.openQuickCheckout()
 	}
 }
 

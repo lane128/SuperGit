@@ -89,7 +89,7 @@ func parseStatus(out string) (Status, error) {
 	return s, nil
 }
 func (r *Repository) Branches(ctx context.Context) ([]Branch, error) {
-	out, err := run(ctx, r.Root, "", "for-each-ref", "--format=%(refname:short)%00%(objectname)%00%(upstream:short)%00%(HEAD)%00%(upstream:track,nobracket)%00%(subject)%00%(authorname)%00%(authordate:iso-strict)", "refs/heads")
+	out, err := run(ctx, r.Root, "", "for-each-ref", "--format=%(refname:strip=2)%00%(objectname)%00%(upstream:short)%00%(HEAD)%00%(upstream:track,nobracket)%00%(subject)%00%(authorname)%00%(authordate:iso-strict)", "refs/heads")
 	if err != nil {
 		return nil, err
 	}
