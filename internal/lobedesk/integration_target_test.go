@@ -67,8 +67,8 @@ func TestBranchIntegrationFooterKeepsBothConfirmationTargets(t *testing.T) {
 				if !a.confirm.open {
 					t.Fatal("integration confirmation missing")
 				}
-				if !strings.Contains(a.confirm.message, shortSHA(selected)) {
-					t.Fatal("confirmation does not identify selected commit")
+				if !strings.Contains(a.confirm.message, "topic ("+shortSHA(selected)+")") || !strings.Contains(a.confirm.message, "main") {
+					t.Fatalf("confirmation should name the incoming commit and current branch: %q", a.confirm.message)
 				}
 				if change == "incoming" {
 					run("branch", "-f", "topic", newer)

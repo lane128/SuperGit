@@ -725,7 +725,16 @@ func (a *app) confirmIntegrate(kind, label, sha string) {
 	if label != shortSHA(sha) {
 		label = fmt.Sprintf("%s (%s)", label, shortSHA(sha))
 	}
-	a.askConfirm(a.t(title), a.tf(message, label), a.t(action), false, func() {
+	body := a.tf(message, label)
+	if expected.Branch != "" {
+		switch kind {
+		case "merge":
+			body = a.tf("mergeCommitIntoBranchMessage", label, expected.Branch)
+		case "rebase":
+			body = a.tf("rebaseBranchOntoCommitMessage", expected.Branch, label)
+		}
+	}
+	a.askConfirm(a.t(title), body, a.t(action), false, func() {
 		a.integrate(kind, sha, expected)
 	})
 }
