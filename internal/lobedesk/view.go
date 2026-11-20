@@ -531,9 +531,15 @@ func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state s
 	}
 	row := ui.ButtonBase(c).Label(label).Row().FillWidth().Height(height).Padding(0, 6).Gap(6).
 		AlignItems(ui.Center).Radius(tk.BorderRadius).AccessSelected(selected)
+	color := tk.TextSecondary
+	if current {
+		color = tk.Text
+	}
 	// Selection has its own surface, distinct from the sidebar and hover.
 	if selected {
-		row.Background(a.sidebarSelectionBg(tk))
+		bg, ink := a.sidebarSelectionColors(tk)
+		row.Background(bg)
+		color = ink
 	} else if row.Hovered() {
 		row.Background(tk.FillTertiary)
 	}
@@ -544,10 +550,6 @@ func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state s
 	}
 	if current {
 		row.Description(a.t("current"))
-	}
-	color := tk.TextSecondary
-	if selected || current {
-		color = tk.Text
 	}
 	row.Children(func() {
 		ui.Icon(c, icon).FontSize(scaledFont(10)).TextColor(tk.TextTertiary)
@@ -643,27 +645,16 @@ func (a *app) sidebarItem(c *ui.Context, icon *ui.SVG, page, title, keys string)
 	disabled := a.repo == nil && page != "settings"
 	row := ui.ButtonBase(c).Label(title).Row().FillWidth().Height(32).Padding(0, 8).Gap(8).
 		AlignItems(ui.Center).Radius(tk.BorderRadius).Disabled(disabled)
-	if !disabled {
-		switch {
-		case active:
-			row.Background(a.sidebarSelectionBg(tk))
-		case row.Hovered():
-			row.Background(tk.FillTertiary)
-		}
-	}
 	color := tk.TextSecondary
+	keyGround := tk.BgContainer
 	switch {
 	case disabled:
 		color = tk.TextDisabled
 	case active:
-		color = tk.Text
-	}
-	// The key hint is tertiary text, and the checked-out page's tint is the
-	// darkest surface it can land on; darken it per row so it stays readable.
-	keyGround := tk.BgContainer
-	if active {
-		keyGround = a.sidebarSelectionBg(tk)
-	} else if row.Hovered() {
+		keyGround, color = a.sidebarSelectionColors(tk)
+		row.Background(keyGround)
+	case row.Hovered():
+		row.Background(tk.FillTertiary)
 		keyGround = tk.FillTertiary.Over(tk.BgContainer)
 	}
 	keyInk := tertiaryTextInk(tk, keyGround)

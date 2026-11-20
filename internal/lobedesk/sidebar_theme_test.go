@@ -16,13 +16,20 @@ func TestSidebarThemeKeepsReadableInkAndOtherPalettes(t *testing.T) {
 				a.applyTheme(c)
 				base := *theme.TokensOf(c)
 				tk := a.sidebarTokens(c)
+				selected, ink := a.sidebarSelectionColors(tk)
 				if palette != themePaletteSuperGit {
-					if tk.BgContainer != base.BgContainer || tk.Text != base.Text || tk.TextSecondary != base.TextSecondary || a.sidebarSelectionBg(tk) != selectionBg(&base, base.BgContainer) {
+					if *tk != base || selected != selectionBg(&base, base.BgContainer) || ink != base.Text {
 						t.Errorf("%s/%s sidebar changed existing palette", palette, mode)
 					}
 					return
 				}
-				for _, ground := range []ui.Color{tk.BgContainer, tk.PrimaryBg, tk.FillTertiary, tk.BgElevated} {
+				if ratio := contrastRatio(ink, selected); ratio < 4.5 {
+					t.Errorf("%s selected text contrast %.2f", mode, ratio)
+				}
+				if mode == "light" && (ink != base.PrimaryText || selected != base.PrimaryBg) {
+					t.Error("light sidebar selection should use the window accent")
+				}
+				for _, ground := range []ui.Color{tk.BgContainer, selected, tk.FillTertiary.Over(tk.BgContainer), tk.BgElevated} {
 					for _, ink := range []ui.Color{tk.Text, tk.TextSecondary, tertiaryTextInk(tk, ground), tk.Green} {
 						if ratio := contrastRatio(ink, ground); ratio < 4.5 {
 							t.Errorf("%s sidebar ink %v on %v contrast %.2f", mode, ink, ground, ratio)
@@ -48,7 +55,8 @@ func TestSuperGitSidebarUsesItsOwnSurfaceAndSelection(t *testing.T) {
 					ui.Box(c).Grow(1).Height(620).Background(theme.TokensOf(c).BgContainer)
 				})
 			}, 500, 620)
-			ground, chosen := ui.Hex("#1D2D49"), ui.Hex("#344D79")
+			light := supergitTokens(false)
+			ground, chosen := light.BgLayout, light.PrimaryBg
 			if mode == "dark" {
 				ground, chosen = ui.Hex("#111D34"), ui.Hex("#22385F")
 			}
