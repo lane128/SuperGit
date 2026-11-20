@@ -87,7 +87,7 @@ func TestABranchLineBendsOutOfTheNodeInsteadOfStepping(t *testing.T) {
 		{SHA: "c", Subject: "main", Parents: []string{"d"}},
 		{SHA: "d", Subject: "base", Parents: []string{"e"}},
 	}
-	graph := newCommitGraph(commits, lanePalette)
+	graph := newCommitGraph("", commits, lanePalette)
 	var span commitGraphEdge
 	found := false
 	for edge := range graph.spans(0) {

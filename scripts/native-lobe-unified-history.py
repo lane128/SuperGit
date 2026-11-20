@@ -3,14 +3,12 @@
 
 Asserts four aligned behaviors:
   1. one destination: no Changes / History / Stash page tabs;
-  2. the working tree is a row of the log and the stash entries follow it;
-  3. the checked-out commit is the first vertex of the graph, even when
-     another branch has a newer commit;
-  4. a sidebar tag or stash click locates and selects its row in History
+  2. the working tree, stashes, and commits scroll together;
+  3. a descendant on another branch precedes its checked-out parent;
+  4. sidebar branches, remote branches, tags, and stashes reveal their rows
      without changing the list's ref scope or commit count.
 
-Also records the git commands run while opening, to confirm the working tree
-status is read once. Uses disposable Git data and an isolated HOME; the user's
+Also records the git commands run during the session. Uses disposable Git data and an isolated HOME; the user's
 settings, repositories and installed application are untouched.
 """
 import hashlib
@@ -25,9 +23,11 @@ import time
 project = pathlib.Path(__file__).resolve().parents[1]
 build = project / "build"
 automation = build / "mygo-automation"
-candidates = list(build.glob("supergit-lobe*e2e"))
-if not automation.is_file() or len(candidates) != 1:
-    raise SystemExit("Run make lobe-e2e-build first")
+binary = build / "supergit-e2e"
+if not binary.is_file():
+    binary = build / "supergit-lobe-e2e"
+if not automation.is_file() or not binary.is_file():
+    raise SystemExit("Run make e2e-build first")
 artifacts = pathlib.Path(tempfile.mkdtemp(prefix="lobe-unified-history-", dir=build))
 print(f"Artifacts: {artifacts}", flush=True)
 
@@ -49,20 +49,30 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
     git("add", "--", "base.txt")
     git("commit", "-m", "Root commit")
     root_sha = git("rev-parse", "HEAD").decode().strip()
+    # Place the tag beyond the first 200-commit page and the remote midway
+    # through the history. Fast-import adds the commits in one Git process.
+    stream = []
+    for i in range(240):
+        subject = f"History row {i:03d}"
+        parent = f"from {root_sha}\n" if i == 0 else ""
+        stream.append(f"commit refs/heads/main\ncommitter Fixture <fixture@example.invalid> {1700000000+i} +0000\ndata {len(subject)}\n{subject}\n{parent}\n")
+    git("fast-import", "--quiet", input=("".join(stream) + "done\n").encode())
+    midpoint = git("rev-parse", "HEAD~120").decode().strip()
+    git("update-ref", "refs/remotes/origin/checkpoint", midpoint)
     (repo / "base.txt").write_text("base\nmain tip\n")
     git("commit", "-am", "Main tip")
     head = git("rev-parse", "HEAD").decode().strip()
-    # A branch whose commit is newer than HEAD. A plain newest-first walk
-    # would put it above the current branch; History must not.
+    # The child on future must connect down to its parent on main.
     git("switch", "-c", "future")
     future_env = {**git_env, "GIT_AUTHOR_DATE": "2030-01-01T00:00:00 +0000", "GIT_COMMITTER_DATE": "2030-01-01T00:00:00 +0000"}
     (repo / "future.txt").write_text("future\n")
     git("add", "--", "future.txt")
     subprocess.run(["git", "-C", str(repo), "commit", "-m", "Future side tip"], env=future_env, check=True, capture_output=True)
+    future_sha = git("rev-parse", "HEAD").decode().strip()
     git("switch", "main")
     # A tag older than HEAD gives the sidebar something to locate without
     # changing the list's scope.
-    git("tag", "root-tag", root_sha)
+    git("tag", "-a", "root-tag", "-m", "Root release", root_sha)
     (repo / "base.txt").write_text("base\nmain tip\nstashed\n")
     git("stash", "push", "-m", "Fixture stash")
     (repo / "base.txt").write_text("base\nmain tip\ndirty\n")
@@ -96,7 +106,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
            "SUPERGIT_WINDOW_SIZE": "1280x800", "PATH": f"{shim}:{git_env.get('PATH', '')}"}
     with (artifacts / "app.log").open("w") as log, (artifacts / "automation.log").open("w") as trace:
         started = time.monotonic()
-        app = subprocess.Popen([str(candidates[0]), str(repo)], cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
+        app = subprocess.Popen([str(binary), str(repo)], cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
 
         def auto(*args):
             completed = subprocess.run([str(automation), *args, "--session", session], cwd=project, capture_output=True, text=True, timeout=90)
@@ -125,6 +135,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
                 time.sleep(0.05)
             auto("open", "--socket", str(socket))
             auto("wait", "--text", "Main tip", "--timeout", "30s", "--settle")
+            auto("wait", "--text", "243 commits", "--timeout", "30s", "--settle")
             results["open_seconds"] = round(time.monotonic() - started, 3)
             auto("screenshot", str(artifacts / "history.png"))
 
@@ -144,10 +155,10 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
             assert stash, "the stash is not a row of the log"
             assert head_row, "the checked-out commit is not in the log"
             assert side_row, "the newer side branch is missing from the log"
-            positions = [found.index(e) for e in (worktree[0], stash[0], head_row[0], side_row[0])]
-            assert positions == sorted(positions), f"rows out of order: worktree={positions[0]} stash={positions[1]} head={positions[2]} side={positions[3]}"
-            assert positions[2] < positions[3], "a newer branch is listed above the checked-out commit"
-            results["row_order"] = "worktree, stash, HEAD, newer branch"
+            positions = [found.index(e) for e in (worktree[0], stash[0], side_row[0], head_row[0])]
+            assert positions == sorted(positions), f"rows out of order: worktree={positions[0]} stash={positions[1]} side={positions[2]} head={positions[3]}"
+            assert "checked" in head_row[0][3], "History did not open on the checked-out commit"
+            results["row_order"] = "worktree, stash, child on future, HEAD"
 
             worktree_ref = worktree[0][0]
             auto("focus", worktree_ref, "--settle")
@@ -167,8 +178,10 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
             results["stash_row_opens_details"] = True
 
             # 4. Sidebar refs locate and select; they do not re-scope the list.
-            def count_labels():
-                return sorted(e[2] for e in entries() if re.fullmatch(r"\d+ commits?", e[2]))
+            def wait_for_all_commits():
+                # A repository refresh paints the first 200 rows before the
+                # pinned traversal delivers the remainder of this fixture.
+                auto("wait", "--text", "243 commits", "--timeout", "10s", "--settle")
 
             def sidebar_row(name, role="button"):
                 for e in entries():
@@ -194,20 +207,50 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
             def all_refs_shown():
                 return any(e[2] == "All refs" and "offscreen" not in e[3] for e in entries())
 
-            counts_before = count_labels()
+            def locate_commit(ref, subject, sha, screenshot):
+                control = sidebar_row(ref)
+                assert control, f"missing sidebar ref {ref}"
+                auto("click", control[0], "--settle")
+                auto("wait", "--text", sha, "--timeout", "10s", "--settle")
+                rows = wait_selected(subject)
+                assert any(re.search(rf'\bkey="?{sha}"?(?:\s|$)', r[3]) for r in rows if "selected" in r[3] or "checked" in r[3]), f"{ref} did not reveal {sha}"
+                assert visible(entries(), sha), f"Summary did not show {sha}"
+                wait_for_all_commits()
+                assert all_refs_shown(), f"{ref} changed the History scope"
+                auto("screenshot", str(artifacts / screenshot))
+                results.setdefault("located_commits", {})[ref] = sha
+
+            bounds = re.search(r"bounds=([\d.]+),([\d.]+),([\d.]+)x([\d.]+)", worktree[0][3])
+            x, y, w, h = map(float, bounds.groups())
+            auto("wheel", str(int(x+w/2)), str(int(y+h/2)), "0", "1000", "--precise", "--settle")
+            assert not history_row("1 change") and not history_row("Fixture stash") and not history_row("Main tip")
+            assert any("History row " in row[2] and "offscreen" not in row[3] for row in entries())
+            auto("screenshot", str(artifacts / "history-scrolled.png"))
+            results["changes_scrolls_with_commits"] = True
+
+            wait_for_all_commits()
             assert all_refs_shown(), "the header does not start on All refs"
+            locate_commit("future", "Future side tip", future_sha, "sidebar-branch-locate.png")
+            remote_heading = sidebar_row("Remotes", role="disclosure")
+            assert remote_heading, "missing Remotes heading"
+            auto("click", remote_heading[0], "--settle")
+            locate_commit("origin/checkpoint", "History row 119", midpoint, "sidebar-remote-locate.png")
+
+            # Scope the list to main, then locate a commit reachable only
+            # through future. Both the selection and Summary follow the click.
+            header = next(e for e in visible(entries(), "All refs") if e[1] == "button")
+            auto("click", header[0], "--settle")
+            main_choice = next(e for e in visible(entries(), "main") if e[1] == "listItem")
+            auto("click", main_choice[0], "--settle")
+            auto("wait", "--text", "242 commits", "--timeout", "10s", "--settle")
+            auto("wait", "--text", head, "--timeout", "10s", "--settle")
+            locate_commit("future", "Future side tip", future_sha, "sidebar-cross-scope.png")
+            results["located_outside_main_scope"] = True
+
             tags_heading = sidebar_row("Tags", role="disclosure")
             assert tags_heading, "the sidebar has no Tags group"
             auto("click", tags_heading[0], "--settle")
-            tag_row = sidebar_row("root-tag")
-            assert tag_row, "the tag is not listed in the sidebar"
-            auto("focus", tag_row[0], "--settle")
-            auto("click", tag_row[0], "--settle")
-            root_rows = wait_selected("Root commit")
-            assert root_rows and any("selected" in e[3] or "checked" in e[3] for e in root_rows), f"the tag click did not select its commit: {root_rows}"
-            assert count_labels() == counts_before, f"the tag click changed the commit count: {counts_before} -> {count_labels()}"
-            assert all_refs_shown(), "the tag click replaced All refs with a ref filter"
-            auto("screenshot", str(artifacts / "sidebar-tag-locate.png"))
+            locate_commit("root-tag", "Root commit", root_sha, "sidebar-tag-locate.png")
             results["sidebar_tag_located"] = True
 
             stashes_heading = sidebar_row("Stashes", role="disclosure")
@@ -219,7 +262,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-unified-history.") as director
             auto("click", stash_sidebar[0], "--settle")
             stash_rows = wait_selected("Fixture stash")
             assert stash_rows and any("selected" in e[3] or "checked" in e[3] for e in stash_rows), f"the sidebar stash click did not select its row: {stash_rows}"
-            assert count_labels() == counts_before, "the sidebar stash click changed the commit count"
+            wait_for_all_commits()
             auto("screenshot", str(artifacts / "sidebar-stash-locate.png"))
             results["sidebar_stash_located"] = True
 

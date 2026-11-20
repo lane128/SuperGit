@@ -85,11 +85,13 @@ func TestHistoryGraphPansFromCommitRowsAtMinimumWidth(t *testing.T) {
 	if a.historyScroll.Y <= beforeY || a.historyGraphScroll.X != pan {
 		t.Fatalf("vertical gesture over a commit graph: pan=%g, list Y=%g", a.historyGraphScroll.X, a.historyScroll.Y)
 	}
+	tt.Scroll(x, y, 0, -75)
+	settle()
 	x, y = lane(a.t("noChangesShort"))
 	tt.Scroll(x, y, -75, 0)
 	settle()
 	if a.historyGraphScroll.X != 0 {
-		t.Fatalf("pinned graph row should pan back from the shared offset, got %g", a.historyGraphScroll.X)
+		t.Fatalf("working tree graph row should pan back from the shared offset, got %g", a.historyGraphScroll.X)
 	}
 	tt.SetSize(3008, 640)
 	settle()

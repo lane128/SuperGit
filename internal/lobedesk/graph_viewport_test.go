@@ -42,7 +42,7 @@ func TestGraphViewportKeepsSelectedNodeVisibleWhenNarrowed(t *testing.T) {
 	}
 	nodeVisible := func() bool {
 		graph := a.historyGraph
-		x := graph.worktreeGutter() + laneXGap(0, graph.Rows[selected].Lane, graph.LaneGap()) - a.historyGraphScroll.X
+		x := laneXGap(0, graph.Rows[selected].Lane, graph.LaneGap()) - a.historyGraphScroll.X
 		line, node := a.graphStyle()
 		_, halo := graphNodeRing(node, line)
 		return x >= halo && x+halo <= graph.Width
@@ -128,7 +128,7 @@ func TestHistoryClickRevealsSelectedCommitNode(t *testing.T) {
 	}, 310, int(a.historyRowHeight()*2))
 	nodeVisible := func() bool {
 		graph := a.historyGraph
-		x := graph.worktreeGutter() + laneXGap(0, graph.Rows[selected].Lane, graph.LaneGap()) - a.historyGraphScroll.X
+		x := laneXGap(0, graph.Rows[selected].Lane, graph.LaneGap()) - a.historyGraphScroll.X
 		line, node := a.graphStyle()
 		_, halo := graphNodeRing(node, line)
 		return x >= halo && x+halo <= graph.Width
@@ -172,12 +172,19 @@ func TestHistoryClickRevealsWorktreeNodeAfterGraphPan(t *testing.T) {
 	view.Frame()
 	view.Frame()
 	list := a.historyViewport
-	view.Scroll(list.X+list.W/2, list.Y+list.H/2, 0, 220)
+	row, ok := view.AccessByRole(ui.RoleOption, a.changesLabel(1))
+	if !ok || row.Offscreen {
+		t.Fatal("working tree must start at the top of History")
+	}
+	view.Scroll(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2, 0, 220)
+	view.Frame()
+	row, ok = view.AccessByRole(ui.RoleOption, a.changesLabel(1))
+	if a.historyScroll.Y < row.Bounds.H || ok && !row.Offscreen {
+		t.Fatalf("wheel over Changes should scroll it away with the commits: offset=%g row=%+v", a.historyScroll.Y, row)
+	}
+	view.Scroll(list.X+list.W/2, list.Y+list.H/2, 0, -220)
 	view.Frame()
 	listOffset := a.historyScroll.Y
-	if listOffset <= 0 {
-		t.Fatal("fixture must scroll the commit list")
-	}
 	for range 2 {
 		rail, ok := view.AccessByRole(ui.RoleScroll, a.t("scrollCommitGraph"))
 		if !ok || rail.Offscreen {
@@ -185,13 +192,13 @@ func TestHistoryClickRevealsWorktreeNodeAfterGraphPan(t *testing.T) {
 		}
 		view.Scroll(rail.Bounds.X+rail.Bounds.W/2, rail.Bounds.Y+rail.Bounds.H/2, 250, 0)
 		view.Frame()
-		nodeLeft := a.historyGraph.Worktree.nodeX(a.historyGraph, 0) - 4
+		nodeLeft := laneX(0, 0) - 4
 		if a.historyGraphScroll.X <= nodeLeft {
 			t.Fatal("fixture must pan the worktree square out of view")
 		}
 		row, ok := view.AccessByRole(ui.RoleOption, a.changesLabel(1))
 		if !ok || row.Offscreen {
-			t.Fatal("pinned worktree row is not visible")
+			t.Fatal("worktree row did not return to the top")
 		}
 		view.ClickAt(row.Bounds.X+row.Bounds.W-20, row.Bounds.Y+row.Bounds.H/2)
 		view.Frame()
@@ -220,7 +227,7 @@ func TestHistoryUpRevealsWorktreeNodeAfterGraphPan(t *testing.T) {
 	}
 	view.Scroll(rail.Bounds.X+rail.Bounds.W/2, rail.Bounds.Y+rail.Bounds.H/2, 250, 0)
 	view.Frame()
-	nodeLeft := a.historyGraph.Worktree.nodeX(a.historyGraph, 0) - 4
+	nodeLeft := laneX(0, 0) - 4
 	if a.historyGraphScroll.X <= nodeLeft {
 		t.Fatal("fixture must pan the worktree square out of view")
 	}
@@ -244,7 +251,7 @@ func TestGraphHorizontalTrackShowsOnlyWithOverflow(t *testing.T) {
 			commits := wide
 			tt := ui.NewTester(func(c *ui.Context) {
 				theme.Apply(c)
-				a.historyGraph = newCommitGraph(commits, lanePalette)
+				a.historyGraph = newCommitGraph("", commits, lanePalette)
 				a.historyGraph.Width = 80 + float32(width-980)*.12
 				a.historyWorktreeRow(c, 0, len(commits)+1)
 			}, width, int(rowH)+2)
@@ -333,7 +340,7 @@ func TestGraphViewportPansWithoutMovingTitle(t *testing.T) {
 	tt.Frame()
 	tt.Frame()
 	graph := a.historyGraph
-	x := graph.worktreeGutter() + laneXGap(0, graph.Rows[63].Lane, graph.LaneGap()) - a.historyGraphScroll.X
+	x := laneXGap(0, graph.Rows[63].Lane, graph.LaneGap()) - a.historyGraphScroll.X
 	if x < 0 || x > graph.Width {
 		t.Fatalf("selected node x=%v lies outside graph viewport", x)
 	}

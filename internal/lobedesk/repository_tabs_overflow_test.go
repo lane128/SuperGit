@@ -191,7 +191,7 @@ func TestRepositoryTabsOverflowKeepsLastTabAndOpenReachable(t *testing.T) {
 	}
 	tt.Frame()
 	previousRight := float32(0)
-	for _, label := range []string{b.t("switchRepositoryTab"), b.t("chooseFolder"), b.t("newRepositoryTab")} {
+	for _, label := range []string{b.t("switchRepositoryTab"), b.t("newRepositoryTab")} {
 		node, ok := tt.AccessByRole(ui.RoleButton, label)
 		if !ok || node.Offscreen || node.Disabled || node.Bounds.Y < 0 || node.Bounds.Y+node.Bounds.H > 38 ||
 			node.Bounds.X < previousRight || node.Bounds.X+node.Bounds.W > 560 {

@@ -2,7 +2,6 @@ package gitrepo
 
 import (
 	"context"
-	"slices"
 	"strings"
 )
 
@@ -57,14 +56,7 @@ func (r *Repository) ReadVisibleHistory(ctx context.Context, limit int, hidden [
 			break
 		}
 	}
-	if anchor != "" {
-		index := slices.IndexFunc(result.Commits, func(c Commit) bool { return c.SHA == anchor })
-		if index > 0 {
-			head := result.Commits[index]
-			copy(result.Commits[1:index+1], result.Commits[:index])
-			result.Commits[0] = head
-		}
-	}
+	prioritizeIndependentHead(result.Commits, anchor)
 	return result, nil
 }
 

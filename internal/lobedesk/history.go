@@ -155,27 +155,32 @@ func (a *app) historyPageStale(seq uint64, repo *gitrepo.Repository, reload int)
 // walked again from every ref; otherwise the filter stays. The jump then pages
 // and scrolls until the row shows.
 func (a *app) showCommit(sha string) {
-	if a.historyRef.Kind != "" {
-		found := false
-		for _, commit := range a.historySource() {
-			if commit.SHA == sha {
-				found = true
-				break
-			}
-		}
-		if !found {
-			a.historyRef = historyRef{}
-			// The pinned tip belongs to the ref that just gave way; a later
-			// reload would otherwise keep paging that ref's walk behind a header
-			// that says "all refs".
-			a.historyPinned = ""
-			a.pendingJumpSHA = sha
-			a.reloadHistoryFromTip("")
-			a.invalidate()
-			return
-		}
+	a.showCommitKeeping(sha, false)
+}
+
+func (a *app) showCommitKeeping(sha string, keepSearch bool) {
+	if a.repo == nil || sha == "" {
+		return
 	}
-	a.jumpToCommit(sha)
+	if !keepSearch {
+		a.historyQuery = ""
+	}
+	// While a replacement walk is starting, its old rows cannot establish
+	// membership. Only the pinned tip is known to be in the new scope.
+	if a.historyRef.Kind != "" && sha != a.historyPinned && (a.historyReloading || !historyLists(a.historySource(), sha)) {
+		a.historyRef = historyRef{}
+		a.historyPinned = ""
+		a.pendingJumpSHA = sha
+		a.reloadHistoryFromTip("")
+		a.invalidate()
+		return
+	}
+	if a.historyReloading {
+		a.pendingJumpSHA = sha
+		a.invalidate()
+		return
+	}
+	a.jumpToCommitKeeping(sha, keepSearch)
 }
 
 // jumpToCommit selects a commit in the history list, loading older pages
@@ -199,15 +204,7 @@ func (a *app) jumpToCommitKeeping(sha string, keepSearch bool) {
 		a.historyQuery = ""
 	}
 	a.historyRowsSet = false
-	find := func(commits []gitrepo.Commit) bool {
-		for _, commit := range commits {
-			if commit.SHA == sha {
-				return true
-			}
-		}
-		return false
-	}
-	if a.fileFilter != "" && !find(a.fileCommits) {
+	if a.fileFilter != "" && !historyLists(a.fileCommits, sha) {
 		// A parent of a file's commit may be older than the file itself, so
 		// the jump continues in the full history.
 		a.resetFileHistory()
@@ -217,7 +214,7 @@ func (a *app) jumpToCommitKeeping(sha string, keepSearch bool) {
 		a.resetHistoryTraversal()
 		a.loadMoreHistory()
 	}
-	if find(a.historySource()) {
+	if historyLists(a.historySource(), sha) {
 		a.pendingJumpSHA = ""
 		a.revealSelection = true
 		a.selectJumpCommit(sha)
@@ -328,7 +325,7 @@ func (a *app) historyPageAtWidth(c *ui.Context, width float32) {
 	// Reconcile only once the selected row is loaded or the walk is complete.
 	// A chosen stash is the details' subject: picking a commit for it would
 	// replace the stash's patch with a commit nobody chose.
-	if a.selectedStash == "" && !a.worktreeSelected && (a.selectedSHA == "" || a.hasSelectedIn(source) || !more) {
+	if !a.historyReloading && a.pendingJumpSHA == "" && a.selectedStash == "" && !a.worktreeSelected && (a.selectedSHA == "" || a.hasSelectedIn(source) || !more) {
 		if sha := historySelection(commits, a.selectedSHA); sha != "" && sha != a.selectedSHA {
 			a.selectCommit(sha)
 		}
@@ -527,78 +524,43 @@ func (a *app) commitList(c *ui.Context) {
 			case historyListNoFileHistory:
 				a.diffPlaceholder(c, lucide.FileClock(), a.t("noFileHistory"))
 			default:
-				// The working tree's row stays at the top of every list state:
-				// it is where a new commit comes from, and a search that hides
-				// every commit, or a repository with no commits yet, must not
-				// take the commit box away with it. It sits in the same list
-				// role as the commits, so it is read as the list's first row.
-				ui.Column(c).Fill().Role(ui.RoleList).Children(func() {
-					// The pinned row is inset like the rows the scroll area
-					// holds, so its tint lines up with theirs. Stashes follow
-					// it inside the scroll area, above the commits, the way
-					// Sublime Merge lists them in the log.
-					ui.Column(c).FillWidth().PaddingX(6).Children(func() {
-						a.historyWorktreeRow(c, 0, len(a.stashes)+len(commits)+1)
-					})
-					// The stashes sit under the working tree's row and above the
-					// commits, as Sublime Merge lists them in the log. Their
-					// column is capped so a long stash list cannot eat the
-					// history; the box scrolls on its own. A failed read takes
-					// the column's place with the way back, because an error
-					// peeled off elsewhere would leave the log looking as if the
-					// repository had no stashes.
-					if a.stashesErr != "" {
-						ui.Column(c).FillWidth().PaddingX(18).PaddingY(8).Gap(4).Shrink(0).Children(func() {
-							display.Text(c, a.stashesLabel(0, true), display.TextProps{Strong: true, FontSize: scaledFont(11)})
-							display.Text(c, a.stashesErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(11), Rows: 2})
-							if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
-								a.reload()
+				scroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.historyScroll}, func() {
+					ui.Column(c).FillWidth().Padding(historyListPadding).Role(ui.RoleList).Children(func() {
+						total := 1 + len(a.stashes) + len(commits)
+						a.historyWorktreeRow(c, 0, total)
+						a.historyStashExtent = a.historyStashRows(c, total)
+						switch state {
+						case historyListEmpty:
+							a.diffPlaceholder(c, lucide.History(), a.t("noHistory"), a.t("noHistoryHint"))
+						case historyListNoMatch:
+							message := "searchNoMatch"
+							partial := a.historyMore
+							if a.fileFilter != "" {
+								partial = a.fileHistoryMore || a.fileHistoryLoading || a.fileHistoryPaused || a.fileHistoryErr != ""
 							}
-						})
-					} else if len(a.stashes) > 0 {
-						ui.Column(c).FillWidth().PaddingX(6).Shrink(0).Children(func() {
-							layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.stashesScroll}, func() {
-								ui.Column(c).FillWidth().Children(func() {
-									for i, stash := range a.stashes {
-										a.stashRow(c, stash, i+2, len(a.stashes)+len(commits)+1)
-									}
-								})
-							}).MaxHeight(historyStashRowsShown * historyStashRowMin)
-						})
-					}
-					if state == historyListEmpty {
-						a.diffPlaceholder(c, lucide.History(), a.t("noHistory"), a.t("noHistoryHint"))
-					} else if state == historyListNoMatch {
-						message := "searchNoMatch"
-						partial := a.historyMore
-						if a.fileFilter != "" {
-							partial = a.fileHistoryMore || a.fileHistoryLoading || a.fileHistoryPaused || a.fileHistoryErr != ""
-						}
-						if partial {
-							message = "searchNoMatchPartial"
-						}
-						a.diffPlaceholder(c, lucide.SearchSlash(), a.t(message))
-					} else {
-						scroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.historyScroll}, func() {
-							// No gap between rows: the lane lines are drawn row by row,
-							// and a gap would cut them into dashes.
-							ui.Column(c).FillWidth().Padding(historyListPadding).Gap(0).Children(func() {
-								heights := make([]float32, len(commits))
-								reveal := -1
-								for i := range commits {
-									heights[i] = a.historyRowHeight()
-									if a.revealSelection && commits[i].SHA == a.selectedSHA {
-										reveal = i
-									}
+							if partial {
+								message = "searchNoMatchPartial"
+							}
+							a.diffPlaceholder(c, lucide.SearchSlash(), a.t(message))
+						default:
+							heights := make([]float32, len(commits))
+							// A click can rebuild the view before layout applies
+							// ScrollIntoView. Keep its target in the virtual list
+							// across those passes, even after the request is queued.
+							selected := -1
+							for i := range commits {
+								heights[i] = a.historyRowHeight()
+								if commits[i].SHA == a.selectedSHA {
+									selected = i
 								}
-								virtualPatchRows(c, a.historyViewport, &a.historyScroll, heights, reveal, func(rowContext *ui.Context, i int) {
-									a.commitRow(rowContext.Key(commits[i].SHA), commits[i], i, len(a.stashes)+1, len(a.stashes)+len(commits)+1, graph)
-								})
+							}
+							virtualPatchRows(c, a.historyViewport, &a.historyScroll, heights, selected, func(rowContext *ui.Context, i int) {
+								a.commitRow(rowContext.Key(commits[i].SHA), commits[i], i, len(a.stashes)+1, total, graph)
 							})
-						}).Grow(1).Basis(0).MinHeight(0)
-						a.historyViewport = scroll.Bounds()
-					}
-				})
+						}
+					})
+				}).Grow(1).Basis(0).MinHeight(0)
+				a.historyViewport = scroll.Bounds()
 			}
 			// Keep progress, cancellation and retry outside the scroll area
 			// so they remain reachable throughout a partial traversal.
@@ -610,6 +572,33 @@ func (a *app) commitList(c *ui.Context) {
 			}
 		})
 	})
+}
+
+// Stash rows and their retry banner have intrinsic heights. Keep their
+// measured extent so merge folding can anchor the visible commit by index.
+func (a *app) historyStashRows(c *ui.Context, total int) float32 {
+	if a.stashesErr == "" && len(a.stashes) == 0 {
+		return 0
+	}
+	group := ui.Column(c).FillWidth().Shrink(0)
+	if a.stashesErr != "" {
+		group.PaddingX(12).PaddingY(8).Gap(4)
+		a.continueWorktreeThrough(group, theme.TokensOf(c), 12, 8)
+		group.Children(func() {
+			display.Text(c, a.stashesLabel(0, true), display.TextProps{Strong: true, FontSize: scaledFont(11)})
+			display.Text(c, a.stashesErr, display.TextProps{Type: display.TextDanger, FontSize: scaledFont(11), Rows: 2})
+			if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
+				a.reload()
+			}
+		})
+	} else {
+		group.Children(func() {
+			for i, stash := range a.stashes {
+				a.stashRow(c.Key(stash.SHA), stash, i+2, total)
+			}
+		})
+	}
+	return group.Bounds().H
 }
 
 func (a *app) showFileHistory(path string) { a.showFileHistoryAt(path, "") }
@@ -839,10 +828,6 @@ const (
 	historyListPadding = 6
 	historyRowPadding  = 8
 	historyRowGraphGap = 4
-	// historyStashRowsShown caps the stash column before it scrolls on its
-	// own, so a long stash list cannot take the commits' room.
-	historyStashRowsShown = 4
-	historyStashRowMin    = 46
 )
 
 // lead is how many rows sit above the commits in the same list -- the working
@@ -893,7 +878,7 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 				lane.HandleInput(a.panHistoryGraph)
 			}
 			if folds := &a.historyMergeFolds; folds.active && folds.branches[commit.SHA] && index < len(graph.Rows) {
-				x := laneXGap(0, graph.Rows[index].Lane, graph.LaneGap()) + graph.worktreeGutter() - a.historyGraphScroll.X
+				x := laneXGap(0, graph.Rows[index].Lane, graph.LaneGap()) - a.historyGraphScroll.X
 				if x >= historyMergeDisclosureInset && x <= width-historyMergeDisclosureInset {
 					lane.Children(func() {
 						a.historyMergeDisclosure(c, commit.SHA, x, rowHeight, rowBg, graphInk(tk, graph.LaneColor(graph.Rows[index].Color)))
@@ -907,13 +892,7 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 				p.Clip(r, 0, func() {
 					center := r.Y + r.H/2
 					r.X -= a.historyGraphScroll.X
-					x0 := int(r.X + graph.worktreeGutter())
-					if graph.Worktree != nil {
-						sourceY := a.worktreeGraphBounds.Y + a.worktreeGraphBounds.H/2
-						points := graph.Worktree.rowPoints(graph, index, r, sourceY)
-						line, _ := a.graphStyle()
-						strokeWorktreeDash(p, points, line, graphInk(tk, graph.LaneColor(graph.Worktree.Color)))
-					}
+					x0 := int(r.X)
 					gap := graph.LaneGap()
 					rowTop, rowBottom := r.Y, r.Y+r.H
 					graphRow := graph.Rows[index]
@@ -929,6 +908,9 @@ func (a *app) commitRow(c *ui.Context, commit gitrepo.Commit, index, lead, total
 						if len(points) > 0 {
 							p.StrokePolyline(points, line, col)
 						}
+					}
+					if link := graph.Worktree; link != nil {
+						a.strokeWorktreeDash(p, laneX(x0, 0), r.Y, link.dashBottom(index, r), line, graphInk(tk, graph.LaneColor(link.Color)))
 					}
 					x := laneXGap(x0, graphRow.Lane, gap)
 					col := graphInk(tk, graph.LaneColor(graphRow.Color))
@@ -1160,8 +1142,8 @@ func (a *app) panHistoryGraph(ev ui.InputEvent) bool {
 
 // worktreeRow is the list's first row: the working tree itself. Sublime Merge
 // keeps it above the commits so the changes a new commit would take are one
-// row from the history they would extend. Dirty worktrees use a temporary
-// dashed lane; real commits and their graph rows remain unchanged.
+// row from the history they would extend. Dirty worktrees use a dashed
+// connection to the checked-out commit in the first graph lane.
 func (a *app) historyWorktreeRow(c *ui.Context, index, total int) {
 	tk := theme.TokensOf(c)
 	selected := a.worktreeSelected
@@ -1254,7 +1236,7 @@ func (a *app) historyWorktreeRow(c *ui.Context, index, total int) {
 		if graph := a.historyGraph; graph != nil && graph.Worktree != nil {
 			// The square sits near the left edge. Move back only if it is clipped.
 			const margin = 5 // Four-DIP half-width plus raster clearance.
-			left := max(float32(0), graph.Worktree.nodeX(graph, 0)-margin)
+			left := max(float32(0), laneX(0, 0)-margin)
 			if a.historyGraphScroll.X > left {
 				a.historyGraphScroll.X = left
 				c.After(0)

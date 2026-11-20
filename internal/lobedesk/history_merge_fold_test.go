@@ -95,13 +95,15 @@ func TestHistoryMergeDefaultFoldPreservesLastPageScrollAnchor(t *testing.T) {
 	a := &app{showGraph: true, historyMore: true, commits: mergeHistoryFixture(), selectedSHA: "main"}
 	rowHeight := a.historyRowHeight()
 	// Start partway down the shared base, below two rows that will fold.
-	a.historyScroll.Y = historyListPadding + 4*rowHeight + 6
+	a.historyStashExtent = 92 // Two stash rows ahead of the commits.
+	firstCommit := historyListPadding + rowHeight + a.historyStashExtent
+	a.historyScroll.Y = firstCommit + 4*rowHeight + 6
 	a.projectHistoryMerges(a.commits)
 	a.historyMore = false
 	if rows := a.projectHistoryMerges(a.commits); len(rows) != 3 {
 		t.Fatalf("expected the complete history to fold the merged side: %+v", rows)
 	}
-	if want := historyListPadding + 2*rowHeight + 6; a.historyScroll.Y != want {
+	if want := firstCommit + 2*rowHeight + 6; a.historyScroll.Y != want {
 		t.Fatalf("scroll should stay on the shared base: got %v, want %v", a.historyScroll.Y, want)
 	}
 }

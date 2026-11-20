@@ -487,18 +487,6 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 				c.After(0)
 			}
 		}
-		if a.repo != nil {
-			label := a.t("chooseFolder")
-			open := styleWorkbenchButton(c, ui.ButtonBase(c.Key("open-repository")), buttonNormal, a.repositoryChooserBlocked(), false).
-				Label(label).Shrink(0)
-			open.Children(func() {
-				ui.Icon(c, lucide.FolderOpen()).FontSize(scaledFont(14))
-				ui.Text(c, label).FontSize(scaledFont(12)).SingleLine()
-			})
-			if open.Clicked() {
-				a.chooseRepository()
-			}
-		}
 		label := a.t("newRepositoryTab")
 		button := styleWorkbenchButton(c, ui.ButtonBase(c.Key("new-repository-tab")), buttonNormal, blocked, false).
 			Label(label).Shrink(0)

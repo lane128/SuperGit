@@ -13,7 +13,7 @@ func TestGraphNodeShapesFollowLoadedDAGAndActualHEAD(t *testing.T) {
 		{SHA: "right", Parents: []string{"fork"}},
 		{SHA: "fork", Parents: []string{"outside"}},
 	}
-	graph := newCommitGraph(commits, nil)
+	graph := newCommitGraph("", commits, nil)
 	for i, want := range []string{"merge", "dot", "dot", "fork"} {
 		if got := graphNodeShape(commits[i], "outside", graph.Rows[i]); got != want {
 			t.Errorf("%s: shape=%s want %s", commits[i].SHA, got, want)
@@ -28,11 +28,11 @@ func TestGraphNodeShapesFollowLoadedDAGAndActualHEAD(t *testing.T) {
 	if !graph.Rows[3].Boundary {
 		t.Fatal("fork shape removed the unloaded-parent boundary")
 	}
-	filtered := newCommitGraph([]gitrepo.Commit{commits[1], commits[3]}, nil)
+	filtered := newCommitGraph("", []gitrepo.Commit{commits[1], commits[3]}, nil)
 	if got := graphNodeShape(commits[3], "outside", filtered.Rows[1]); got != "dot" {
 		t.Fatalf("filtered graph invented an unloaded second child: %s", got)
 	}
-	if got := graphNodeShape(commits[0], "", newCommitGraph(commits[:1], nil).Rows[0]); got != "merge" {
+	if got := graphNodeShape(commits[0], "", newCommitGraph("", commits[:1], nil).Rows[0]); got != "merge" {
 		t.Fatalf("unloaded merge parents erased known merge identity: %s", got)
 	}
 }
@@ -42,7 +42,7 @@ func TestGraphForkNeedsDistinctLoadedChildren(t *testing.T) {
 		{SHA: "child", Parents: []string{"parent", "parent"}},
 		{SHA: "parent"},
 	}
-	graph := newCommitGraph(commits, nil)
+	graph := newCommitGraph("", commits, nil)
 	if got := graphNodeShape(commits[1], "", graph.Rows[1]); got != "dot" {
 		t.Fatalf("duplicate parent headers invented a fork: %s", got)
 	}

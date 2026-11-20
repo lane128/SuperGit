@@ -246,33 +246,46 @@ func TestHeadSubjectOfAnEmptyRepositoryIsEmpty(t *testing.T) {
 	}
 }
 
-// The default list anchors on the checked-out branch: its tip is the first
-// row, so its node sits at the top of the graph instead of being pushed down
-// by a newer branch. Nothing is shown above it.
-func TestHistoryPageAnchorsTheCheckedOutCommitAtTheTop(t *testing.T) {
+// Two branches have commits based directly on main. Moving main ahead of
+// either child would turn its real parent edge into a dashed boundary.
+func TestHistoryKeepsChildrenAboveCheckedOutParent(t *testing.T) {
 	dir := fixture(t)
 	seed(t, dir)
-	git(t, dir, "checkout", "-q", "-b", "ahead")
-	write(t, dir, "ahead.txt", "newer\n")
-	git(t, dir, "add", "--", "ahead.txt")
-	git(t, dir, "commit", "-m", "newer branch commit")
-	git(t, dir, "checkout", "-q", "main")
 	head := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+	for _, branch := range []string{"future", "feature"} {
+		git(t, dir, "switch", "-c", branch, "main")
+		git(t, dir, "commit", "--allow-empty", "-m", branch)
+	}
+	git(t, dir, "switch", "main")
+	git(t, dir, "branch", "spare")
 	r := openTest(t, dir)
-	page, err := r.HistoryPage(context.Background(), nil, 0, 10)
-	if err != nil {
-		t.Fatal(err)
+	for _, hidden := range [][]string{nil, {"refs/heads/spare"}} {
+		page, err := r.ReadVisibleHistory(context.Background(), 10, hidden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Commits) != 3 || page.Commits[2].SHA != head {
+			t.Fatalf("hidden=%v: expected both children above HEAD: %+v", hidden, page.Commits)
+		}
+		for _, child := range page.Commits[:2] {
+			if len(child.Parents) != 1 || child.Parents[0] != head {
+				t.Fatalf("wrong edge from %s to %v", child.SHA, child.Parents)
+			}
+		}
 	}
-	if page.Tips[0] != head {
-		t.Fatalf("tips do not start with HEAD: %v (HEAD %s)", page.Tips, head)
-	}
-	if len(page.Commits) == 0 || page.Commits[0].SHA != head {
-		t.Fatalf("first row is %v, want the checked-out commit %s", page.Commits, head)
-	}
-	if got := len(page.Commits); got != 2 {
-		t.Fatalf("anchoring lost or duplicated rows: %d", got)
-	}
-	if page.Commits[1].Subject != "newer branch commit" {
-		t.Fatalf("other refs must follow below the anchor: %#v", page.Commits[1])
+}
+
+func TestHistoryPrioritizesIndependentHeadOnly(t *testing.T) {
+	for _, tc := range []struct {
+		rows  []Commit
+		first string
+	}{
+		{[]Commit{{SHA: "side", Parents: []string{"base"}}, {SHA: "head", Parents: []string{"base"}}, {SHA: "base"}}, "head"},
+		{[]Commit{{SHA: "merge", Parents: []string{"base", "head"}}, {SHA: "head"}, {SHA: "base"}}, "merge"},
+	} {
+		prioritizeIndependentHead(tc.rows, "head")
+		if tc.rows[0].SHA != tc.first {
+			t.Fatalf("rows=%v; expected %s first", tc.rows, tc.first)
+		}
 	}
 }

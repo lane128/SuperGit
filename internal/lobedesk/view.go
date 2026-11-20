@@ -344,12 +344,7 @@ func (a *app) sidebar(c *ui.Context) float32 {
 					})
 				}).Grow(1).Basis(0).MinHeight(0)
 			}
-			// The bottom rows sit at the foot of the column, away from the
-			// pages: settings is not a place in the repository.
-			ui.Column(c).FillWidth().Gap(1).Children(func() {
-				a.sidebarItem(c, lucide.Settings(), "settings", a.t("settings"), shortcutKeys("window.settings"))
-				a.sidebarOpenRow(c)
-			})
+			a.sidebarItem(c, lucide.Settings(), "settings", a.t("settings"), shortcutKeys("window.settings"))
 		})
 	return width
 }
@@ -682,30 +677,6 @@ func (a *app) sidebarItem(c *ui.Context, icon *ui.SVG, page, title, keys string)
 	}
 }
 
-// sidebarOpenRow opens a repository from the sidebar, where the rail kept the
-// same action at its foot.
-func (a *app) sidebarOpenRow(c *ui.Context) {
-	tk := a.sidebarTokens(c)
-	blocked := a.repositoryChooserBlocked()
-	row := ui.ButtonBase(c).Label(a.t("openRepo")).Row().FillWidth().Height(32).Padding(0, 8).Gap(8).
-		AlignItems(ui.Center).Radius(tk.BorderRadius).Disabled(blocked)
-	color := tk.TextSecondary
-	if blocked {
-		color = tk.TextDisabled
-	}
-	if row.Hovered() && !blocked {
-		row.Background(tk.FillTertiary)
-	}
-	row.Children(func() {
-		ui.Icon(c, lucide.FolderOpen()).FontSize(scaledFont(15)).TextColor(color)
-		display.Text(c, a.t("openRepo"), display.TextProps{FontSize: scaledFont(12)}).
-			TextColor(color).SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
-	})
-	if row.Clicked() {
-		a.chooseRepository()
-	}
-}
-
 // openPage moves the window to a place. History is the window: its list holds
 // the working tree's row and the stash entries, so "changes" and "stash" are
 // selections in that list rather than pages of their own.
@@ -746,10 +717,14 @@ func (a *app) openPage(page string) {
 		a.historyRefQuery = ""
 	}
 	if wantWorktree {
+		a.revealSelection = true
 		a.openChanges()
 	}
-	if wantStash && a.selectedStash == "" && len(a.stashes) > 0 && a.stashesErr == "" {
-		a.selectStash(a.stashes[0].SHA)
+	if wantStash && len(a.stashes) > 0 && a.stashesErr == "" {
+		a.revealSelection = true
+		if a.selectedStash == "" {
+			a.selectStash(a.stashes[0].SHA)
+		}
 	}
 	a.invalidate()
 }
@@ -803,7 +778,8 @@ func (a *app) loadingPage(c *ui.Context) {
 func (a *app) emptyPage(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	zone := ui.Column(c).Fill().Center().Gap(12).Padding(32)
-	if !a.repositoryChooserBlocked() {
+	blocked := a.repositoryChooserBlocked()
+	if !blocked {
 		if zone.FileDragOver() {
 			zone.Draw(func(p *ui.Painter, r ui.Rect) {
 				const inset = 8
@@ -830,7 +806,7 @@ func (a *app) emptyPage(c *ui.Context) {
 			display.Text(c, a.loadErr, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 3}).
 				MaxWidth(520).TextAlign(ui.Center)
 		}
-		choose := workbenchButton(c, a.t("chooseFolder"), buttonPrimary, false)
+		choose := workbenchButton(c, a.t("chooseFolder"), buttonPrimary, blocked)
 		if choose.Clicked() {
 			a.chooseRepository()
 		}

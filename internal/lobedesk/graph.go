@@ -226,7 +226,7 @@ func (g *commitGraph) RowLaneColor(row int) (ui.Color, bool) {
 	return g.LaneColor(g.Rows[row].Color), true
 }
 
-func newCommitGraph(commits []gitrepo.Commit, palette []ui.Color) *commitGraph {
+func newCommitGraph(head string, commits []gitrepo.Commit, palette []ui.Color) *commitGraph {
 	graph := &commitGraph{Palette: palette, RefLanes: map[string]int{}}
 	if len(palette) == 0 {
 		graph.Palette = lanePalette
@@ -252,22 +252,16 @@ func newCommitGraph(commits []gitrepo.Commit, palette []ui.Color) *commitGraph {
 	graph.Rows = make([]commitGraphRow, len(commits))
 	var lanes []string
 	var colors []int
-	find := func(sha string) int {
-		for i, value := range lanes {
-			if value == sha {
+	find := func(sha string, start int) int {
+		for i := start; i < len(lanes); i++ {
+			if lanes[i] == sha {
 				return i
 			}
 		}
 		return -1
 	}
-	allocate := func(sha, seed string) int {
-		lane := -1
-		for i, value := range lanes {
-			if value == "" {
-				lane = i
-				break
-			}
-		}
+	allocate := func(sha, seed string, start int) int {
+		lane := find("", start)
 		if lane < 0 {
 			lanes = append(lanes, "")
 			colors = append(colors, 0)
@@ -293,14 +287,27 @@ func newCommitGraph(commits []gitrepo.Commit, palette []ui.Color) *commitGraph {
 		}
 		lanes[lane] = sha
 		colors[lane] = color
-		graph.RefLanes[seed] = color
+		if _, exists := graph.RefLanes[seed]; !exists {
+			graph.RefLanes[seed] = color
+		}
 		return lane
+	}
+	// Reserve the first column before any child can claim it. Each first
+	// parent inherits this lane, even when several tips converge on it.
+	firstSideLane := 0
+	if head != "" {
+		seed := head
+		if i, ok := positions[head]; ok {
+			seed = laneSeed(commits[i])
+		}
+		allocate(head, seed, 0)
+		firstSideLane = 1
 	}
 	var edges []commitGraphEdge
 	for i, commit := range commits {
-		lane := find(commit.SHA)
+		lane := find(commit.SHA, 0)
 		if lane < 0 {
-			lane = allocate(commit.SHA, laneSeed(commit))
+			lane = allocate(commit.SHA, laneSeed(commit), firstSideLane)
 		}
 		row := commitGraphRow{Lane: lane, Color: colors[lane], Fork: children[i] > 1}
 		for j, value := range lanes {
@@ -316,14 +323,17 @@ func newCommitGraph(commits []gitrepo.Commit, palette []ui.Color) *commitGraph {
 				row.Boundary = true
 				continue
 			}
-			via := find(parent)
+			via := lane
 			merge := parentIndex > 0
-			switch {
-			case !merge:
-				via = lane
+			if merge {
+				// A merge side leaves to the right. It rejoins at the actual
+				// parent row, even when that parent is HEAD itself.
+				via = find(parent, lane+1)
+				if via < 0 {
+					via = allocate(parent, laneSeed(commits[end]), lane+1)
+				}
+			} else {
 				lanes[via] = parent
-			case via < 0:
-				via = allocate(parent, laneSeed(commits[end]))
 			}
 			edges = append(edges, commitGraphEdge{
 				Start: i, End: end, SourceLane: lane, ViaLane: via, Color: colors[via], Merge: merge,
@@ -396,7 +406,7 @@ func (g *commitGraph) visitSpans(row, lo, hi int, yield func(commitGraphEdge) bo
 const graphLaneGapMin float32 = 15
 
 func (g *commitGraph) contentWidth() float32 {
-	return g.worktreeGutter() + 16 + float32(g.Lanes)*g.LaneGap()
+	return 16 + float32(g.Lanes)*g.LaneGap()
 }
 
 // FitWidth caps the viewport while retaining readable lane geometry.
@@ -404,19 +414,16 @@ func (g *commitGraph) FitWidth(maxWidth float32) {
 	if maxWidth <= 0 || g.Lanes <= 0 {
 		return
 	}
-	budget := maxWidth
-	gutter := g.worktreeGutter()
-	maxWidth -= gutter
 	natural := graphWidth(g.Lanes)
 	if natural <= maxWidth {
-		g.Width = natural + gutter
+		g.Width = natural
 		g.Gap = graphLaneGap
 		return
 	}
 	gap := (maxWidth - 16) / float32(g.Lanes)
 	gap = max(graphLaneGapMin, min(graphLaneGap, gap))
 	g.Gap = gap
-	g.Width = min(budget, g.contentWidth())
+	g.Width = min(maxWidth, g.contentWidth())
 }
 
 // LaneGap is the distance between lane centres this graph is drawn with.

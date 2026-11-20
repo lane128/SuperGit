@@ -142,16 +142,16 @@ def run(bundle, driver, artifacts, scratch):
         body = one(snapshot(), 'textField', 'Description (optional)').split()[0]
         auto('fill', body, 'Alpha fixture body', '--settle')
         loaded = snapshot()
-        opener = one(loaded, 'button', 'Open Repository…')
-        assert ' disabled' not in opener and ' offscreen' not in opener, opener
-        assert ' key=open-repository ' in opener, opener
+        for label in ('Open Repository…', 'Open a Git repository'):
+            assert not control(loaded, 'button', label), f'Duplicate open button in workbench: {label}'
         branch = one(loaded, 'button', 'Branches')
         x, _, width, _ = rect(branch)
         window_width = int(test_env['SUPERGIT_WINDOW_SIZE'].split('x')[0])
-        assert abs(x + width / 2 - window_width / 2) <= 1, branch
+        left, _, _, _ = rect(one(loaded, 'button', 'Command palette'))
+        assert abs((left + x + width) / 2 - window_width / 2) <= 1, branch
         auto('screenshot', artifacts / 'workbench.png')
         click('button', 'Branches')
-        assert ' expanded ' in one(snapshot(), 'button', 'Branches')
+        one(snapshot(), 'textField', 'Filter branches')
         auto('key', 'Escape', '--settle')
         click('button', 'New Tab')
         welcome = selected('Welcome')

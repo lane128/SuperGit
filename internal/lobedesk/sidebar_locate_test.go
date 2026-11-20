@@ -176,3 +176,27 @@ func TestSidebarStashSelectsAndRevealsTheSameRowInHistory(t *testing.T) {
 		t.Fatal("stash click did not ask the row to be revealed")
 	}
 }
+
+func TestSidebarLocateAcrossHistoryScopes(t *testing.T) {
+	for _, reloading := range []bool{false, true} {
+		a, callbacks, shas := automaticHistoryFixture(t, 230)
+		// The generated history and main have disjoint roots.
+		target := shas[len(shas)-1]
+		a.branches = []gitrepo.Branch{{Name: "main", SHA: a.status.Head}}
+		a.tags = []gitrepo.Tag{{Name: "old", TargetSHA: target, TargetType: "commit"}}
+		a.page = "history"
+		a.applyHistoryRef(historyRef{Kind: historyRefLocal, Name: "main"})
+		if !reloading {
+			for a.historyReloading {
+				historyCompletion(t, callbacks)()
+			}
+		}
+		a.locateRef(historyRefTag, "old")
+		for a.historyReloading || a.historyMore {
+			historyCompletion(t, callbacks)()
+		}
+		if a.historyRef.Kind != "" || a.selectedSHA != target || a.worktreeSelected || !a.revealSelection {
+			t.Fatalf("reloading=%v: locate tag outside main scope: ref=%v got=%q want=%q", reloading, a.historyRef, a.selectedSHA, target)
+		}
+	}
+}

@@ -68,7 +68,7 @@ func TestCommitGraphLaysOutLinearHistory(t *testing.T) {
 		{SHA: "b", Parents: []string{"c"}},
 		{SHA: "c"},
 	}
-	graph := newCommitGraph(commits, nil)
+	graph := newCommitGraph("", commits, nil)
 	if graph.Lanes != 1 {
 		t.Fatalf("lanes = %d; want 1", graph.Lanes)
 	}
@@ -92,7 +92,7 @@ func TestCommitGraphBranchesAndMerges(t *testing.T) {
 		{SHA: "c", Parents: []string{"d"}},
 		{SHA: "d"},
 	}
-	graph := newCommitGraph(commits, nil)
+	graph := newCommitGraph("", commits, nil)
 	if graph.Lanes != 2 {
 		t.Fatalf("lanes = %d; want 2", graph.Lanes)
 	}
@@ -121,7 +121,7 @@ func TestCommitGraphBranchesAndMerges(t *testing.T) {
 }
 
 func TestCommitGraphMarksMissingParents(t *testing.T) {
-	graph := newCommitGraph([]gitrepo.Commit{{SHA: "a", Parents: []string{"gone"}}}, nil)
+	graph := newCommitGraph("", []gitrepo.Commit{{SHA: "a", Parents: []string{"gone"}}}, nil)
 	if !graph.Rows[0].Boundary {
 		t.Error("a parent outside the loaded list should mark the boundary")
 	}
@@ -386,13 +386,13 @@ func TestLaneSeedPrefersBranchesOverTags(t *testing.T) {
 }
 
 func TestCommitGraphKeepsBranchColorWhenFiltered(t *testing.T) {
-	full := newCommitGraph([]gitrepo.Commit{
+	full := newCommitGraph("", []gitrepo.Commit{
 		{SHA: "a", Refs: "HEAD -> master", Parents: []string{"b"}},
 		{SHA: "x", Refs: "feature", Parents: []string{"y"}},
 		{SHA: "b"},
 		{SHA: "y"},
 	}, nil)
-	filtered := newCommitGraph([]gitrepo.Commit{
+	filtered := newCommitGraph("", []gitrepo.Commit{
 		{SHA: "a", Refs: "HEAD -> master", Parents: []string{"b"}},
 		{SHA: "b"},
 	}, nil)
@@ -426,7 +426,7 @@ func TestCommitGraphAvoidsNeighboringLaneColorClash(t *testing.T) {
 	if second == "" {
 		t.Fatal("no colliding branch names found")
 	}
-	graph := newCommitGraph([]gitrepo.Commit{
+	graph := newCommitGraph("", []gitrepo.Commit{
 		{SHA: "a", Refs: first, Parents: []string{"p"}},
 		{SHA: "b", Refs: second},
 		{SHA: "p"},
@@ -525,7 +525,7 @@ func TestGraphRefColorFollowsSteppedLane(t *testing.T) {
 	if second == "" {
 		t.Fatal("no colliding branch names found")
 	}
-	graph := newCommitGraph([]gitrepo.Commit{
+	graph := newCommitGraph("", []gitrepo.Commit{
 		{SHA: "a", Refs: first, Parents: []string{"p"}},
 		{SHA: "b", Refs: second},
 		{SHA: "p"},
@@ -561,7 +561,7 @@ func TestGraphRefColorFollowsSteppedLane(t *testing.T) {
 func TestBadgeColorFollowsTheRefKind(t *testing.T) {
 	light := catppuccinLatte.tokens(*theme.Light())
 	palette := lanePaletteOf(&light)
-	graph := newCommitGraph([]gitrepo.Commit{
+	graph := newCommitGraph("", []gitrepo.Commit{
 		{SHA: "a", Refs: "HEAD -> main", Parents: []string{"b"}},
 		{SHA: "b"},
 	}, palette)
@@ -641,7 +641,7 @@ func TestGraphWidthContainsEveryLane(t *testing.T) {
 		t.Errorf("empty graph width = %.0f; want a spacer", got)
 	}
 	// A small graph keeps the width its single lane needs.
-	graph := newCommitGraph([]gitrepo.Commit{{SHA: "a"}}, nil)
+	graph := newCommitGraph("", []gitrepo.Commit{{SHA: "a"}}, nil)
 	if want := float32(16 + graphLaneGap); graph.Width != want {
 		t.Errorf("single lane width = %.0f; want %.0f", graph.Width, want)
 	}
@@ -809,7 +809,7 @@ func TestEveryRefPointsAtAColorOnItsRow(t *testing.T) {
 		{SHA: "c", Refs: "feature/y", Parents: []string{"d"}},
 		{SHA: "d", Refs: "origin/dev, tag: v2.0"},
 	}
-	graph := newCommitGraph(commits, lanePalette)
+	graph := newCommitGraph("", commits, lanePalette)
 	checked := 0
 	for row := range graph.Rows {
 		drawn := map[ui.Color]bool{}

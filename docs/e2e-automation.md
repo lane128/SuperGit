@@ -637,9 +637,10 @@ macOS e2e 构建通过。首个原生夹具 `build/repository-switch-native-bey_
 
 ## 统一 History 窗口（2026-11-19）
 
-默认入口不再是 Changes：仓库打开后直接停在 History，选中当前分支最新提交（有提交时），工作树是列表首行、Stash 是其后的一行，页面只剩 History（⌘2 分支页、⌘4 工作树页仍保留）。侧边栏的分支、远端、Tag 与 Stash 点击只做定位选中：把对应提交或 Stash 行滚动到可见并选中，不改变 History 的 ref 过滤、搜索（目标仍在结果中时）或已加载数量；需要筛选时用顶部 ref 选择器或条目右键菜单的 View history。启动探针不应再等 `Commit summary (required)`，也不存在 `Changes` 页面标签；可用 `All refs` 或具体提交标题作为历史就绪门，再按需选中工作树行（如 `1 change` / `2 changes`）。
+仓库打开后进入 History。有提交时默认选中当前分支最新提交。工作树、Stash 和提交按顺序共享一个纵向滚动区。有未提交改动时，Changes 方块到 HEAD 的虚线沿最左列垂直绘制，中间经过 Stash 行也保持连贯。HEAD 以下的第一父提交沿该列延续。其他分支的子提交排在父提交上方，从右侧以实线接入。点击右上角 New Tab 可进入欢迎页打开仓库，也可直接按 ⌘O。点击侧栏本地分支、远端分支或指向提交的标签，会把对应提交滚入可见区域，同时更新选中行和 Summary。目标被当前分支范围排除时，History 回到 All refs 继续定位。搜索结果已包含目标时保留搜索。点击侧栏 Stash 则定位对应的 Stash 行。
 
-`python3 -I scripts/native-lobe-unified-history.py` 是本次入口的独立原生检查：临时仓库含一个比 HEAD 更晚的旁支提交和一个 Stash，断言没有 Changes / History / Stash 页签、行顺序为工作树 → Stash → HEAD → 更新旁支、点击工作树行出现提交编辑区、点击 Stash 行出现 Apply / Pop / Drop，且浏览不改动 Git 数据；再展开侧边栏 Tags / Stashes，点击 Tag 与 Stash 行，断言 History 选中对应行、标题仍为 `All refs` 且提交数量不变（侧边栏只定位，不改变列表范围）；同时用 PATH 垫片记录打开期间只有一次 `git status --porcelain`。结果和截图保存在 `build/lobe-unified-history-*/`。多数既有 `native-lobe-*` 脚本仍按旧默认等待 Changes 编辑区或按 `Changes` 标签，运行前需按上述门更新；本轮未逐一重跑这些脚本。
+先运行 `make e2e-build`，再运行 `python3 -I scripts/native-lobe-unified-history.py`。脚本在 243 个提交的临时仓库中，从 Changes 行开始滚动，检查工作树、Stash 和顶部提交一起移出窗口。随后点击本地分支、远端分支和附注标签，逐项核对可见选中行、详情里的完整 SHA、提交数和筛选范围，并验证从 main 跳到旁支。脚本还检查工作树提交框、Stash 详情，以及浏览前后的 Git 状态。截图、Git 调用日志与结果保存在 `build/lobe-unified-history-*/`。
+
 
 ## 900×700 窄窗与命令面板 Copy SHA（2026-11-19）
 

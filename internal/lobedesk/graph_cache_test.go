@@ -66,9 +66,9 @@ func TestHistoryGraphReusesRefFilteredFrames(t *testing.T) {
 
 func TestCachedGraphRefreshesWorktreeAndWidth(t *testing.T) {
 	a := &app{showGraph: true, commits: []gitrepo.Commit{{SHA: "head", Parents: []string{"base"}}, {SHA: "base"}}}
+	a.status.Head = "head"
 	graph := a.cachedCommitGraph(a.historyRows(), lanePalette, 100)
 	cleanWidth := graph.Width
-	a.status.Head = "head"
 	a.status.Entries = []gitrepo.Entry{{Path: "dirty"}}
 	dirty := a.cachedCommitGraph(a.historyRows(), lanePalette, 100)
 	if dirty != graph || dirty.Worktree == nil || dirty.Worktree.HeadRow != 0 {
@@ -78,21 +78,22 @@ func TestCachedGraphRefreshesWorktreeAndWidth(t *testing.T) {
 		t.Errorf("adjacent HEAD should use the existing lane: clean width %.1f, dirty width %.1f", cleanWidth, dirty.Width)
 	}
 	a.status.Head = "base"
-	if next := a.cachedCommitGraph(a.historyRows(), lanePalette, 100); next.Worktree.HeadRow != 1 {
+	switched := a.cachedCommitGraph(a.historyRows(), lanePalette, 100)
+	if switched == graph || switched.Worktree.HeadRow != 1 || switched.Rows[1].Lane != 0 || switched.Rows[0].Lane == 0 {
 		t.Fatal("HEAD change retained old link")
 	}
 	for i := 0; i < 3; i++ {
-		if next := a.cachedCommitGraph(a.historyRows(), lanePalette, 100); next.Width != cleanWidth+worktreeGraphGutter {
-			t.Fatalf("older HEAD should reserve exactly one gutter: clean width %.1f, dirty width %.1f", cleanWidth, next.Width)
+		if next := a.cachedCommitGraph(a.historyRows(), lanePalette, 100); next.Width != graphWidth(2) {
+			t.Fatalf("older HEAD and its child need two lanes: clean width %.1f, dirty width %.1f", cleanWidth, next.Width)
 		}
 	}
 	a.status.Entries = nil
 	clean := a.cachedCommitGraph(a.historyRows(), lanePalette, 100)
-	if clean.Worktree != nil || clean.Width != cleanWidth {
-		t.Fatal("clean state retained worktree gutter")
+	if clean != switched || clean.Worktree != nil || clean.Width != graphWidth(2) {
+		t.Fatal("clean state changed the mainline layout")
 	}
 	narrow := a.cachedCommitGraph(a.historyRows(), lanePalette, 24)
-	if narrow != graph || narrow.Width >= cleanWidth {
+	if narrow != switched || narrow.Width >= graphWidth(2) {
 		t.Fatal("width change failed to refit cached graph")
 	}
 }

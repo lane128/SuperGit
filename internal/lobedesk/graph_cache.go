@@ -10,11 +10,12 @@ import (
 // History slices are immutable snapshots: readers append pages or replace the
 // slice on reload/filter changes. Retain the slice to keep its identity alive.
 type commitGraphCache struct {
-	commits []gitrepo.Commit
-	palette []ui.Color
-	graph   *commitGraph
-	head    string
-	dirty   bool
+	commits     []gitrepo.Commit
+	palette     []ui.Color
+	graph       *commitGraph
+	head        string
+	dirty       bool
+	headPending bool
 }
 
 type reachableHistoryCache struct {
@@ -54,7 +55,7 @@ func (a *app) filteredHistoryRows() []gitrepo.Commit {
 
 func (a *app) cachedCommitGraph(commits []gitrepo.Commit, palette []ui.Color, width float32) *commitGraph {
 	cache := &a.commitGraphCache
-	changed := cache.graph == nil || !sameHistorySnapshot(cache.commits, commits) || !slices.Equal(cache.palette, palette)
+	changed := cache.graph == nil || cache.head != a.status.Head || !sameHistorySnapshot(cache.commits, commits) || !slices.Equal(cache.palette, palette)
 	if changed {
 		graphRows := commits
 		folds := &a.historyMergeFolds
@@ -67,22 +68,28 @@ func (a *app) cachedCommitGraph(commits []gitrepo.Commit, palette []ui.Color, wi
 				}
 			}
 		}
-		*cache = commitGraphCache{commits: commits, palette: slices.Clone(palette), graph: newCommitGraph(graphRows, palette)}
+		*cache = commitGraphCache{commits: commits, palette: slices.Clone(palette), head: a.status.Head, graph: newCommitGraph(a.status.Head, graphRows, palette)}
 	}
 	graph := cache.graph
-	previousWidth, previousGap, previousGutter := graph.Width, graph.LaneGap(), graph.worktreeGutter()
+	previousWidth, previousGap := graph.Width, graph.LaneGap()
 	previousX := a.historyGraphScroll.X
 	dirty := len(a.status.Entries) > 0
-	if changed || cache.head != a.status.Head || cache.dirty != dirty {
+	// An unfiltered walk pins the checked-out tip first. If its row is on
+	// a later page, keep the dashed lane running to the end of this page.
+	headPending := a.historyMore && a.fileFilter == "" && a.historyQuery == "" && a.historyRef.Kind == "" &&
+		len(a.historyTips) > 0 && a.historyTips[0] == a.status.Head
+	if changed || cache.dirty != dirty || cache.headPending != headPending {
 		graph.Worktree = nil
 		if link, ok := a.worktreeGraphConnection(commits, graph); ok {
+			if link.HeadRow < 0 && link.HasHead && headPending {
+				link.HeadRow = len(commits)
+				link.Color = laneColorIndex(a.status.Branch, len(graph.Palette))
+			}
 			graph.Worktree = &link
 		}
-		cache.head, cache.dirty = a.status.Head, dirty
+		cache.dirty, cache.headPending = dirty, headPending
 	}
-	// Reset natural dimensions before refitting; the working-tree gutter must be
-	// added exactly once, including when switching back to a clean worktree.
-	graph.Width = graphWidth(graph.Lanes) + graph.worktreeGutter()
+	graph.Width = graphWidth(graph.Lanes)
 	graph.Gap = graphLaneGap
 	if width > 0 {
 		folds := &a.historyMergeFolds
@@ -90,11 +97,11 @@ func (a *app) cachedCommitGraph(commits []gitrepo.Commit, palette []ui.Color, wi
 			if sameHistorySnapshot(commits, folds.source) {
 				folds.fullLanes = graph.Lanes
 			} else if folds.fullLanes == 0 {
-				folds.fullLanes = newCommitGraph(folds.source, palette).Lanes
+				folds.fullLanes = newCommitGraph(a.status.Head, folds.source, palette).Lanes
 			}
 			// Fit the same viewport and lane spacing before and after a fold.
 			// The projected graph still determines the actual scroll range.
-			layout := commitGraph{Lanes: folds.fullLanes, Worktree: graph.Worktree}
+			layout := commitGraph{Lanes: folds.fullLanes}
 			layout.FitWidth(width)
 			graph.Width, graph.Gap = layout.Width, layout.Gap
 		} else {
@@ -103,8 +110,8 @@ func (a *app) cachedCommitGraph(commits []gitrepo.Commit, palette []ui.Color, wi
 	}
 	limit := max(float32(0), graph.contentWidth()-graph.Width)
 	a.historyGraphScroll.X = min(limit, max(float32(0), a.historyGraphScroll.X))
-	gutter, gap := graph.worktreeGutter(), graph.LaneGap()
-	geometryChanged := previousWidth != graph.Width || previousGap != gap || previousGutter != gutter
+	gap := graph.LaneGap()
+	geometryChanged := previousWidth != graph.Width || previousGap != gap
 	revealNode := a.revealSelection || a.revealGraphSelection
 	a.revealGraphSelection = false
 	target := a.selectedSHA
@@ -127,12 +134,12 @@ func (a *app) cachedCommitGraph(commits []gitrepo.Commit, palette []ui.Color, wi
 				margin = max(margin, historyMergeDisclosureInset)
 			}
 			lane := graph.Rows[i].Lane
-			previousNode := previousGutter + laneXGap(0, lane, previousGap)
+			previousNode := laneXGap(0, lane, previousGap)
 			wasVisible := previousNode-margin >= previousX && previousNode+margin <= previousX+previousWidth
 			// A resize keeps a visible node in view while respecting a pan that
 			// already took the selected node out of the viewport.
 			if changed || revealNode || wasVisible {
-				x := gutter + laneXGap(0, lane, gap)
+				x := laneXGap(0, lane, gap)
 				if x-margin < a.historyGraphScroll.X {
 					a.historyGraphScroll.X = max(float32(0), x-margin)
 				}

@@ -28,7 +28,7 @@ func TestCommitGraphLongEdgesUseLinearSpace(t *testing.T) {
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	graph := newCommitGraph(commits, nil)
+	graph := newCommitGraph("", commits, nil)
 	runtime.ReadMemStats(&after)
 	allocated := after.TotalAlloc - before.TotalAlloc
 	// Generous allowance for maps and the edge index, but not copies of each
@@ -56,7 +56,7 @@ func TestCommitGraphSpanQueriesMatchDAG(t *testing.T) {
 			}
 			commits[i].Parents = append(commits[i].Parents, "not-loaded")
 		}
-		graph := newCommitGraph(commits, nil)
+		graph := newCommitGraph("", commits, nil)
 		type endpoints struct{ start, end int }
 		for row := -1; row <= n; row++ {
 			var want []endpoints
@@ -109,7 +109,7 @@ func BenchmarkCommitGraphLongEdges(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				runtime.KeepAlive(newCommitGraph(commits, nil))
+				runtime.KeepAlive(newCommitGraph("", commits, nil))
 			}
 		})
 	}

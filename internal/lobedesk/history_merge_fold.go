@@ -38,7 +38,7 @@ func (a *app) projectHistoryMerges(rows []gitrepo.Commit) []gitrepo.Commit {
 		folds.partialRows = canFold && a.historyMore && len(rows) > 0
 		return rows
 	}
-	preserveScroll := folds.partialRows && !a.revealSelection && a.historyScroll.Y > historyListPadding
+	preserveScroll := folds.partialRows && !a.revealSelection && a.historyScroll.Y >= historyListPadding+a.historyRowHeight()+a.historyStashExtent
 	folds.partialRows = false
 	if !sameHistorySnapshot(folds.source, rows) || folds.head != a.status.Head {
 		folds.source, folds.head = rows, a.status.Head
@@ -83,7 +83,7 @@ func (a *app) foldedHistoryRows(rows []gitrepo.Commit, preserveScroll bool) []gi
 	projected := make([]gitrepo.Commit, 0, len(rows))
 	anchor, height := -1, a.historyRowHeight()
 	if preserveScroll {
-		anchor = int((a.historyScroll.Y - historyListPadding) / height)
+		anchor = int((a.historyScroll.Y - historyListPadding - height - a.historyStashExtent) / height)
 	}
 	for i, commit := range rows {
 		if merge := folds.mergeOf[commit.SHA]; merge != "" && !folds.isExpanded(merge) {

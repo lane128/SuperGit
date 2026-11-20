@@ -3,6 +3,7 @@ package gitrepo
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -35,10 +36,7 @@ func (r *Repository) historyPage(ctx context.Context, tips []string, offset, lim
 			return HistoryPage{}, err
 		}
 		tips = strings.Fields(out)
-		// The checked-out commit leads the traversal. The graph allocates lanes
-		// in row order, so this keeps the current branch in the leftmost lane
-		// and every other branch forking to its right; no newer branch can push
-		// rows above it.
+		// Prefer HEAD among independent tips while preserving child-before-parent order.
 		if head, err := r.ResolveRef(ctx, "HEAD"); err == nil {
 			anchor = head
 			rest := make([]string, 0, len(tips)+1)
@@ -74,21 +72,27 @@ func (r *Repository) historyPage(ctx context.Context, tips []string, offset, lim
 	if page.HasMore {
 		page.Commits = page.Commits[:limit]
 	}
-	// Topo-order may still place another tip above the anchor. It cannot be an
-	// ancestor of the anchor (parents always follow children), so moving the
-	// anchor to the front keeps every edge pointing downwards. This runs after
-	// truncation: the retained lookahead row belongs to the next page.
-	if anchor != "" {
-		for i, commit := range page.Commits {
-			if commit.SHA != anchor || i == 0 {
-				continue
-			}
-			copy(page.Commits[1:i+1], page.Commits[0:i])
-			page.Commits[0] = commit
-			break
+	prioritizeIndependentHead(page.Commits, anchor)
+	return page, nil
+}
+
+// The graph draws edges from children down to their parents. If a visible tip
+// descends from HEAD, its direct child will precede HEAD in Git's topo-order.
+// In that case keep the order intact, including for non-first merge parents.
+func prioritizeIndependentHead(commits []Commit, head string) {
+	if head == "" {
+		return
+	}
+	for i, commit := range commits {
+		if slices.Contains(commit.Parents, head) {
+			return
+		}
+		if commit.SHA == head {
+			copy(commits[1:i+1], commits[:i])
+			commits[0] = commit
+			return
 		}
 	}
-	return page, nil
 }
 
 // ReadHistory rebuilds a requested depth without a single unbounded Git output.

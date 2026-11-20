@@ -539,7 +539,7 @@ func TestHistoryRefMenuStaysOnTheSameTagAcrossResize(t *testing.T) {
 func TestHistoryRefsShareMetadataLine(t *testing.T) {
 	a := &app{showGraph: true, locale: localeEnglish}
 	commit := gitrepo.Commit{SHA: "a", Subject: "The title has its own line", Author: "Fixture", Refs: "feature", Date: "2026-11-17T12:00:00+08:00"}
-	graph := newCommitGraph([]gitrepo.Commit{commit}, lanePalette)
+	graph := newCommitGraph("", []gitrepo.Commit{commit}, lanePalette)
 	tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); a.commitRow(c, commit, 0, 0, 1, graph) }, 310, int(a.historyRowHeight()))
 	tt.Frame()
 	row, ok := tt.AccessByRole(ui.RoleOption, commit.Subject)

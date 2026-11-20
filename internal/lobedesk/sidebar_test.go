@@ -37,8 +37,8 @@ func TestTheSidebarNamesEachPage(t *testing.T) {
 			t.Errorf("the sidebar does not name %q", name)
 		}
 	}
-	if _, ok := tt.Find(a.t("openRepo")); !ok {
-		t.Error("the sidebar does not offer to open a repository")
+	if _, ok := tt.AccessByRole(ui.RoleButton, a.t("openRepo")); ok {
+		t.Error("the loaded sidebar still offers to open a repository")
 	}
 }
 

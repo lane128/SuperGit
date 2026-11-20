@@ -69,7 +69,7 @@ with tempfile.TemporaryDirectory(prefix="supergit-narrow-window.") as directory:
     git("commit", "-m", "Feature work")
     git("switch", "main")
     git("merge", "--no-ff", "feature", "-m", "Merge feature")
-    # A branch newer than HEAD: HEAD must still be the first vertex.
+    # Future is a child of HEAD and must appear above its parent.
     git("switch", "-c", "future")
     future_env = {**git_env, "GIT_AUTHOR_DATE": "2030-01-01T00:00:00 +0000", "GIT_COMMITTER_DATE": "2030-01-01T00:00:00 +0000"}
     write("future.txt", "future\n")
@@ -154,9 +154,9 @@ with tempfile.TemporaryDirectory(prefix="supergit-narrow-window.") as directory:
             merge = shown(found, "Merge feature", "listItem")
             future = shown(found, "Future side tip", "listItem")
             assert worktree and stash and merge and future, "narrow history is missing one of its rows"
-            order = [found.index(e) for e in (worktree[0], stash[0], merge[0], future[0])]
-            assert order == sorted(order) and order[2] < order[3], f"row order broke: {order}"
-            results["row_order"] = "worktree, stash, HEAD, newer branch"
+            order = [found.index(e) for e in (worktree[0], stash[0], future[0], merge[0])]
+            assert order == sorted(order), f"row order broke: {order}"
+            results["row_order"] = "worktree, stash, child on future, HEAD"
 
             # A selected commit sits on two lanes; its tint must not cut the
             # lane that passes beside the node.

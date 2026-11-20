@@ -245,12 +245,11 @@ type app struct {
 	// historyGraph is the lane layout the history list drew this frame. The
 	// details pane reads it so a ref badge wears the color of the line the
 	// graph actually gave that ref, not just its hash slot.
-	historyGraph        *commitGraph
-	commitGraphCache    commitGraphCache
-	filteredHistory     filteredHistoryCache
-	reachableHistory    reachableHistoryCache
-	worktreeGraphBounds ui.Rect
-	historyGraphScroll  ui.ScrollState
+	historyGraph       *commitGraph
+	commitGraphCache   commitGraphCache
+	filteredHistory    filteredHistoryCache
+	reachableHistory   reachableHistoryCache
+	historyGraphScroll ui.ScrollState
 	// historyScroll keeps the commit list where the reader left it. The page
 	// is torn down on every switch, and a scroll area without a stored state
 	// starts over at the top when it comes back.
@@ -305,7 +304,6 @@ type app struct {
 	// branchDetailScroll keeps the branch page's details where the reader left
 	// them; it resets when the selected branch changes.
 	branchDetailScroll ui.ScrollState
-	stashesScroll      ui.ScrollState
 	workspacesScroll   ui.ScrollState
 	settingsScroll     ui.ScrollState
 	settingsSection    string
@@ -387,6 +385,7 @@ type app struct {
 	historyStream      *gitrepo.HistoryStream
 	historyReadCancel  context.CancelFunc
 	historyPaused      bool
+	historyStashExtent float32
 	historyViewport    ui.Rect
 	// pendingJumpSHA is the commit a parent link asked for that is not in the
 	// loaded window yet. Paging continues until it appears.
@@ -740,7 +739,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 		// over too.
 		a.historyScroll.Y = 0
 		a.branchesScroll.Y = 0
-		a.stashesScroll.Y = 0
+		a.historyStashExtent = 0
 		a.workspacesScroll.Y = 0
 	}
 	// First paint stays bounded; automatic pages restore the full traversal.
@@ -1013,10 +1012,8 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 				a.window.SetTitle("SuperGit · " + filepath.Base(repo.Root))
 			}
 			if reset {
-				// A repository opens on its newest commit, whose row is the
-				// graph's first vertex; the working tree's live changes sit
-				// above it as one more row of the same list. reconcileSelection
-				// picks the commit once the rows land.
+				// Descendants on other refs can appear above HEAD in the graph.
+				// Open on the checked-out commit when it is in the loaded page.
 				a.worktreeSelected = false
 				a.detailContexts = detailContextsState{}
 				a.detailTabStrip = ui.ScrollState{}
@@ -1029,7 +1026,11 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 				a.diff = gitrepo.Diff{}
 				a.clearLineSelection()
 				a.undoDiscard = undoDiscardState{}
-				a.setSelectedCommit("")
+				selected := ""
+				if historyLists(a.commits, a.status.Head) {
+					selected = a.status.Head
+				}
+				a.setSelectedCommit(selected)
 				a.commitFiles = nil
 				a.commitPath = ""
 				a.resetCommitDiff()

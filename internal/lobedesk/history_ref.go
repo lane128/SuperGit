@@ -490,7 +490,6 @@ func (a *app) historyRefRow(c *ui.Context, choice refChoice, pos, size int, sele
 func (a *app) applyHistoryRef(ref historyRef) {
 	a.historyRef = ref
 	a.historyQuery = ""
-	a.pendingJumpSHA = ""
 	// A new scope lists different commits, so the old offset would open the
 	// list somewhere arbitrary. The scroll is kept for page switches, which
 	// keep the same scope.
@@ -508,6 +507,7 @@ func (a *app) applyHistoryRef(ref historyRef) {
 	// A deleted ref has no tip: walking every ref keeps the list usable
 	// instead of empty behind a filter that selects nothing.
 	a.historyPinned = tip
+	a.pendingJumpSHA = tip
 	a.reloadHistoryFromTip(tip)
 	a.invalidate()
 }
@@ -592,7 +592,7 @@ func (a *app) reloadHistoryFromTip(tip string) {
 			// commit it wants may only be reachable from the other refs.
 			if sha := a.pendingJumpSHA; sha != "" {
 				a.pendingJumpSHA = ""
-				a.jumpToCommit(sha)
+				a.jumpToCommitKeeping(sha, true)
 			}
 			a.invalidate()
 			a.loadMoreHistory()
@@ -600,11 +600,8 @@ func (a *app) reloadHistoryFromTip(tip string) {
 	}()
 }
 
-// locateRef brings a sidebar ref's tip into view without changing what
-// History lists. The sidebar is a way to find a place, not a way to filter:
-// the ref selector, the loaded rows and their count stay as they are, and the
-// jump pages on until the commit appears. A reload already in flight owns the
-// rows; hand it the jump so it runs once the new walk lands.
+// locateRef selects the tip in History. Keep a compatible scope and search,
+// and let a filter give way if it would hide the requested commit.
 func (a *app) locateRef(kind, name string) {
 	if a.repo == nil || name == "" {
 		return
@@ -616,13 +613,7 @@ func (a *app) locateRef(kind, name string) {
 	if a.page != "history" {
 		a.openPage("history")
 	}
-	if a.historyReloading {
-		a.pendingJumpSHA = tip
-		a.invalidate()
-		return
-	}
-	a.jumpToCommitKeeping(tip, true)
-	a.invalidate()
+	a.showCommitKeeping(tip, true)
 }
 
 // showRefHistory scopes the history page to one ref, the same state the

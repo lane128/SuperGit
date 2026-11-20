@@ -124,6 +124,7 @@ func (a *app) stashRow(c *ui.Context, stash gitrepo.Stash, pos, size int) {
 	case row.Hovered():
 		row.Background(tk.FillTertiary)
 	}
+	a.continueWorktreeThrough(row, tk, 8, 5)
 	a.revealIfSelected(row, selected)
 	row.Children(func() {
 		ui.Box(c).Size(30, 30).Shrink(0).Radius(9).Center().Background(tk.FillTertiary).Children(func() {
@@ -252,7 +253,11 @@ func (a *app) selectedStashObject() (gitrepo.Stash, bool) {
 }
 
 func (a *app) selectStash(sha string) {
-	if sha == "" || (a.selectedStash == sha && a.stashDiff.Text != "") {
+	if sha == "" {
+		return
+	}
+	a.pendingJumpSHA = ""
+	if a.selectedStash == sha && a.stashDiff.Text != "" {
 		return
 	}
 	// The stash becomes the details' subject: the working tree's row and any
