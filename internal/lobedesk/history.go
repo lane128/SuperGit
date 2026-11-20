@@ -1494,6 +1494,10 @@ func (a *app) commitDiffView(c *ui.Context) {
 					continue
 				}
 				rows := sectionRows[at]
+				if previewFor(sec.Path, sec.Binary) != textPreview {
+					sectionHeights[at] += previewSummaryHeight
+					continue
+				}
 				for i := range rows.len() {
 					row := rows.at(i)
 					if a.commitDragHeld && rowContainsLine(row, a.commitPressIndex) {
@@ -1514,6 +1518,10 @@ func (a *app) commitDiffView(c *ui.Context) {
 				sectionContext := section.Key(sec.Start)
 				a.commitDiffFileHeader(sectionContext, sec, widths.canvas)
 				if a.commitCollapsed[sec.Path] {
+					return
+				}
+				if kind := previewFor(sec.Path, sec.Binary); kind != textPreview {
+					a.previewSummary(sectionContext, detailFileKey{Path: sec.Path}, kind)
 					return
 				}
 				rows := sectionRows[at]

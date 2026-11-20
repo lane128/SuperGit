@@ -31,6 +31,7 @@ type DiffLine struct {
 }
 type Hunk struct{ Header, Patch string }
 type Diff struct {
+	Binary        bool
 	Text          string
 	Lines         []DiffLine
 	Hunks         []Hunk

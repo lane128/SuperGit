@@ -34,6 +34,7 @@ type revisionComparison struct {
 }
 
 type comparisonView struct {
+	preview                     filePreviewSlot
 	target                      comparisonRevision
 	find                        *diffFindState
 	pane                        ui.Handle
@@ -61,6 +62,7 @@ func (a *app) closeComparison() {
 		if v.cancel != nil {
 			v.cancel()
 		}
+		v.preview.clear()
 		v.open = false
 		a.comparison.view = nil
 	}
@@ -209,6 +211,9 @@ func (a *app) comparisonDialog(c *ui.Context) {
 						header = file.OriginalPath + " → " + file.Path
 					}
 					display.Text(c, header, display.TextProps{Strong: true, FontSize: scaledFont(12)}).SingleLine().FillWidth().Tooltip(header)
+					if !v.loading && a.filePreview(c, &v.preview, previewVersions(file, a.comparison.base.sha, v.target.sha), v.patch.Binary, 0) {
+						return
+					}
 					if v.loading || v.err != "" {
 						a.comparisonReadStatus(c, v)
 					} else {

@@ -598,6 +598,9 @@ func (a *app) historyDiffFile(c *ui.Context, tk *theme.Tokens) {
 			return
 		}
 		a.worktreeDiffHeader(c, tk)
+		if entry, ok := a.selectedEntry(); ok && !entry.Conflict && a.worktreePreview(c, entry) {
+			return
+		}
 		// diffBody owns the two-axis viewport and binds diffScroll itself.
 		a.diffBody(c)
 		return
@@ -617,6 +620,9 @@ func (a *app) historyDiffFile(c *ui.Context, tk *theme.Tokens) {
 		ui.Column(c).FillWidth().Shrink(0).Padding(6, 10).Children(func() {
 			display.Text(c, label, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 2}).FillWidth()
 		})
+	}
+	if a.historyFilePreview(c) {
+		return
 	}
 	scroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitDiffScroll}, func() {
 		ui.Column(c).FillWidth().Padding(historyPatchInset).Children(func() {

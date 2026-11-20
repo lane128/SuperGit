@@ -174,6 +174,7 @@ func (a *app) openSnapshotDirectory(rev, oid, prefix string) {
 }
 
 type snapshotFileView struct {
+	picture               *previewPicture
 	parent                *paletteStep
 	actionID              string
 	epoch                 uint64
@@ -193,6 +194,16 @@ func (a *app) openSnapshotFile(rev string, f gitrepo.SnapshotFile) {
 	}
 	if f.Kind == "commit" {
 		show(a.paletteText("Submodule", "子模块") + " · " + f.OID)
+		return
+	}
+	switch previewFor(f.Path, false) {
+	case imagePreview:
+		readHistoryPalette(a, f.Path, func(ctx context.Context, r *gitrepo.Repository) (previewPicture, error) {
+			return readPreviewPicture(ctx, func() ([]byte, error) { return r.BlobPreview(ctx, f.OID) }), nil
+		}, func(pic previewPicture) { show(""); a.snapshotView.picture = &pic })
+		return
+	case binaryPreview:
+		show(fmt.Sprintf(a.paletteText("Binary file (%d bytes)", "二进制文件（%d 字节）"), f.Size))
 		return
 	}
 	if f.Size > 1<<20 {
@@ -234,6 +245,10 @@ func (a *app) snapshotFileDialog(c *ui.Context) {
 				}
 			})
 			layout.ScrollArea(c, layout.ScrollAreaProps{State: &v.scroll}, func() {
+				if v.picture != nil {
+					ui.Column(c).FillWidth().Gap(6).Children(func() { a.drawPicture(c, *v.picture) })
+					return
+				}
 				ui.Text(c, v.text).Selectable().Font("Menlo").FontSize(a.patchFontSize()).FillWidth().MinWidth(0)
 			}).Fill()
 		})

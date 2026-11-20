@@ -27,11 +27,12 @@ const (
 // the indexes that get drawn, which leave out the `diff --git`, `index` and
 // `---`/`+++` lines the header already says.
 type commitDiffSection struct {
-	Path  string
-	Start int
-	Lines int
-	Hunks int
-	Rows  []int
+	Binary bool
+	Path   string
+	Start  int
+	Lines  int
+	Hunks  int
+	Rows   []int
 	// Submodule marks a gitlink: the "160000" mode in the patch header. A
 	// submodule pointer has no text at that revision, so it cannot be blamed.
 	Submodule bool
@@ -68,7 +69,7 @@ func buildCommitDiff(files []gitrepo.FileDiff) (gitrepo.Diff, []commitDiffSectio
 	sections := make([]commitDiffSection, 0, len(files))
 	for _, file := range files {
 		sec := commitDiffSection{
-			Path:  file.Path,
+			Path: file.Path, Binary: file.Diff.Binary,
 			Start: len(combined.Lines),
 			Lines: len(file.Diff.Lines),
 			Hunks: len(file.Diff.Hunks),
@@ -174,6 +175,9 @@ func (a *app) commitSectionPatchRows(lines []gitrepo.DiffLine, sec commitDiffSec
 }
 
 func (a *app) commitSectionHeight(sec commitDiffSection) float32 {
+	if !a.commitCollapsed[sec.Path] && previewFor(sec.Path, sec.Binary) != textPreview {
+		return diffFileHeaderH + previewSummaryHeight
+	}
 	height := diffFileHeaderH
 	rows := a.commitSectionPatchRows(a.commitDiff.Lines, sec)
 	for i := range rows.len() {

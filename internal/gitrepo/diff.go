@@ -38,6 +38,9 @@ func parseDiff(text string) Diff {
 			continue
 		}
 		if index < 0 {
+			if strings.HasPrefix(line, "Binary files ") || line == "GIT binary patch" {
+				d.Binary = true
+			}
 			header.WriteString(chunk)
 			d.Lines = append(d.Lines, DiffLine{Kind: "meta", Text: line, Hunk: -1})
 			continue

@@ -97,6 +97,9 @@ func (a *app) overviewSectionHeight(entry worktreeOverviewEntry) (float32, bool)
 	if entry.Loading || entry.Err != "" || len(entry.Diff.Lines) == 0 {
 		return 0, false
 	}
+	if previewFor(entry.Key.Path, entry.Diff.Binary) != textPreview {
+		return height + previewSummaryHeight, true
+	}
 	rows := newPatchRows(entry.Diff.Lines, nil, a.splitDiff)
 	for i := range rows.len() {
 		height += rows.height(a, i)
@@ -172,6 +175,10 @@ func (a *app) worktreeOverviewFile(c *ui.Context, tk *theme.Tokens, entry worktr
 					a.retryWorktreeOverview(root, seq, key)
 				}
 			})
+			return
+		}
+		if kind := previewFor(key.Path, entry.Diff.Binary); kind != textPreview {
+			a.previewSummary(c, key, kind)
 			return
 		}
 		if len(entry.Diff.Lines) == 0 {

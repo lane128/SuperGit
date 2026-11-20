@@ -97,6 +97,7 @@ type app struct {
 	sidebarHidden, ignoreDiffWhitespace, expandMerges bool
 	hiddenBranches                                    map[string][]string // Immutable snapshots keyed by checkout root.
 	comparison                                        revisionComparison
+	preview                                           filePreviewSlot
 	snapshotView                                      snapshotFileView
 	fileHistoryRevision                               string
 	window                                            *mygo.Window
