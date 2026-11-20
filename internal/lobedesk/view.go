@@ -73,6 +73,7 @@ func (a *app) renderWorkbench(c *ui.Context, repositoryStrip func()) {
 		a.addRemoteDialog(c)
 		a.cloneRepositoryDialog(c)
 		a.newRepositoryDialog(c)
+		a.comparisonDialog(c)
 		a.blameDialog(c)
 		a.snapshotFileDialog(c)
 		a.toastHost(c, toastMain)
@@ -390,8 +391,15 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 	a.sidebarGroup(c, "tags", a.t("tags"), len(a.tags), func() {
 		for _, tag := range a.tags {
 			ref := historyRef{Kind: historyRefTag, Name: tag.Name}
-			a.sidebarRefRow(c, lucide.Tag(), tag.Name,
+			row := a.sidebarRefRow(c, lucide.Tag(), tag.Name,
 				a.historyRef == ref, false, func() { a.locateRef(ref.Kind, ref.Name) })
+			if tag.TargetType != "commit" {
+				continue
+			}
+			r := a.comparisonRevision(tag.TargetSHA, tag.Name)
+			if action := overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: a.comparisonMenuItems(r)}); action != "" {
+				a.comparisonMenuAction(action, r)
+			}
 		}
 	})
 	a.sidebarGroup(c, "stashes", a.t("stashes"), len(a.stashes), func() {
@@ -543,23 +551,16 @@ func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state s
 	} else if row.Hovered() {
 		row.Background(tk.FillTertiary)
 	}
-	if len([]rune(label)) > 22 {
-		// Only a clipped name needs the tooltip; a short one repeats itself
-		// and covers the next row.
-		row.Tooltip(label)
-	}
-	if current {
-		row.Description(a.t("current"))
-	}
+	var name ui.Element
 	row.Children(func() {
 		ui.Icon(c, icon).FontSize(scaledFont(10)).TextColor(tk.TextTertiary)
 		if state == "" {
-			display.Text(c, label, display.TextProps{FontSize: scaledFont(11), Strong: selected || current}).
+			name = display.Text(c, label, display.TextProps{FontSize: scaledFont(11), Strong: selected || current}).
 				TextColor(color).SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
 		} else {
 			// State gets its own line so a narrow sidebar keeps the module name.
 			ui.Column(c).Grow(1).Basis(0).MinWidth(0).Children(func() {
-				display.Text(c, label, display.TextProps{FontSize: scaledFont(11), Strong: selected || current}).
+				name = display.Text(c, label, display.TextProps{FontSize: scaledFont(11), Strong: selected || current}).
 					TextColor(color).SingleLine().FillWidth().MinWidth(0).AccessHidden(true)
 				display.Text(c, state, display.TextProps{FontSize: scaledFont(10)}).
 					TextColor(tk.TextSecondary).SingleLine().FillWidth().MinWidth(0).AccessHidden(true)
@@ -569,6 +570,20 @@ func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state s
 			ui.Icon(c, lucide.Check()).FontSize(scaledFont(11)).TextColor(tk.Green).Shrink(0).AccessHidden(true)
 		}
 	})
+	// The checkmark, indent, font and sidebar split all affect the space
+	// left for the name. Use the label's laid-out width for both row styles.
+	if width := name.Bounds().W; width > 0 {
+		span := ui.Span{Text: label, Size: scaledFont(11)}
+		if selected || current {
+			span.Weight = 700
+		}
+		if full, _ := c.MeasureText(0, span); full > width+0.5 {
+			row.Tooltip(label)
+		}
+	}
+	if current {
+		row.Description(a.t("current"))
+	}
 	if row.Clicked() {
 		onClick()
 	}

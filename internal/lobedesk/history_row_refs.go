@@ -107,7 +107,7 @@ func (a *app) commitRowRefs(c *ui.Context, commit gitrepo.Commit, graph *commitG
 		label := historyRefPillLabel(c, badge.Label, badge.Icon != nil || ref == head, layout.maxWidth)
 		if layout.compactHead && ref == head {
 			pill := refPill(c.Key(key), refCapsuleColors(tk.Blue, rowBg), lucide.Check(), label).MaxWidth(layout.maxWidth).Tooltip(a.tf("headBadgeTip", head))
-			a.refBadgeMenu(c, pill, ref)
+			a.refBadgeMenu(c, pill, ref, commit.SHA)
 			continue
 		}
 		kind, name, filterable := a.parseCommitRef(ref)
@@ -118,7 +118,7 @@ func (a *app) commitRowRefs(c *ui.Context, commit gitrepo.Commit, graph *commitG
 			color = family
 		}
 		pill := refPill(c.Key(key), refCapsuleColors(color, rowBg), badge.Icon, label).MaxWidth(layout.maxWidth).Tooltip(badge.Label)
-		a.refBadgeMenu(c, pill, ref)
+		a.refBadgeMenu(c, pill, ref, commit.SHA)
 	}
 	if len(layout.folded) > 0 {
 		labels := make([]string, 0, len(layout.folded))

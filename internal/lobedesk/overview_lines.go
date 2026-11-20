@@ -8,7 +8,6 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/overlay"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
-	"strings"
 	"supergit/internal/gitrepo"
 )
 
@@ -104,7 +103,7 @@ func (a *app) overviewPatchLine(c *ui.Context, target overviewPatchTarget, index
 func (a *app) overviewPatchLineForSide(c *ui.Context, target overviewPatchTarget, index int, width float32, side patchSide) {
 	line := target.Diff.Lines[index]
 	if line.Kind == "hunk" {
-		a.overviewHunkLine(c, target, line, width)
+		a.overviewHunkLine(c, target, line, width, index)
 		return
 	}
 	tk := theme.TokensOf(c)
@@ -127,7 +126,7 @@ func (a *app) overviewPatchLineForSide(c *ui.Context, target overviewPatchTarget
 		if changed && numbers.Clicked() {
 			a.selectOverviewLine(target, index, numbers.ClickModifiers())
 		}
-		ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(a.patchFontSize()).SingleLine().TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
+		a.diffFind.lineText(c, diffFindLine{target.File, index}, diffFindText(line), a.patchFontSize(), side == patchNew && line.Kind == "context").TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
 	})
 	choice := []int{index}
 	if selected && a.lineSel[index] {
@@ -165,11 +164,11 @@ func (a *app) overviewPatchLineForSide(c *ui.Context, target overviewPatchTarget
 	}
 }
 
-func (a *app) overviewHunkLine(c *ui.Context, target overviewPatchTarget, line gitrepo.DiffLine, width float32) {
+func (a *app) overviewHunkLine(c *ui.Context, target overviewPatchTarget, line gitrepo.DiffLine, width float32, index int) {
 	tk := theme.TokensOf(c)
 	row := ui.Row(c).Width(width).Height(diffHunkH).Shrink(0).Padding(0, 12).AlignItems(ui.Center).Background(tk.Blue.Alpha(0.05).Over(tk.BgContainer))
 	row.Children(func() {
-		ui.Text(c, line.Text).Font("Menlo").FontSize(scaledFont(10)).SingleLine().TextColor(tk.TextSecondary)
+		a.diffFind.lineText(c, diffFindLine{target.File, index}, line.Text, scaledFont(10)).TextColor(tk.TextSecondary)
 	})
 	key := "stageHunk"
 	if target.File.Staged {

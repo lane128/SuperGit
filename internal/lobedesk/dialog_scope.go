@@ -25,6 +25,7 @@ func (a *app) hasPendingActionDialog(owner toastOwner) bool {
 	a.discardStaleWorktreeForm()
 	a.discardStaleAddRemoteForm()
 	a.discardStaleBlame()
+	a.discardStaleComparison()
 	a.discardStaleSnapshotFile()
 	a.discardStaleNoticeDetails(owner)
 	if a.confirm.open && a.confirm.owner == owner {
@@ -33,7 +34,7 @@ func (a *app) hasPendingActionDialog(owner toastOwner) bool {
 	if state := a.noticeDetails[owner]; state.open && state.notice != nil {
 		return true
 	}
-	return owner == toastMain && (a.prompt.open || a.reset.open || a.checkoutBranch.open || a.childNavigation.open || a.quickRepositorySwitch.open || a.worktreeForm.open || a.addRemoteForm.open || a.cloneForm.open || a.newRepoForm.open || a.blameOpen || a.snapshotView.open)
+	return owner == toastMain && (a.prompt.open || a.reset.open || a.checkoutBranch.open || a.childNavigation.open || a.quickRepositorySwitch.open || a.worktreeForm.open || a.addRemoteForm.open || a.cloneForm.open || a.newRepoForm.open || a.blameOpen || a.snapshotView.open || a.comparison.view != nil)
 }
 
 func (a *app) rejectPendingDialog(owner toastOwner) bool {

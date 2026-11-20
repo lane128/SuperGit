@@ -28,45 +28,13 @@ func (a *app) fileActionButtons(c *ui.Context, target fileActionTarget) {
 			a.prepareDiscardTargets([]fileActionTarget{target}, false)
 		}
 	}
-	label, icon := a.t("stageFile"), lucide.Plus()
+	label := a.t("stageFile")
 	if target.Staged {
-		label, icon = a.t("unstageFile"), lucide.Minus()
+		label = a.t("unstageFile")
 	}
-	button := action.ActionIcon(c.Key("stage-file"), icon, action.ActionIconProps{Title: label, Size: theme.Small}).
-		Disabled(!ready).Description(hint).Tooltip(label + "\n" + hint).Shrink(0)
+	button := workbenchButton(c.Key("stage-file"), label, buttonNormal, !ready).
+		Label(label).Description(hint).Tooltip(label + "\n" + hint).Shrink(0)
 	if button.Clicked() {
 		a.runFileStage(target)
 	}
-}
-
-func (a *app) overviewBatchActions(c *ui.Context) {
-	ui.Row(c).FillWidth().Padding(0, 12, 8, 12).Gap(4).Children(func() {
-		for _, item := range []struct{ Kind, Label, Scope string }{
-			{"stage", "stageAll", "stageAllScope"},
-			{"discard", "discardAll", "discardAllScope"},
-			{"unstage", "unstageAll", "unstageAllScope"},
-		} {
-			_, reason := a.batchFileTargets(item.Kind)
-			hint := a.t(item.Scope)
-			if reason != "" {
-				hint += "\n" + reason
-			}
-			role := buttonNormal
-			if item.Kind == "discard" {
-				role = buttonDanger
-			}
-			button := workbenchButton(c.Key(item.Kind), a.t(item.Label), role, reason != "").
-				Grow(1).Basis(0).MinWidth(0).Description(hint).Tooltip(hint)
-			if button.Clicked() {
-				switch item.Kind {
-				case "stage":
-					a.stageAll()
-				case "unstage":
-					a.unstageAll()
-				case "discard":
-					a.confirmDiscardAll()
-				}
-			}
-		}
-	})
 }

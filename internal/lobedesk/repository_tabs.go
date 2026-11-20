@@ -246,6 +246,7 @@ func (tabs *repositoryTabs) activate(next *app, fresh bool) {
 	}
 	previous.cancelLocalProbe()
 	previous.syncOpen = false
+	previous.dismissSyncCommits()
 	next.copyWindowPreferences(previous)
 	next.window = previous.window
 	next.localWatch.focused = previous.localWatch.focused

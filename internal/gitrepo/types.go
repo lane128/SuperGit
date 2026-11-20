@@ -20,6 +20,7 @@ func (e Entry) IsSubmodule() bool { return len(e.Submodule) > 0 && e.Submodule[0
 
 type Status struct {
 	Branch, Head, Upstream string
+	UpstreamGone           bool
 	Ahead, Behind          int
 	Entries                []Entry
 }

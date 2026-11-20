@@ -336,7 +336,7 @@ func (a *app) commandPaletteDialog(c *ui.Context) {
 
 // A callback retained from a pre-modal frame must not reach background actions.
 func (a *app) dispatchWindowShortcut(run func(*app)) {
-	if !a.commandPalette.open && !a.historyRefPalette.active && !a.quickCheckout.open && !a.childNavigation.open && !a.quickRepositorySwitch.open {
+	if a.comparison.view == nil && !a.commandPalette.open && !a.historyRefPalette.active && !a.quickCheckout.open && !a.childNavigation.open && !a.quickRepositorySwitch.open {
 		run(a)
 	}
 }

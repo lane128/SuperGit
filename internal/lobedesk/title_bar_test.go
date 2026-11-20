@@ -36,7 +36,10 @@ func TestTitleBarKeepsRepositoryActionsWithoutPageTabs(t *testing.T) {
 				t.Fatal("missing branch selector")
 			}
 			assertCommandControlBounds(t, tt, a, 900)
-			status := "(" + a.tf("aheadBehind", 12, 34) + ")"
+			status := "↑ 12  ↓ 34"
+			if branch.Description != a.status.Branch+" ("+a.tf("aheadBehind", 12, 34)+")" {
+				t.Fatal("missing localized tracking description")
+			}
 			statusBounds, visible := tt.Find(status)
 			if !visible || statusBounds.X < branch.Bounds.X || statusBounds.X+statusBounds.W > branch.Bounds.X+branch.Bounds.W {
 				t.Errorf("%s/%v: tracking text must fit inside the branch button: %q %+v; branch %+v", language, scale, status, statusBounds, branch.Bounds)

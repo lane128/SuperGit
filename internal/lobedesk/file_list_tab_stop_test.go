@@ -24,8 +24,8 @@ func TestGroupedFileSpaceUsesFocusedVersion(t *testing.T) {
 	// Fold and reopen using the same keyboard-accessible header.
 	tt.ClickAt(header.Bounds.X+header.Bounds.W/2, header.Bounds.Y+header.Bounds.H/2)
 	tt.Key(0, ui.KeySpace)
-	tt.Key(0, ui.KeyRight) // Unstage all
-	tt.Key(0, ui.KeyRight) // staged same.go
+	// The group now leads directly to its first file.
+	tt.Key(0, ui.KeyRight)
 	focused := false
 	for _, node := range tt.AccessAll() {
 		if node.Role == ui.RoleOption && node.Name == "same.go" && node.Description == a.t("fileGroupStaged") && node.Focused {

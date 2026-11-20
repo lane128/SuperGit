@@ -240,6 +240,7 @@ func shortcutTable() []appShortcut {
 		// Searches are the fields' own bindings; the card still lists them so the
 		// reader finds ⌘F where the page's other keys are.
 		{ID: "search.history", Mod: ui.Cmd, Key: ui.KeyF, Keys: "⌘F", Group: shortcutGroupHistory, Label: "shortcutSearchHistory", Field: true},
+		{ID: "search.diff", Mod: ui.Cmd, Key: ui.KeyF, Keys: "⌘F", Group: shortcutGroupHistory, Label: "findInDiff", Field: true},
 		{ID: "search.branches", Mod: ui.Cmd, Key: ui.KeyF, Keys: "⌘F", Group: shortcutGroupBranches, Label: "shortcutSearchBranches", Field: true},
 	}
 	for _, binding := range bindings {
@@ -270,14 +271,16 @@ func (a *app) refreshFromShortcut() {
 // bindings are left to their text fields, and an unavailable action is not
 // registered at all, so the system's own handling of the key survives.
 func (a *app) registerShortcuts(c *ui.Context) {
+	a.discardStaleDiffFind()
 	a.discardStaleCommitMessageFocus()
 	a.discardStaleDetailTabFocus()
 	a.discardStaleCommandPalette()
 	a.discardStaleQuickCheckout()
 	a.discardStaleChildNavigation()
 	a.discardStaleQuickRepositorySwitch()
+	a.discardStaleComparison()
 	a.discardStaleSnapshotFile()
-	if a.snapshotView.open || a.commandPalette.open || a.quickCheckout.open || a.childNavigation.open || a.quickRepositorySwitch.open {
+	if a.comparison.view != nil || a.snapshotView.open || a.commandPalette.open || a.quickCheckout.open || a.childNavigation.open || a.quickRepositorySwitch.open {
 		return
 	}
 	typing := c.FocusTakesText()

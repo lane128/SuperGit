@@ -8,7 +8,7 @@ import (
 )
 
 func (r *Repository) statusText(ctx context.Context) (string, error) {
-	return run(ctx, r.Root, "", "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all", "--ignore-submodules=none")
+	return run(ctx, r.Root, "", "status", "--porcelain=v2", "--branch", "--ahead-behind", "-z", "--untracked-files=all", "--ignore-submodules=none")
 }
 
 // StatusText is the porcelain status text the display parses. The local
@@ -36,6 +36,7 @@ func (r *Repository) StatusWithText(ctx context.Context) (Status, string, error)
 
 func parseStatus(out string) (Status, error) {
 	s := Status{}
+	hasTrackingCounts := false
 	records := strings.Split(out, "\x00")
 	for i := 0; i < len(records); i++ {
 		record := records[i]
@@ -60,6 +61,7 @@ func parseStatus(out string) (Status, error) {
 		case strings.HasPrefix(record, "# branch.ab "):
 			parts := strings.Fields(strings.TrimPrefix(record, "# branch.ab "))
 			if len(parts) == 2 {
+				hasTrackingCounts = true
 				s.Ahead, _ = strconv.Atoi(strings.TrimPrefix(parts[0], "+"))
 				s.Behind, _ = strconv.Atoi(strings.TrimPrefix(parts[1], "-"))
 			}
@@ -86,6 +88,7 @@ func parseStatus(out string) (Status, error) {
 			s.Entries = append(s.Entries, Entry{Path: record[2:], Index: '?', Worktree: '?'})
 		}
 	}
+	s.UpstreamGone = s.Head != "" && s.Upstream != "" && !hasTrackingCounts
 	return s, nil
 }
 func (r *Repository) Branches(ctx context.Context) ([]Branch, error) {

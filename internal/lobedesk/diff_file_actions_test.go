@@ -46,17 +46,42 @@ func TestOverviewFileActionsKeepExactTarget(t *testing.T) {
 	}
 }
 
-func TestCollapsedFileKeepsItsActions(t *testing.T) {
+func TestWorkspaceFileActionPlacement(t *testing.T) {
 	a, callbacks := overviewFixture(t)
-	a.locale, a.page = localeEnglish, "history"
+	a.locale, a.page, a.worktreeSelected = localeEnglish, "history", true
 	a.loadWorktreeOverview()
 	waitOverview(t, a, callbacks)
-	a.setOverviewCollapsed(true)
-	tt := pageTester(a, a.worktreeOverview)
-	for _, label := range []string{a.t("stageFile"), a.t("unstageFile"), a.t("discard")} {
-		button, ok := tt.AccessByRole(ui.RoleButton, label)
-		if !ok || button.Disabled {
-			t.Fatalf("collapsed block lost %q action", label)
+	for _, collapsed := range []bool{false, true} {
+		a.setOverviewCollapsed(collapsed)
+		view := pageTester(a, a.worktreeOverview)
+		for _, key := range []string{"stageAll", "unstageAll", "discardAll", "stageFile", "unstageFile", "discard"} {
+			if _, ok := view.AccessByRole(ui.RoleButton, a.t(key)); ok {
+				t.Errorf("overview exposes %q (collapsed=%t)", key, collapsed)
+			}
+		}
+	}
+	files := pageTester(a, a.filesPaneBody)
+	for _, key := range []string{"stageAll", "unstageAll", "discardAll"} {
+		count := 0
+		for _, control := range files.AccessAll() {
+			if control.Role == ui.RoleButton && control.Name == a.t(key) {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("Files has %d instances of %q", count, key)
+		}
+	}
+	for _, staged := range []bool{false, true} {
+		a.selectedPath, a.selectedStaged = a.status.Entries[0].Path, staged
+		tab := pageTester(a, func(c *ui.Context) { a.worktreeDiffHeader(c, theme.TokensOf(c)) })
+		for _, item := range []struct {
+			key     string
+			visible bool
+		}{{"stageFile", !staged}, {"unstageFile", staged}} {
+			if button, ok := tab.AccessByRole(ui.RoleButton, a.t(item.key)); ok != item.visible || ok && button.Disabled {
+				t.Errorf("file tab staged=%t, %q visible=%t disabled=%t", staged, item.key, ok, button.Disabled)
+			}
 		}
 	}
 }
@@ -76,10 +101,10 @@ func TestHistoricalDiffHasNoWriteActions(t *testing.T) {
 	}
 }
 
-func TestOverviewDiscardButtonOpensConfirmation(t *testing.T) {
+func TestFilesDiscardButtonOpensConfirmation(t *testing.T) {
 	a, callbacks := overviewFixture(t)
 	a.locale = localeEnglish
-	tt := pageTester(a, a.overviewBatchActions)
+	tt := pageTester(a, a.filesToolbar)
 	button, ok := tt.AccessByRole(ui.RoleButton, a.t("discardAll"))
 	if !ok || button.Disabled {
 		t.Fatal("Discard All button unavailable")

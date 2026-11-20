@@ -336,10 +336,10 @@ func (a *app) filesPaneBody(c *ui.Context) {
 	ui.Column(c).FillWidth().Grow(1).Basis(0).MinHeight(0).Children(func() {
 		header := ui.Row(c).Height(38).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
 			Justify(ui.SpaceBetween).BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
-		if a.worktreeSelected && width < scaledFont(146) {
+		if a.worktreeSelected && width < scaledFont(170) {
 			// Keep the same controls in the same parent while the heading
 			// and actions move onto separate lines.
-			header.Column().Height(62).Padding(6, 12).Gap(4).AlignItems(ui.Start).Justify(ui.Center)
+			header.Column().Height(62).Padding(6, 6).Gap(4).AlignItems(ui.Start).Justify(ui.Center)
 		}
 		header.Children(func() {
 			ui.Row(c.Key("files-heading")).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -349,7 +349,7 @@ func (a *app) filesPaneBody(c *ui.Context) {
 				}
 			})
 			if a.worktreeSelected {
-				ui.Row(c.Key("files-actions")).Gap(8).Children(func() { a.filesToolbar(c) })
+				ui.Row(c.Key("files-actions")).Gap(4).Children(func() { a.filesToolbar(c) })
 			}
 		})
 		filesScroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitFilesScroll}, func() {
@@ -401,7 +401,8 @@ func (a *app) historyDiffPane(c *ui.Context) {
 	// The files pane draws the divider between the two details columns; a
 	// border here would sit on the window's outer edge and leave the columns
 	// themselves separated by nothing.
-	ui.Column(c).Grow(1).Basis(0).MinWidth(0).MinHeight(0).AlignSelf(ui.Stretch).
+	pane := ui.Column(c).Grow(1).Basis(0).MinWidth(0).MinHeight(0).AlignSelf(ui.Stretch)
+	a.wireDiffFind(c, pane).
 		Children(func() {
 			// The active tab runs the full height of the strip and shares the
 			// page's ground, so it meets the body below with no gray seam; a
@@ -433,6 +434,7 @@ func (a *app) historyDiffPane(c *ui.Context) {
 			}
 			*previousWidth = width
 			a.worktreeSelectionBar(c)
+			a.drawDiffFindBar(c.Key("find-in-diff"), a.diffFind, a.diffFindSections, a.closeDiffFind)
 			a.historyDiffBody(c, tk)
 		})
 }

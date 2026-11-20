@@ -31,15 +31,14 @@ func (a *app) branchSelector(c *ui.Context, iconWidth float32) {
 		branch = a.t("detached")
 	}
 	caption := branch
-	status := a.branchTrackingStatus()
+	status, spoken := a.branchTrackingStatus()
 	fontSize := scaledFont(12)
 	// Match the leading icon with trailing inset, so a short name is centered
 	// and a long name elides before the complete tracking status.
 	const padding = 4
 	available := toolbarCommandWidth - 2*(iconWidth+padding)
 	if status != "" {
-		status = "(" + status + ")"
-		caption += " " + status
+		caption += " (" + spoken + ")"
 		statusWidth, _ := c.MeasureText(0, ui.Span{Text: status, Size: fontSize, Weight: 500})
 		available -= statusWidth + 6
 	}
@@ -85,28 +84,28 @@ func fitToolbarBranchName(c *ui.Context, name string, size, available float32) s
 	return fit
 }
 
-// filesToolbar holds the working tree's bulk stage actions. They sit in the
-// history page's Files column header now that the working tree is its first
-// row.
+// All workspace-wide file actions live in the Files header. Each uses the same
+// target checks as its keyboard and menu commands.
 func (a *app) filesToolbar(c *ui.Context) {
-	for _, staged := range []bool{false, true} {
-		kind, label, scope, icon := "stage", "stageAll", "stageAllScope", lucide.Plus()
-		if staged {
-			kind, label, scope, icon = "unstage", "unstageAll", "unstageAllScope", lucide.Minus()
-		}
-		_, reason := a.batchFileTargets(kind)
-		hint := a.t(scope)
+	for _, item := range []struct {
+		kind, label, scope string
+		icon               *ui.SVG
+		run                func()
+	}{
+		{"stage", "stageAll", "stageAllScope", lucide.Plus(), a.stageAll},
+		{"unstage", "unstageAll", "unstageAllScope", lucide.Minus(), a.unstageAll},
+		{"discard", "discardAll", "discardAllScope", lucide.Undo2(), a.confirmDiscardAll},
+	} {
+		_, reason := a.batchFileTargets(item.kind)
+		hint := a.t(item.scope)
 		if reason != "" {
 			hint += "\n" + reason
 		}
-		button := action.ActionIcon(c, icon, action.ActionIconProps{BlockSize: 24, GlyphSize: 14, Title: a.t(label)}).
-			Disabled(reason != "").Description(hint).Tooltip(hint)
+		button := action.ActionIcon(c.Key(item.kind), item.icon, action.ActionIconProps{
+			BlockSize: 24, GlyphSize: 14, Title: a.t(item.label), Danger: item.kind == "discard",
+		}).Disabled(reason != "").Description(hint).Tooltip(a.t(item.label) + "\n" + hint)
 		if button.Clicked() {
-			if staged {
-				a.unstageAll()
-			} else {
-				a.stageAll()
-			}
+			item.run()
 		}
 	}
 }
@@ -168,17 +167,6 @@ func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.En
 				ui.Row(c).Grow(1).Basis(0)
 			}
 		})
-		if staged {
-			_, reason := a.batchFileTargets("unstage")
-			hint := a.t("unstageAllScope")
-			if reason != "" {
-				hint += "\n" + reason
-			}
-			if workbenchButton(c.Key("unstage-group"), a.t("unstageAll"), buttonNormal, reason != "").
-				FillWidth().Description(hint).Tooltip(hint).Clicked() {
-				a.unstageAll()
-			}
-		}
 		if collapsed {
 			return
 		}
@@ -440,12 +428,14 @@ func (a *app) diffBody(c *ui.Context) {
 	} else {
 		widths.canvas = a.diffWidth(diff)
 	}
+	widths = a.diffFind.fitMatch(c, detailFileKey{}, diff.Lines, widths, a.patchFontSize())
 	heights := make([]float32, rows.len())
 	reveal, pressed := -1, -1
+	findLine := a.diffFind.revealLine(detailFileKey{})
 	for i := range heights {
 		row := rows.at(i)
 		heights[i] = rows.height(a, i)
-		if a.revealLine && rowContainsLine(row, a.lineCursor) {
+		if rowContainsLine(row, findLine) || a.revealLine && rowContainsLine(row, a.lineCursor) {
 			reveal = i
 		}
 		if a.lineDragHeld && rowContainsLine(row, a.linePressIndex) {
@@ -589,7 +579,7 @@ func (a *app) diffLineForSide(c *ui.Context, line gitrepo.DiffLine, width float3
 	tk := theme.TokensOf(c)
 	if line.Kind == "hunk" {
 		if interactive {
-			a.diffHunkLine(c, line, width)
+			a.diffHunkLine(c, line, width, index)
 		} else {
 			a.plainHunkLine(c, line, width)
 		}
@@ -640,8 +630,7 @@ func (a *app) diffLineForSide(c *ui.Context, line gitrepo.DiffLine, width float3
 		inner.Children(func() {
 			numbers = a.patchGutter(c, line, side, gutter)
 			markDiffGutter(numbers, change && a.lineSelected(index), gutter)
-			ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(a.patchFontSize()).
-				SingleLine().TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
+			a.diffFind.lineText(c, diffFindLine{index: index}, diffFindText(line), a.patchFontSize(), side == patchNew && line.Kind == "context").TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
 		})
 		if !change || !row.Hovered() {
 			return
@@ -741,7 +730,7 @@ func (a *app) plainHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32)
 	})
 }
 
-func (a *app) diffHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32) {
+func (a *app) diffHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32, index int) {
 	tk := theme.TokensOf(c)
 	// A ButtonBase gives the row state, which the context menu needs to open;
 	// a stateless Row would silently ignore the secondary click.
@@ -755,7 +744,7 @@ func (a *app) diffHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32) 
 		inner := ui.Row(c).Height(24).Width(width-diffHoverActionReserve).Shrink(0).
 			Padding(0, 8, 0, 12).AlignItems(ui.Center)
 		inner.Children(func() {
-			ui.Text(c, line.Text).Font("Menlo").FontSize(scaledFont(10.5)).SingleLine().
+			a.diffFind.lineText(c, diffFindLine{index: index}, line.Text, scaledFont(10.5)).
 				TextColor(tk.Info)
 		})
 		ready := a.hunkActionsAllowed() &&

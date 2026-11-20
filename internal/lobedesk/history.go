@@ -354,9 +354,13 @@ func (a *app) historyPageAtWidth(c *ui.Context, width float32) {
 		searchWidth := min(292, max(176, a.historyHeaderWidth()-400))
 		ui.Box(c).Width(searchWidth).Shrink(0).Children(func() {
 			queryBefore := a.historyQuery
+			key := "mod+f"
+			if c.FocusTakesText() || a.historyRefOpen || a.repositoryChooserOpen || a.hasPendingDialog(toastMain) {
+				key = ""
+			}
 			field.SearchBar(c, &a.historyQuery, field.SearchBarProps{
 				Placeholder: a.t("searchHistory"),
-				ShortKey:    "mod+f",
+				ShortKey:    key,
 				Size:        theme.Small,
 				Variant:     field.InputFilled,
 			}).OnTextKey(a.fileTabTextKey)
@@ -1429,6 +1433,7 @@ func (a *app) commitDiffView(c *ui.Context) {
 	tabs := a.detailTabs()
 	sections := a.visibleCommitSections()
 	widths := a.historyPatchWidths(c, &tabs.patchWidths, sections, diff.Lines)
+	findLine := a.diffFind.revealLine(detailFileKey{})
 	sectionRows := make([]patchRows, len(sections))
 	for i, section := range sections {
 		sectionRows[i] = a.commitSectionPatchRows(diff.Lines, section)
@@ -1460,7 +1465,7 @@ func (a *app) commitDiffView(c *ui.Context) {
 						pressedSection = at
 					}
 					sectionHeights[at] += rows.height(a, i)
-					if a.commitReveal && rowContainsLine(row, a.commitCursor) {
+					if rowContainsLine(row, findLine) || a.commitReveal && rowContainsLine(row, a.commitCursor) {
 						revealSection = at
 					}
 				}
@@ -1485,14 +1490,14 @@ func (a *app) commitDiffView(c *ui.Context) {
 					if a.commitDragHeld && rowContainsLine(row, a.commitPressIndex) {
 						pressed = i
 					}
-					if a.commitReveal && rowContainsLine(row, a.commitCursor) {
+					if rowContainsLine(row, findLine) || a.commitReveal && rowContainsLine(row, a.commitCursor) {
 						reveal = i
 					}
 				}
 				a.paintPatchRows(sectionContext, rows, widths, a.commitDiffViewport, scroll, heights, reveal, pressed, func(cell *ui.Context, index int, cellWidth float32, side patchSide) {
 					line := diff.Lines[index]
 					if line.Kind == "hunk" {
-						a.commitHunkLine(cell, line, cellWidth)
+						a.commitHunkLine(cell, line, cellWidth, index)
 						return
 					}
 					a.commitDiffLineForSide(cell, line, sec.Path, cellWidth, index, side)
@@ -1607,8 +1612,7 @@ func (a *app) commitDiffLineForSide(c *ui.Context, line gitrepo.DiffLine, path s
 	var numbers ui.Element
 	row.Children(func() {
 		numbers = a.patchGutter(c, line, side, gutter)
-		ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(a.patchFontSize()).
-			SingleLine().TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
+		a.diffFind.lineText(c, diffFindLine{index: index}, diffFindText(line), a.patchFontSize(), side == patchNew && line.Kind == "context").TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
 	})
 	items := []overlay.MenuItem{{Key: "copy-line", Label: a.t("copyLine"), Icon: lucide.Copy()}}
 	if selectable {
@@ -1994,13 +1998,13 @@ func (a *app) dragToCommitLine(index int) {
 
 // commitHunkLine draws a hunk header of a committed diff. The commit is
 // read-only, so its menu copies the hunk rather than staging it.
-func (a *app) commitHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32) {
+func (a *app) commitHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32, index int) {
 	tk := theme.TokensOf(c)
 	row := ui.ButtonBase(c).Label(line.Text).Row().Width(width).Height(24).Shrink(0).
 		Padding(0, 12).AlignItems(ui.Center).Justify(ui.Start).
 		Background(tk.Info.Alpha(0.06).Over(tk.BgContainer))
 	row.Children(func() {
-		ui.Text(c, line.Text).Font("Menlo").FontSize(scaledFont(10.5)).SingleLine().
+		a.diffFind.lineText(c, diffFindLine{index: index}, line.Text, scaledFont(10.5)).
 			TextColor(tk.Info)
 	})
 	menu := overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: []overlay.MenuItem{

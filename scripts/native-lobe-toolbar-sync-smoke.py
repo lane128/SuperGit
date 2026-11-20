@@ -128,7 +128,7 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
         try:
             until(socket.exists, "No native automation socket")
             auto("open", "--socket", socket)
-            button = branch_button("102 ahead")
+            button = branch_button("102 ahead · 0 behind")
             x, y, w, h = bounds(button)
             layout = snapshot()
             commands, = control(layout, "button", "Command palette")
@@ -165,7 +165,7 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
                 auto("type", name, "--settle")
                 press("listItem", name + " · Local branches")
                 until(lambda: git("branch", "--show-current") == name, f"Checkout did not switch to {name}")
-                state = "102 ahead" if name == branch else "No upstream"
+                state = "102 ahead · 0 behind" if name == branch else "No upstream"
                 current = branch_button(state, name)
                 assert bounds(current) == (x, y, w, h), current
                 if name == "main":
@@ -173,8 +173,16 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
 
             press("menuButton", "Sync")
             opened = snapshot()
-            assert "102 ahead" in opened and "origin/" + branch in opened
+            assert control(opened, "menuItem", "102 ahead") and control(opened, "menuItem", "0 behind")
+            assert "origin/" + branch in opened
             auto("screenshot", artifacts / "sync-menu.png")
+            press("menuItem", "102 ahead")
+            press("menuItem", "Next page")
+            sha = git("rev-parse", "HEAD~6")
+            press("menuItem", sha[:8] + " · Local commit 96")
+            until(lambda: any("checked" in row for row in control(snapshot(), "listItem", "Local commit 96")),
+                  "Outgoing commit did not open in History")
+            press("menuButton", "Sync")
             press("menuItem", "Push branch…")
             press("button", "Cancel")
             assert git("rev-parse", destination, directory=bare) == base
@@ -194,7 +202,11 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
 
             sync("Fetch")
             until(lambda: git("rev-parse", tracking) == new_head, "Fetch did not advance remote-tracking ref")
-            branch_button("1 behind")
+            branch_button("0 ahead · 1 behind")
+            sync("1 behind")
+            press("menuItem", new_head[:8] + " · Peer update")
+            until(lambda: any("checked" in row for row in control(snapshot(), "listItem", "Peer update")),
+                  "Incoming commit did not open in History")
             assert git("rev-parse", "HEAD") == head and git("ls-files", "--stage") == index
             assert (repo / "work.txt").read_text() == "base\n" and not (repo / "peer.txt").exists()
 

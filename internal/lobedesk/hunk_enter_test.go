@@ -24,7 +24,7 @@ func TestHunkEnterLeavesTextInputAlone(t *testing.T) {
 		theme.Apply(c)
 		a.registerShortcuts(c)
 		ui.Column(c).Fill().Children(func() {
-			a.diffHunkLine(c, gitrepo.DiffLine{Kind: "hunk", Text: "@@ -1 +1 @@", Hunk: 0}, 500)
+			a.diffHunkLine(c, gitrepo.DiffLine{Kind: "hunk", Text: "@@ -1 +1 @@", Hunk: 0}, 500, 0)
 			field.Input(c, &value, field.InputProps{}).Label("commit editor").Focus()
 		})
 	}, 500, 180)
@@ -72,7 +72,7 @@ func TestHunkEnterRespectsCurrentTargetAndGuards(t *testing.T) {
 			tt := ui.NewTester(func(c *ui.Context) {
 				theme.Apply(c)
 				c.OnWindowShortcut(0, ui.KeyEnter, func() { globalActivations++ })
-				ui.Column(c).Fill().Children(func() { a.diffHunkLine(c, line, 500) })
+				ui.Column(c).Fill().Children(func() { a.diffHunkLine(c, line, 500, 0) })
 			}, 500, 120)
 			for i := 0; i < 8; i++ {
 				row, _ := tt.AccessByRole(ui.RoleButton, line.Text)
@@ -176,7 +176,7 @@ func TestHunkEnterAppliesOnlyFocusedReplacement(t *testing.T) {
 				// A real window shortcut makes event consumption observable without
 				// launching the system's external file opener on the pre-feature RED run.
 				c.OnWindowShortcut(0, ui.KeyEnter, func() { globalActivations++ })
-				ui.Column(c).Fill().Children(func() { a.diffHunkLine(c, line, 500) })
+				ui.Column(c).Fill().Children(func() { a.diffHunkLine(c, line, 500, 0) })
 			}, 500, 150)
 			for i := 0; i < 8; i++ {
 				row, _ := tt.AccessByRole(ui.RoleButton, line.Text)

@@ -31,7 +31,6 @@ func (a *app) worktreeOverview(c *ui.Context) {
 			a.setOverviewCollapsed(true)
 		}
 	})
-	a.overviewBatchActions(c)
 	var visible []detailFileKey
 	viewport := a.commitDiffViewport
 	draw := func(section *ui.Context, entry worktreeOverviewEntry) {
@@ -60,6 +59,9 @@ func (a *app) worktreeOverview(c *ui.Context) {
 				break
 			}
 			heights = append(heights, height)
+			if a.diffFind.revealLine(a.overviewEntries[end].Key) >= 0 {
+				reveal = end - start
+			}
 			if target := a.overviewLineTarget; target != nil && target.Root == root && target.Generation == seq && target.File == a.overviewEntries[end].Key {
 				if a.revealLine {
 					reveal = end - start
@@ -149,15 +151,6 @@ func (a *app) worktreeOverviewFile(c *ui.Context, tk *theme.Tokens, entry worktr
 				a.clearLineSelection()
 				a.invalidate()
 			}
-			if a.repo != nil && a.repo.Root == root && a.overviewRoot == root && a.overviewSeq == seq {
-				for _, statusEntry := range a.status.Entries {
-					if statusEntry.Path == key.Path {
-						target, _ := a.fileActionTarget(statusEntry, key.Staged)
-						a.fileActionButtons(c.Key("file-actions"), target)
-						break
-					}
-				}
-			}
 			if action.ActionIcon(c, lucide.ExternalLink(), action.ActionIconProps{Title: a.t("openFileTab") + " " + key.Path, Size: theme.Small}).Clicked() {
 				a.openDetailFile(key)
 			}
@@ -193,16 +186,18 @@ func (a *app) worktreeOverviewFile(c *ui.Context, tk *theme.Tokens, entry worktr
 		} else {
 			widths.canvas = a.diffWidth(entry.Diff)
 		}
+		widths = a.diffFind.fitMatch(c, key, entry.Diff.Lines, widths, a.patchFontSize())
 		rows := newPatchRows(entry.Diff.Lines, nil, split)
 		target := overviewPatchTarget{Root: root, Generation: seq, File: key, Diff: entry.Diff}
 		reveal := -1
+		findLine := a.diffFind.revealLine(key)
 		revealTarget := a.revealLine && a.overviewSelectionMatches(target)
 		height := float32(0)
 		heights := make([]float32, rows.len())
 		for i := range heights {
 			heights[i] = rows.height(a, i)
 			height += heights[i]
-			if revealTarget && rowContainsLine(rows.at(i), a.lineCursor) {
+			if rowContainsLine(rows.at(i), findLine) || revealTarget && rowContainsLine(rows.at(i), a.lineCursor) {
 				reveal = i
 			}
 		}

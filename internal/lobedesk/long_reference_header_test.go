@@ -19,8 +19,8 @@ func TestLongCurrentBranchKeepsTitleActionsWithinWindow(t *testing.T) {
 				a := &app{locale: language, repo: &gitrepo.Repository{Root: t.TempDir()}, status: gitrepo.Status{Branch: name, Upstream: "origin/main", Ahead: 102}, branches: []gitrepo.Branch{{Name: name, Current: true}}, remotes: []gitrepo.Remote{{Name: "origin"}}}
 				tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); ui.Column(c).Fill().Children(func() { a.titleBar(c) }) }, 900, 44)
 				selector, ok := tt.AccessByRole(ui.RoleButton, a.t("branches"))
-				status := "(" + a.tf("branchAhead", 102) + ")"
-				if !ok || selector.Description != name+" "+status {
+				status := "↑ 102  ↓ 0"
+				if !ok || selector.Description != name+" ("+a.tf("aheadBehind", 102, 0)+")" {
 					t.Fatal("branch selector lost complete reference identity or tracking status")
 				}
 				assertCommandControlBounds(t, tt, a, 900)

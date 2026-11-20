@@ -100,6 +100,10 @@ func (r *Repository) CommitFiles(ctx context.Context, sha string) ([]ChangedFile
 	if err != nil {
 		return nil, err
 	}
+	return parseChangedFiles(out)
+}
+
+func parseChangedFiles(out string) ([]ChangedFile, error) {
 	records := strings.Split(out, "\x00")
 	var files []ChangedFile
 	for i := 0; i < len(records) && records[i] != ""; {

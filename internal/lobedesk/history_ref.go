@@ -657,7 +657,7 @@ func (a *app) showRefHistory(kind, name string) {
 // refBadgeMenu gives the ref labels in the history list their own menu, so a
 // branch, remote or tag can be opened as history without leaving the commit
 // list for the branch page.
-func (a *app) refBadgeMenu(c *ui.Context, target ui.Element, ref string) {
+func (a *app) refBadgeMenu(c *ui.Context, target ui.Element, ref, sha string) {
 	kind, name, ok := a.parseCommitRef(ref)
 	if !ok {
 		return
@@ -668,10 +668,17 @@ func (a *app) refBadgeMenu(c *ui.Context, target ui.Element, ref string) {
 	}
 	// Copying the name is what a reader reaches for most on a capsule whose
 	// label may be elided; it sits first, as it does for the other rows' menus.
-	switch overlay.ContextMenu(c, target, overlay.DropdownMenuProps{Items: []overlay.MenuItem{
+	items := []overlay.MenuItem{
 		{Key: "copy", Label: copyLabel, Icon: lucide.Copy()},
 		{Key: "history", Label: a.t("viewHistory"), Icon: lucide.History()},
-	}}) {
+	}
+	r := a.comparisonRevision(sha, name)
+	if kind == historyRefTag {
+		items = append(items, a.comparisonMenuItems(r)...)
+	}
+	switch action := overlay.ContextMenu(c, target, overlay.DropdownMenuProps{Items: items}); action {
+	case compareBaseKey, compareTargetKey:
+		a.comparisonMenuAction(action, r)
 	case "history":
 		a.showRefHistory(kind, name)
 	case "copy":

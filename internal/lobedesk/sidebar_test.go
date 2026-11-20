@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"supergit/internal/gitrepo"
@@ -161,6 +162,7 @@ func TestTheCurrentBranchMarkIsNotPartOfItsName(t *testing.T) {
 		branches: []gitrepo.Branch{{Name: long, Current: true}, {Name: "feat"}},
 	}
 	tt := sidebarTester(a)
+	tt.Frame() // The tooltip follows the allocated text width.
 	if _, ok := tt.Find(long + " ·"); ok {
 		t.Error("the current mark is still part of the branch name")
 	}
@@ -180,6 +182,27 @@ func TestTheCurrentBranchMarkIsNotPartOfItsName(t *testing.T) {
 	}
 	if short.Description != "" {
 		t.Errorf("a short branch name opens a tooltip that repeats it: %q", short.Description)
+	}
+}
+
+func TestSidebarRefTooltipTracksClippingOnResize(t *testing.T) {
+	a := &app{locale: localeEnglish}
+	for _, item := range []struct{ name, state string }{{"feat/song-like-display", ""}, {"修复播放列表排序", "module"}} {
+		view := ui.NewTester(func(c *ui.Context) {
+			theme.Apply(c)
+			width, _ := c.Size()
+			ui.Column(c).Width(width).Children(func() {
+				a.sidebarRefRowWithState(c, lucide.GitBranch(), item.name, item.state, false, true, func() {})
+			})
+		}, 85, 100)
+		for _, width := range []int{85, 320, 85} {
+			view.SetSize(width, 100)
+			view.Frame()
+			row, ok := view.AccessByRole(ui.RoleButton, item.name)
+			if !ok || strings.Contains(row.Description, item.name) != (width == 85) {
+				t.Errorf("%q at %d DIP, tooltip %q", item.name, width, row.Description)
+			}
+		}
 	}
 }
 

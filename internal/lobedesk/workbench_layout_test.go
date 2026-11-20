@@ -190,7 +190,7 @@ func TestHistoryResizeKeepsPatchWidthOnFirstFrame(t *testing.T) {
 			t.Errorf("%d DIP: patch tab starts at %.1f, want near %.0f", tc.window, tab.Bounds.X, float64(tc.window)-tc.patch)
 		}
 		filesLeft := a.workbenchSidebarWidth() + a.commitListWidth() + 2*splitterWidth
-		for _, label := range []string{a.t("stageAll"), a.t("unstageAll")} {
+		for _, label := range []string{a.t("stageAll"), a.t("unstageAll"), a.t("discardAll")} {
 			button, ok := view.AccessByRole(ui.RoleButton, label)
 			if !ok || button.Offscreen || button.Disabled || button.Bounds.W < 23 ||
 				button.Bounds.X < filesLeft-0.5 || button.Bounds.X+button.Bounds.W > filesLeft+a.historyFilesWidth()+0.5 {

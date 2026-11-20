@@ -257,7 +257,7 @@ func (a *app) commitSummaryRef(c *ui.Context, tk *theme.Tokens, ref, label strin
 	if showTips {
 		pill.Tooltip(badge.Label)
 	}
-	a.refBadgeMenu(c, pill, ref)
+	a.refBadgeMenu(c, pill, ref, a.selectedSHA)
 	return pill, filterable
 }
 

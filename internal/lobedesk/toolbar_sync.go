@@ -1,27 +1,30 @@
 package lobedesk
 
 import (
+	"fmt"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
-func (a *app) branchTrackingStatus() string {
+// Tracking text reserves its own space beside the elided name. Its spoken
+// description uses localized words so the arrows do not have to be inferred.
+func (a *app) branchTrackingStatus() (visible, spoken string) {
 	s := a.status
 	switch {
 	case s.Branch == "":
-		return ""
+		return "", ""
 	case s.Upstream == "":
-		return a.t("branchNoUpstream")
-	case s.Ahead > 0 && s.Behind > 0:
-		return a.tf("aheadBehind", s.Ahead, s.Behind)
-	case s.Ahead > 0:
-		return a.tf("branchAhead", s.Ahead)
-	case s.Behind > 0:
-		return a.tf("branchBehind", s.Behind)
+		visible = a.t("branchNoUpstream")
+	case s.UpstreamGone:
+		visible = a.t("upstreamGone")
+	case s.Ahead == 0 && s.Behind == 0:
+		return "", ""
 	default:
-		return ""
+		return fmt.Sprintf("↑ %d  ↓ %d", s.Ahead, s.Behind), a.tf("aheadBehind", s.Ahead, s.Behind)
 	}
+	return "(" + visible + ")", visible
 }
 
 func (a *app) syncMenu(c *ui.Context) {
@@ -30,6 +33,9 @@ func (a *app) syncMenu(c *ui.Context) {
 		a.tabSnapshotUnavailable() || a.hasPendingDialog(toastMain)
 	if blocked {
 		a.syncOpen = false
+	}
+	if p := a.syncCommits; p != nil && !a.syncCommitsCurrent(p) {
+		a.dismissSyncCommits()
 	}
 	menu := ui.MenuBase(c, &a.syncOpen)
 	label := a.t("syncMenu")
@@ -43,7 +49,11 @@ func (a *app) syncMenu(c *ui.Context) {
 			Width(306).MaxWidthPercent(95).Background(tk.BgElevated).AttachedOrigin()
 		tk.Elevate(panel, theme.BoxShadowSecondary)
 		panel.Children(func() {
-			a.syncMenuHeader(c)
+			if p := a.syncCommits; p != nil {
+				a.syncCommitList(c, menu, p)
+				return
+			}
+			a.syncMenuHeader(c, menu)
 			remoteReason, pullReason, pushReason := "", "", ""
 			if len(a.remotes) == 0 {
 				remoteReason, pushReason = a.t("noRemote"), a.t("noRemote")
@@ -100,26 +110,37 @@ func (a *app) syncMenu(c *ui.Context) {
 	})
 }
 
-func (a *app) syncMenuHeader(c *ui.Context) {
+func (a *app) syncMenuHeader(c *ui.Context, menu ui.MenuParts) {
 	tk := theme.TokensOf(c)
-	tracking := ""
 	header := a.status.Upstream
 	switch {
-	case header != "":
-		tracking = a.branchTrackingStatus()
-		if tracking == "" {
-			tracking = a.t("syncUpToDate")
-		}
 	case a.status.Branch == "":
 		header = a.t("detached")
-	default:
+	case header == "":
 		header = a.t("branchNoUpstream")
+	case a.status.UpstreamGone:
+		header += " · " + a.t("upstreamGone")
 	}
-	ui.Column(c).AlignSelf(ui.Stretch).MinWidth(0).Gap(3).Padding(8, 10).Children(func() {
-		ui.Text(c, header).FontSize(scaledFont(12)).FontWeight(600).SingleLine().Tooltip(header)
-		if tracking != "" {
-			ui.Text(c, tracking).FontSize(scaledFont(11)).TextColor(tk.TextSecondary)
-		}
-	})
+	ui.Text(c, header).Padding(8, 10).FontSize(scaledFont(12)).FontWeight(600).SingleLine().Tooltip(header)
+	if a.status.Branch != "" && a.status.Upstream != "" && !a.status.UpstreamGone {
+		menu.Group(func(row ui.Element) {
+			row.Gap(4).Padding(0, 6).Label(a.t("syncMenu"))
+			for _, incoming := range []bool{false, true} {
+				count, arrow := a.status.Ahead, "↑"
+				name, detail := a.tf("branchAhead", count), a.t("syncOutgoing")
+				if incoming {
+					count, arrow = a.status.Behind, "↓"
+					name, detail = a.tf("branchBehind", count), a.t("syncIncoming")
+				}
+				item := syncListItem(c, menu, name, count == 0).Description(detail).Tooltip(name + " · " + detail).KeepOpen()
+				item.Children(func() {
+					ui.Textf(c, "%s %d", arrow, count).SingleLine()
+				})
+				if item.Clicked() && count > 0 {
+					a.readSyncCommits(incoming, "", 0)
+				}
+			}
+		})
+	}
 	ui.Box(c).Height(1).Margin(2, 0).AlignSelf(ui.Stretch).Background(tk.Border)
 }

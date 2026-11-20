@@ -544,6 +544,8 @@ func (a *app) commitMenu(c *ui.Context, row ui.Element, commit gitrepo.Commit) {
 		return
 	}
 	switch action {
+	case compareBaseKey, compareTargetKey:
+		a.comparisonMenuAction(action, a.comparisonRevision(commit.SHA, ""))
 	case "copy-sha":
 		a.copyText(commit.SHA)
 	case "copy-subject":
@@ -620,6 +622,7 @@ func (a *app) commitMenuItems(commit gitrepo.Commit) []overlay.MenuItem {
 	if a.selectedSHA == commit.SHA && a.commitMessage != "" {
 		items = append(items, overlay.MenuItem{Key: "copy-message", Label: a.t("copyMessage"), Icon: lucide.Copy()})
 	}
+	items = append(items, a.comparisonMenuItems(a.comparisonRevision(commit.SHA, ""))...)
 	// The filters write into the search box rather than into hidden state, so
 	// what is being filtered on stays visible and one click from being
 	// cleared. They are read-only jumps like "view history" in the ref menus,
@@ -941,6 +944,9 @@ func (a *app) tagMenuItems(tag gitrepo.Tag) []overlay.MenuItem {
 		{Key: "history", Label: a.t("viewHistory"), Icon: lucide.History()},
 		{Divider: true},
 	}
+	if tag.TargetType == "commit" {
+		items = append(items, a.comparisonMenuItems(a.comparisonRevision(tag.TargetSHA, tag.Name))...)
+	}
 	if a.tagPushRemote() != "" {
 		items = append(items, overlay.MenuItem{
 			Key: "push", Label: a.t("pushTag"), Icon: lucide.Upload(), Disabled: a.busy || a.loading,
@@ -954,7 +960,11 @@ func (a *app) tagMenuItems(tag gitrepo.Tag) []overlay.MenuItem {
 
 func (a *app) tagMenu(c *ui.Context, row ui.Element, tag gitrepo.Tag) {
 	items := a.tagMenuItems(tag)
-	switch overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: items}) {
+	switch action := overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: items}); action {
+	case compareBaseKey, compareTargetKey:
+		if tag.TargetType == "commit" {
+			a.comparisonMenuAction(action, a.comparisonRevision(tag.TargetSHA, tag.Name))
+		}
 	case "branch":
 		a.promptNewBranch(tag.TargetSHA)
 	case "copy":

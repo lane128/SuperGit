@@ -95,6 +95,7 @@ const (
 type app struct {
 	sidebarHidden, ignoreDiffWhitespace, expandMerges bool
 	hiddenBranches                                    map[string][]string // Immutable snapshots keyed by checkout root.
+	comparison                                        revisionComparison
 	snapshotView                                      snapshotFileView
 	fileHistoryRevision                               string
 	window                                            *mygo.Window
@@ -201,6 +202,8 @@ type app struct {
 	conflictEditors map[conflictEditorKey]*conflictEditorState
 	diff            gitrepo.Diff
 	diffCache       worktreeDiffCache
+	diffFind        *diffFindState
+	diffFindPane    ui.Handle
 	localWatch      localRepositoryWatch
 	diffLoading     bool
 	diffErr         string
@@ -460,6 +463,7 @@ type app struct {
 	lastAutoFetch                   time.Time
 	stashSaveOpen                   bool
 	syncOpen                        bool
+	syncCommits                     *syncCommitPage
 	confirm                         confirmState
 	prompt                          promptState
 	reset                           resetState
