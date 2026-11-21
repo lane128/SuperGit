@@ -333,11 +333,13 @@ func (a *app) filesPaneBody(c *ui.Context) {
 			}
 		})
 		filesScroll := layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.commitFilesScroll}, func() {
-			ui.Column(c).FillWidth().Padding(7).Gap(1).FocusGroup(ui.Horizontal | ui.Vertical).Children(func() {
-				if a.worktreeSelected {
+			if a.worktreeSelected {
+				ui.Column(c).FillWidth().Gap(0).FocusGroup(ui.Horizontal | ui.Vertical).Children(func() {
 					a.workingFileSections(c)
-					return
-				}
+				})
+				return
+			}
+			ui.Column(c).FillWidth().Padding(7).Gap(1).FocusGroup(ui.Horizontal | ui.Vertical).Children(func() {
 				a.commitFileList(c)
 			})
 		}).Grow(1).Basis(0).MinHeight(0)
@@ -349,19 +351,45 @@ func (a *app) filesPaneBody(c *ui.Context) {
 // full height. One editor owns the complete message, including pasted bodies.
 func (a *app) worktreeCommitPane(c *ui.Context) {
 	tk := theme.TokensOf(c)
-	pane := ui.Column(c).FillWidth().Shrink(0).Padding(8, 10).Gap(4).
+	pane := ui.Column(c).FillWidth().Shrink(0).Padding(10, 12).Gap(10).
 		BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
+	wideMeta := ui.Local(pane, "composer-wide-meta", func() bool { return false })
 	pane.Children(func() {
 		a.operationCard(c)
 		a.commitMessageField(c)
-		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
-			ui.Column(c).Basis(scaledFont(190)).Grow(1).MinWidth(0).MaxWidthPercent(100).Children(func() {
-				a.commitIdentityView(c)
-				a.commitAmendControl(c)
-			})
-			ui.Column(c).Basis(scaledFont(128)).Grow(1).MinWidth(0).MaxWidthPercent(100).Children(func() { a.commitAction(c, true) })
+		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Justify(ui.SpaceBetween).Wrap().Children(func() {
+			canInline := *wideMeta && !a.commitIdentityHasExtraLines()
+			if canInline {
+				ui.Row(c).Grow(1).Basis(scaledFont(240)).MinWidth(0).Gap(14).AlignItems(ui.Center).Children(func() {
+					a.commitIdentityViewInline(c.Key("identity"), true)
+					if a.canShowAmendControl() {
+						ui.Box(c).Width(1).Height(scaledFont(13)).Background(tk.Border).Shrink(0)
+						ui.Row(c.Key("amend")).Shrink(0).AlignItems(ui.Center).Children(func() {
+							a.commitAmendControl(c)
+						})
+					}
+				})
+			} else {
+				ui.Column(c).Grow(1).Basis(scaledFont(200)).MinWidth(0).Gap(8).Children(func() {
+					a.commitIdentityViewInline(c.Key("identity"), false)
+					if a.canShowAmendControl() {
+						ui.Row(c.Key("amend")).AlignItems(ui.Center).Children(func() {
+							a.commitAmendControl(c)
+						})
+					}
+				})
+			}
+			a.commitAction(c, true)
 		})
+		a.commitActionReason(c)
 	})
+	if w := pane.Bounds().W; w > 0 {
+		nextWide := w >= scaledFont(520)
+		if nextWide != *wideMeta {
+			*wideMeta = nextWide
+			a.invalidate()
+		}
+	}
 }
 
 // historyDiffPane keeps the permanent Commit/Summary tab beside the open file
@@ -470,7 +498,7 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 			props := display.TextProps{FontSize: scaledFont(11.5), Strong: active}
 			if path != "" {
 				if code := a.detailTabStatus(key.File); code != "" {
-					display.Text(c, code, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Shrink(0).Padding(0, 4).AccessHidden(true)
+					display.Text(c, code, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Font(a.patchFontFamily()).Shrink(0).Padding(0, 4).AccessHidden(true)
 				}
 			}
 			// The file name can shorten, but the two versions must stay distinct.

@@ -170,7 +170,7 @@ func (a *app) conflictEditorBody(c *ui.Context, s *conflictEditorState) {
 						if s.Original.OIDs[[]int{1, 2, 0}[i]] == "" {
 							display.Text(c, a.t("conflictEditorAbsent"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
 						} else {
-							ui.Text(c, sources[i]).Font("Menlo").FontSize(a.patchFontSize()).Selectable().Shrink(0)
+							ui.Text(c, sources[i]).Font(a.patchFontFamily()).FontSize(a.patchFontSize()).Selectable().Shrink(0)
 						}
 					}).FillWidth().Grow(1).Basis(0).MinHeight(0)
 				})
@@ -181,7 +181,7 @@ func (a *app) conflictEditorBody(c *ui.Context, s *conflictEditorState) {
 		ui.Column(c.Key("result-surface")).FillWidth().Grow(1).Basis(0).MinHeight(100).Padding(10).
 			Background(tk.BgContainer).Border(1, tk.BorderSecondary).Radius(tk.BorderRadius).Children(func() {
 			ui.TextAreaBase(c.Key("result"), &s.Text).Lines(5, 100).Fill().MinHeight(0).
-				Label(a.t("conflictEditorResult")).Font("Menlo").FontSize(a.patchFontSize()).TextColor(tk.Text).Disabled(a.busy)
+				Label(a.t("conflictEditorResult")).Font(a.patchFontFamily()).FontSize(a.patchFontSize()).TextColor(tk.Text).Disabled(a.busy)
 		})
 		display.Text(c, a.t("conflictEditorSaveHint"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 3})
 		if workbenchButton(c, a.t("conflictEditorSave"), buttonPrimary, a.busy || a.loading).Clicked() {

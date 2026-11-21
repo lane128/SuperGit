@@ -573,15 +573,15 @@ func (a *app) worktreeFormDialogFor(c *ui.Context, owner toastOwner) {
 	}
 	tk := theme.TokensOf(c)
 	confirmed := false
-	ui.Modal(c, &a.worktreeForm.open, func() {
+	workbenchModal(c, &a.worktreeForm.open, func() {
 		ui.Column(c).Width(480).Padding(18).Gap(10).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).
+			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).
 			Children(func() {
 				display.Text(c, a.t("newWorktreeTitle"), display.TextProps{Strong: true, FontSize: scaledFont(14)})
 				var pathInput ui.Element
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 					pathInput = field.Input(c, &a.worktreeForm.path, field.InputProps{
-						Variant: field.InputFilled, Placeholder: a.t("worktreePath"), Size: theme.Middle,
+						Variant: field.InputOutlined, Placeholder: a.t("worktreePath"), Size: theme.Middle,
 					}).Grow(1).Basis(0)
 					if workbenchButton(c, a.t("chooseParentDir"), buttonNormal, false).Clicked() {
 						a.chooseWorktreeParent()
@@ -592,10 +592,10 @@ func (a *app) worktreeFormDialogFor(c *ui.Context, owner toastOwner) {
 				// AutoFocus once: Focus every frame would take Tab back from the
 				// start field and the buttons.
 				branchInput := field.Input(c, &a.worktreeForm.branch, field.InputProps{
-					Variant: field.InputFilled, Placeholder: a.t("worktreeBranch"), Size: theme.Middle,
+					Variant: field.InputOutlined, Placeholder: a.t("worktreeBranch"), Size: theme.Middle,
 				}).AutoFocus()
 				startInput := field.Input(c, &a.worktreeForm.start, field.InputProps{
-					Variant: field.InputFilled, Placeholder: a.t("worktreeStart"), Size: theme.Middle,
+					Variant: field.InputOutlined, Placeholder: a.t("worktreeStart"), Size: theme.Middle,
 				})
 				display.Text(c, a.t("worktreeFormHint"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 2})
 				ready := strings.TrimSpace(a.worktreeForm.path) != "" &&

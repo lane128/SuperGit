@@ -67,9 +67,9 @@ func TestSuperGitSelectionAndStatusFamiliesStayConsistent(t *testing.T) {
 func TestSuperGitSemanticColors(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		tk := themeConfig("supergit").Tokens(dark)
-		colors := []string{"#F3F5F8", "#FFFFFF", "#F9FAFC", "#DCE3ED", "#1B2535", "#4D5B70", "#5B6A80", "#2456BD", "#E8F0FF", "#16603A", "#EAF6EE", "#9A3346", "#FAECEF", "#7D521A", "#FFF2DC"}
+		colors := []string{"#F3F4F6", "#FFFFFF", "#F7F8FA", "#D0D7DE", "#1F2328", "#59636E", "#656D76", "#0969DA", "#EDF4FF", "#167432", "#DAFBE1", "#CF222E", "#FFEBE9", "#8A5B00", "#FFF8C5"}
 		if dark {
-			colors = []string{"#13161B", "#191C21", "#1B1E24", "#303641", "#ECF0F7", "#A8B4C7", "#93A1B8", "#8CB4FF", "#213653", "#8AD5AA", "#1A3428", "#F2A1AE", "#39252D", "#EEC783", "#3C3321"}
+			colors = []string{"#0D1117", "#161B22", "#12161D", "#30363D", "#E6EDF3", "#8B949E", "#8B949E", "#58A6FF", "#182940", "#3FB950", "#182E22", "#F85149", "#331D22", "#D29922", "#312817"}
 		}
 		got := []ui.Color{tk.BgLayout, tk.BgContainer, tk.BgContainerSecondary, tk.Border, tk.Text, tk.TextSecondary, tk.TextTertiary, tk.Primary, tk.PrimaryBg, tk.Success, tk.SuccessBg, tk.Error, tk.ErrorBg, tk.Warning, tk.WarningBg}
 		for i, want := range colors {

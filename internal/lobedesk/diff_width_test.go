@@ -20,7 +20,7 @@ func TestUnicodeDiffRowDoesNotEllipsizeTheTail(t *testing.T) {
 		a := &app{locale: localeEnglish}
 		tt := ui.NewTester(func(c *ui.Context) {
 			a.applyTheme(c)
-			measured, _ = c.MeasureText(0, ui.Span{Text: text, Font: "Menlo", Size: scaledFont(diffCodeSize)})
+			measured, _ = c.MeasureText(0, ui.Span{Text: text, Font: a.patchFontFamily(), Size: scaledFont(diffCodeSize)})
 			a.diffLineFor(c, line, width, true, 0)
 		}, int(math.Ceil(float64(width))), 100)
 		bounds, ok := tt.Find(text)
@@ -35,25 +35,29 @@ func TestUnicodeDiffRowDoesNotEllipsizeTheTail(t *testing.T) {
 
 func TestUnicodeDiffWidthCoversTheShapedCodeText(t *testing.T) {
 	defer setUIFontScale(uiFontScaleValue())
-	for _, scale := range []float32{fontScaleStandard, fontScaleLarge} {
-		setUIFontScale(scale)
-		for _, text := range []string{
-			strings.Repeat("中文差异", 100) + " tail-marker",
-			strings.Repeat("ＡＢＣ１２３", 70) + " tail-marker",
-			strings.Repeat("mixed中文\t", 70) + " tail-marker",
-		} {
-			var measured float32
-			ui.NewTester(func(c *ui.Context) {
-				measured, _ = c.MeasureText(0, ui.Span{Text: strings.ReplaceAll(text, "\t", "    "), Font: "Menlo", Size: scaledFont(diffCodeSize)})
-			}, 560, 100)
-			got := (&app{}).diffWidth(gitrepo.Diff{Lines: []gitrepo.DiffLine{{Kind: "context", Text: text}}})
-			if got < measured+diffCodeReserve {
-				t.Errorf("scale %.2f scroll extent %.1f cuts shaped Unicode code width %.1f plus gutters", scale, got, measured)
-			}
-			// At the right scroll limit, excess blank extent must not push
-			// the actual tail entirely past the minimum details viewport.
-			if got-measured >= historyDiffPaneMin {
-				t.Errorf("scale %.2f excess scroll extent %.1f hides the Unicode tail at the right limit", scale, got-measured)
+	defer setCodeFontKey(codeFontKeyValue())
+	for _, opt := range codeFontOptions {
+		setCodeFontKey(opt.Key)
+		for _, scale := range []float32{fontScaleStandard, fontScaleLarge} {
+			setUIFontScale(scale)
+			for _, text := range []string{
+				strings.Repeat("中文差异", 100) + " tail-marker",
+				strings.Repeat("ＡＢＣ１２３", 70) + " tail-marker",
+				strings.Repeat("mixed中文\t", 70) + " tail-marker",
+			} {
+				var measured float32
+				ui.NewTester(func(c *ui.Context) {
+					measured, _ = c.MeasureText(0, ui.Span{Text: strings.ReplaceAll(text, "\t", "    "), Font: codeFontFamily(), Size: scaledFont(diffCodeSize)})
+				}, 560, 100)
+				got := (&app{}).diffWidth(gitrepo.Diff{Lines: []gitrepo.DiffLine{{Kind: "context", Text: text}}})
+				if got < measured+diffCodeReserve {
+					t.Errorf("%s scale %.2f scroll extent %.1f cuts shaped Unicode code width %.1f plus gutters", opt.Key, scale, got, measured)
+				}
+				// At the right scroll limit, excess blank extent must not push
+				// the actual tail entirely past the minimum details viewport.
+				if got-measured >= historyDiffPaneMin {
+					t.Errorf("%s scale %.2f excess scroll extent %.1f hides the Unicode tail at the right limit", opt.Key, scale, got-measured)
+				}
 			}
 		}
 	}

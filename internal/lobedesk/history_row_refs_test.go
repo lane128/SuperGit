@@ -4,6 +4,7 @@ import (
 	"maps"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
@@ -121,10 +122,11 @@ func TestNarrowHistoryKeepsRoomForLongSubjectWithCurrentBranch(t *testing.T) {
 		})
 	}, 260, 160)
 	fullDate := formatDateTime(commit.Date)
+	rowDate := formatHistoryDateTime(commit.Date, time.Now())
 	for _, tc := range []struct {
 		width int
 		date  string
-	}{{260, fullDate[5:16]}, {295, fullDate}, {309, fullDate}, {720, fullDate}, {260, fullDate[5:16]}} {
+	}{{260, fullDate[5:16]}, {295, rowDate}, {309, rowDate}, {720, rowDate}, {260, fullDate[5:16]}} {
 		width := tc.width
 		tt.SetSize(width, 160)
 		tt.Frame()
@@ -173,11 +175,12 @@ func TestNarrowHistoryKeepsBranchOverflowOffTheSubjectLine(t *testing.T) {
 		})
 	}, 260, 100)
 	fullDate := formatDateTime(commit.Date)
+	rowDate := formatHistoryDateTime(commit.Date, time.Now())
 	for _, tc := range []struct {
 		width int
 		ref   string
 		date  string
-	}{{260, "+1", fullDate[5:16]}, {720, "lane-01", fullDate}, {260, "+1", fullDate[5:16]}} {
+	}{{260, "+1", fullDate[5:16]}, {720, "lane-01", rowDate}, {260, "+1", fullDate[5:16]}} {
 		tt.SetSize(tc.width, 100)
 		tt.Frame()
 		stamp, hasStamp := tt.AccessByRole(ui.RoleText, tc.date)
@@ -207,6 +210,7 @@ func TestNarrowHistoryUsesSpareTitleSpaceToKeepAuthorReadable(t *testing.T) {
 	}, 260, 100)
 
 	fullDate := formatDateTime(commit.Date)
+	rowDate := formatHistoryDateTime(commit.Date, time.Now())
 	compactDate := fullDate[5:16]
 	for _, tc := range []struct {
 		width int
@@ -216,7 +220,7 @@ func TestNarrowHistoryUsesSpareTitleSpaceToKeepAuthorReadable(t *testing.T) {
 	}{
 		{260, "+1", compactDate, false},
 		{208, "+1", compactDate, true}, // A short title has room for the folded ref when the author does not.
-		{720, "topic", fullDate, false},
+		{720, "topic", rowDate, false},
 		{208, "+1", compactDate, true},
 	} {
 		view.SetSize(tc.width, 100)
@@ -250,7 +254,8 @@ func TestHistoryTimestampsStayReadableAndAlignedWithLongRefs(t *testing.T) {
 		{SHA: "a", Subject: "Release with references", Author: "Fixture author", Date: timestamp, Refs: "feature/international-release-candidate-verification-rollout, tag: next-release, tag: v1"},
 		{SHA: "b", Subject: "Commit without references", Author: "Fixture author", Date: timestamp},
 	}
-	label := formatDateTime(timestamp)
+	label := formatHistoryDateTime(timestamp, time.Now())
+	compactLabel := formatDateTimeLayout(timestamp, "01-02 15:04")
 	var dateWidth float32
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
@@ -258,7 +263,7 @@ func TestHistoryTimestampsStayReadableAndAlignedWithLongRefs(t *testing.T) {
 		a.historySplit.rowWidth = width
 		visibleDate := label
 		if width <= 309 {
-			visibleDate = label[5:16]
+			visibleDate = compactLabel
 		}
 		dateWidth, _ = c.MeasureText(0, ui.Span{Text: visibleDate, Size: scaledFont(11.5)})
 		graph := &commitGraph{Width: width * 0.26}
@@ -273,7 +278,7 @@ func TestHistoryTimestampsStayReadableAndAlignedWithLongRefs(t *testing.T) {
 		tt.Frame()
 		visibleDate := label
 		if width <= 309 {
-			visibleDate = label[5:16]
+			visibleDate = compactLabel
 			for _, node := range tt.AccessAll() {
 				if node.Role == ui.RoleText && node.Name == "Fixture author" && node.Bounds.W < 42 {
 					t.Errorf("narrow metadata clipped the author to %.1f points", node.Bounds.W)
@@ -309,7 +314,8 @@ func TestHistoryMetadataExpandsRefsAcrossResize(t *testing.T) {
 	a := &app{showGraph: true, locale: localeEnglish, selectedSHA: commit.SHA, historyDetailsHidden: true,
 		historyRef: historyRef{Kind: historyRefTag, Name: "v2"}}
 	var dateWidth float32
-	date := formatDateTime(commit.Date)
+	date := formatHistoryDateTime(commit.Date, time.Now())
+	compactDate := formatDateTimeLayout(commit.Date, "01-02 15:04")
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
 		width, _ := c.Size()
@@ -325,7 +331,7 @@ func TestHistoryMetadataExpandsRefsAcrossResize(t *testing.T) {
 	}{
 		{800, []string{"feature-a", "main", "v2", "+1"}},
 		{510, []string{"main", "v2", "+2"}},
-		{500, []string{"v2", "+3"}}, // Same slot limit as 510, with less actual room.
+		{480, []string{"v2", "+3"}}, // Same slot limit as 510, with less actual room.
 		{310, []string{"+4"}},       // The selected tag remains available in the overflow.
 		{800, []string{"feature-a", "main", "v2", "+1"}},
 	} {
@@ -337,7 +343,7 @@ func TestHistoryMetadataExpandsRefsAcrossResize(t *testing.T) {
 		}
 		visibleDate, minimumDateWidth := date, dateWidth
 		if tc.width == 310 {
-			visibleDate, minimumDateWidth = date[5:16], 70
+			visibleDate, minimumDateWidth = compactDate, 70
 		}
 		stamp, ok := tt.AccessByRole(ui.RoleText, visibleDate)
 		right := float32(tc.width - historyListBorder - historyListPadding - historyRowPadding)
@@ -385,7 +391,7 @@ func TestHistoryWidensWithoutTruncatingReadableAuthor(t *testing.T) {
 			a.status.Head, a.status.Branch = target.SHA, "main"
 			view := ui.NewTester(a.root, 1130, 640)
 			view.SetTitleBar(ui.TitleBar{Height: 38, Left: 72})
-			date := formatDateTime(target.Date)
+			date := formatHistoryDateTime(target.Date, time.Now())
 			var authorWidth, dateWidth float32
 			ui.NewTester(func(c *ui.Context) {
 				authorWidth, _ = c.MeasureText(0, ui.Span{Text: target.Author, Size: 11.5})
@@ -437,7 +443,7 @@ func TestHistoryRefsStayWithMetadataAcrossNarrowResize(t *testing.T) {
 	for _, width := range []int{390, 398, 400, 402, 420, 390} {
 		tt.SetSize(width, 190)
 		tt.Frame()
-		stamp, ok := tt.AccessByRole(ui.RoleText, formatDateTime(commit.Date))
+		stamp, ok := tt.AccessByRole(ui.RoleText, formatHistoryDateTime(commit.Date, time.Now()))
 		if !ok || stamp.Offscreen {
 			t.Fatalf("%d points: timestamp is missing", width)
 		}

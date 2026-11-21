@@ -73,9 +73,9 @@ func (a *app) resetDialogFor(c *ui.Context, owner toastOwner) {
 	}
 	tk := theme.TokensOf(c)
 	chosen := ""
-	ui.Modal(c, &a.reset.open, func() {
+	workbenchModal(c, &a.reset.open, func() {
 		ui.Column(c).Width(480).Padding(18).Gap(10).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).
+			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).
 			Children(func() {
 				display.Text(c, a.t("resetTitle"), display.TextProps{Strong: true, FontSize: scaledFont(14)})
 				display.Text(c, a.tf("resetMessage", shortSHA(a.reset.sha), a.reset.subject),

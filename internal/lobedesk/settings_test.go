@@ -170,10 +170,11 @@ func TestApplyDefaultsRestoresStartupValues(t *testing.T) {
 	a.hideTime = true
 	a.autoFetchEvery = 30
 	a.applyDefaults()
-	if a.themeMode != "system" || a.palette != themePaletteCatppuccin ||
-		a.locale != localeChinese || !a.showGraph || a.autoFetch || a.autoFetchPrune {
-		t.Fatalf("theme=%q palette=%q locale=%q graph=%t fetch=%t prune=%t",
-			a.themeMode, a.palette, a.locale, a.showGraph, a.autoFetch, a.autoFetchPrune)
+	if a.themeMode != "system" || a.palette != themePaletteSuperGit ||
+		a.locale != localeChinese || !a.showGraph || a.autoFetch || a.autoFetchPrune ||
+		a.codeFontKey() != codeFontJetBrainsMono {
+		t.Fatalf("theme=%q palette=%q locale=%q graph=%t fetch=%t prune=%t codeFont=%q",
+			a.themeMode, a.palette, a.locale, a.showGraph, a.autoFetch, a.autoFetchPrune, a.codeFontKey())
 	}
 	if a.historySplit.share != 0 || a.stashSplit.share != 0 || a.branchSplit.share != 0 {
 		t.Fatalf("splits %v/%v/%v; want every divider back at its default",
@@ -204,7 +205,7 @@ func TestApplyDefaultsRestoresStartupValues(t *testing.T) {
 // not what "reset the look" should mean.
 func TestResetDefaultsKeepTheLanguage(t *testing.T) {
 	got := resetDefaults(persistedSettings{Language: string(localeEnglish)})
-	if got.Theme != "system" || got.Palette != themePaletteCatppuccin || !ptrValue(got.ShowGraph) {
+	if got.Theme != "system" || got.Palette != themePaletteSuperGit || !ptrValue(got.ShowGraph) {
 		t.Fatalf("reset %+v did not restore the look", got)
 	}
 	if got.Language != string(localeEnglish) {

@@ -25,7 +25,7 @@ func TestSettingsChoiceUsesSharedSelectionAndKeepsOneValue(t *testing.T) {
 		t.Errorf("setting toggle height=%v want %v", light.Bounds.H, scaledFont(29))
 	}
 	p := tt.Image().RGBAAt(int(light.Bounds.X+3), int(light.Bounds.Y+light.Bounds.H/2))
-	if got := ui.RGB(p.R, p.G, p.B); got != ui.Hex("#D6E1F7") {
+	if got := ui.RGB(p.R, p.G, p.B); got != ui.Hex("#EDF4FF") {
 		t.Errorf("selected setting surface=%v want shared blue", got)
 	}
 	tt.ClickAt(light.Bounds.X+light.Bounds.W/2, light.Bounds.Y+light.Bounds.H/2)

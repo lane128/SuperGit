@@ -2,7 +2,6 @@ package lobedesk
 
 import (
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
@@ -120,18 +119,61 @@ func capsuleBorder(border, ink, ground ui.Color) ui.Color {
 	return ink
 }
 
+// headCapsuleColors styles the checked-out branch in History as a solid blue
+// capsule with crisp white ink, distinguishing HEAD purely by surface weight
+// without a leading checkmark icon.
+func headCapsuleColors(tk *theme.Tokens, ground ui.Color) refCapsuleStyle {
+	surface := tk.Blue
+	if tk.Dark && surfaceLuminance(surface) > 0.25 {
+		surface = ui.Hex("#1F6FEB")
+	}
+	ink := ui.RGB(255, 255, 255)
+	if contrastRatio(ink, surface) < 4.5 {
+		for step := float32(0.05); step <= 0.65; step += 0.05 {
+			candidate := surface.Mix(ui.RGB(0, 0, 0), step)
+			if contrastRatio(ink, candidate) >= 4.5 {
+				surface = candidate
+				break
+			}
+		}
+	}
+	border := surface.Mix(ui.RGB(0, 0, 0), 0.18)
+	if tk.Dark {
+		border = surface.Mix(ink, 0.26)
+	}
+	return refCapsuleStyle{Ink: ink, Surface: surface, Border: capsuleBorder(border, ink, ground)}
+}
+
 // refPill builds the capsule element. The caller owns width, tooltip and the
-// context menu, so the same pills serve the history row, the details pane and
-// the HEAD chip.
+// context menu, so the same pills serve the history row and the HEAD chip.
 func refPill(c *ui.Context, style refCapsuleStyle, icon *ui.SVG, label string) ui.Element {
 	pill := ui.Row(c).Height(refCapsuleHeight).Radius(refCapsuleHeight/2).PaddingX(refPillPadding).Gap(refPillGap).
 		Shrink(0).AlignItems(ui.Center).Background(style.Surface).Border(1, style.Border).
 		TextColor(style.Ink)
 	pill.Children(func() {
 		if icon != nil {
-			ui.Icon(c, icon).FontSize(scaledFont(11))
+			ui.Icon(c, icon).FontSize(scaledFont(11)).TextColor(style.Ink)
 		}
-		display.Text(c, label, display.TextProps{FontSize: scaledFont(11)}).SingleLine()
+		// Use ui.Text with explicit style.Ink rather than display.Text, which
+		// forces tk.Text and would paint dark ink onto solid light-mode HEAD pills.
+		ui.Text(c, label).FontSize(scaledFont(11)).FontWeight(600).TextColor(style.Ink).SingleLine()
 	})
 	return pill
+}
+
+// summaryRefChip draws a quiet, flat metadata tag for the Commit Summary pane,
+// reserving full capsule pills for the History list.
+func summaryRefChip(c *ui.Context, tk *theme.Tokens, accent ui.Color, icon *ui.SVG, label string) ui.Element {
+	surface := tk.FillQuaternary.Over(tk.BgContainer)
+	ink := capsuleInk(accent, surface, 4.5)
+	chip := ui.Row(c).Height(refCapsuleHeight).Radius(4).PaddingX(6).Gap(refPillGap).
+		Shrink(0).AlignItems(ui.Center).Background(surface).Border(1, tk.BorderSecondary).
+		TextColor(ink)
+	chip.Children(func() {
+		if icon != nil {
+			ui.Icon(c, icon).FontSize(scaledFont(11)).TextColor(ink)
+		}
+		ui.Text(c, label).FontSize(scaledFont(11)).FontWeight(500).TextColor(ink).SingleLine()
+	})
+	return chip
 }

@@ -39,7 +39,7 @@ func (a *app) branchSelector(c *ui.Context, iconWidth float32) {
 	available := toolbarCommandWidth - 2*(iconWidth+padding)
 	if status != "" {
 		caption += " (" + spoken + ")"
-		statusWidth, _ := c.MeasureText(0, ui.Span{Text: status, Size: fontSize, Weight: 500})
+		statusWidth, _ := c.MeasureText(0, ui.Span{Text: status, Font: a.patchFontFamily(), Size: fontSize, Weight: 500})
 		available -= statusWidth + 6
 	}
 	name := fitToolbarBranchName(c, branch, fontSize, available-2)
@@ -47,14 +47,14 @@ func (a *app) branchSelector(c *ui.Context, iconWidth float32) {
 	button := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, disabled, false).
 		Label(a.t("branches")).Description(caption).
 		Tooltip(caption+"\n"+a.t("quickCheckout")+" ("+shortcutKeys("branch.quickCheckout")+")").
-		Grow(1).Basis(0).MinWidth(0).Padding(0, iconWidth+padding, 0, padding).Radius(0, 7, 7, 0)
+		Grow(1).Basis(0).MinWidth(0).Padding(0, iconWidth+padding, 0, padding).Radius(0, 6, 6, 0)
 	button.Children(func() {
 		label := ui.Text(c.Key("branch-name"), name).FontSize(fontSize).SingleLine().MinWidth(0).Shrink(1)
 		if a.status.Branch == "" && !disabled {
 			label.TextColor(tk.Warning)
 		}
 		if status != "" {
-			ui.Text(c.Key("branch-tracking"), status).FontSize(fontSize).TextColor(tk.TextSecondary).SingleLine().Shrink(0)
+			ui.Text(c.Key("branch-tracking"), status).Font(a.patchFontFamily()).FontSize(fontSize).TextColor(tk.TextSecondary).SingleLine().Shrink(0)
 		}
 	})
 	if button.Clicked() {
@@ -126,6 +126,21 @@ func (a *app) cleanFiles(c *ui.Context) {
 	listEmptyState(c, lucide.CircleCheck(), theme.TokensOf(c).Success, a.t("clean"), a.t("cleanHint"))
 }
 
+func fileSectionAccent(tk *theme.Tokens, key string, staged bool) ui.Color {
+	switch {
+	case staged || key == filesSectionStaged:
+		return tk.Success
+	case key == filesSectionUntracked:
+		return tk.Blue
+	default:
+		return tk.Warning
+	}
+}
+
+func fileSectionHeaderColors(tk *theme.Tokens, hovered bool) (bg, divider, badgeBg ui.Color) {
+	return foldBandColors(tk, hovered)
+}
+
 // fileSection draws one group of files under a header that folds it. The count
 // stays on a folded header, so the reader can still tell what is put away.
 func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.Entry, staged bool) {
@@ -140,31 +155,48 @@ func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.En
 		description += "\n" + a.tf("fileGroupCount", len(entries)) + " · " + a.tf("filesSelectedCount", selectionCount)
 	}
 	compact := a.page == "history" && a.historyFilesWidth() < scaledFont(130)
-	ui.Column(c).FillWidth().Gap(1).Children(func() {
-		header := ui.ButtonBase(c).Label(title).Row().FillWidth().Height(28).PaddingX(8).Gap(6).
-			Radius(tk.BorderRadius).AlignItems(ui.Center).Expanded(!collapsed).
+	topBorder := float32(1)
+	if key == filesSectionUnstaged {
+		topBorder = 0
+	}
+	bottomBorder := float32(0)
+	if !collapsed || key == filesSectionUntracked {
+		bottomBorder = 1
+	}
+	ui.Column(c).FillWidth().Gap(0).Children(func() {
+		header := ui.ButtonBase(c).Label(title).Row().FillWidth().Height(scaledFont(29)).Padding(0, 10, 0, 0).Gap(0).
+			Radius(0).AlignItems(ui.Center).Expanded(!collapsed).Cursor(ui.CursorPointer).
 			// The header folds the section and its count keeps counting the
 			// folded rows; say both, or the number reads as what is on screen.
 			Description(description).Tooltip(description)
 		if compact {
-			header.PaddingX(3).Gap(3).Tooltip(title + "\n" + description)
+			header.Padding(0, 4, 0, 0).Tooltip(title + "\n" + description)
 		}
-		if header.Hovered() {
-			header.Background(tk.FillTertiary)
-		}
+		bg, divider, badgeBg := fileSectionHeaderColors(tk, header.Hovered())
+		header.Background(bg).BorderWidth(topBorder, 0, bottomBorder, 0).BorderColor(divider)
 		header.OnClick(func() { a.toggleFilesSection(key) })
 		header.Children(func() {
-			chevron := lucide.ChevronDown()
-			if collapsed {
-				chevron = lucide.ChevronRight()
+			accent := fileSectionAccent(tk, key, staged).Mix(bg, 0.22)
+			ui.Box(c).Width(3).AlignSelf(ui.Stretch).Background(accent).Shrink(0)
+			inner := ui.Row(c).Grow(1).Basis(0).MinWidth(0).Padding(0, 0, 0, 8).Gap(6).AlignItems(ui.Center)
+			if compact {
+				inner.Padding(0, 0, 0, 4).Gap(4)
 			}
-			ui.Icon(c, chevron).FontSize(scaledFont(12)).TextColor(tk.TextTertiary)
-			display.Text(c, title, display.TextProps{Type: display.TextSecondary, Strong: true, FontSize: scaledFont(11)}).SingleLine().Grow(1).Basis(0).MinWidth(0)
-			display.Text(c, fmt.Sprint(len(entries)), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
-			if s := a.workspaceSelection; a.repo != nil && s.Root == a.repo.Root && s.Group == key && len(s.Files) > 0 {
-				display.Text(c, a.tf("filesSelectedCount", len(s.Files)), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).Shrink(0)
-			}
-
+			inner.Children(func() {
+				chevron := lucide.ChevronDown()
+				if collapsed {
+					chevron = lucide.ChevronRight()
+				}
+				ui.Icon(c, chevron).FontSize(scaledFont(12)).TextColor(tk.TextSecondary).Shrink(0)
+				ui.Text(c, title).FontSize(scaledFont(11.5)).FontWeight(600).TextColor(tk.Text).SingleLine().Grow(1).Basis(0).MinWidth(0)
+				if s := a.workspaceSelection; a.repo != nil && s.Root == a.repo.Root && s.Group == key && len(s.Files) > 0 {
+					display.Text(c, a.tf("filesSelectedCount", len(s.Files)), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10.5)}).SingleLine().Shrink(0)
+				}
+				ui.Row(c).Height(scaledFont(17)).MinWidth(scaledFont(20)).PaddingX(6).Radius(999).
+					Center().Shrink(0).Background(badgeBg).Border(1, divider).Children(func() {
+					ui.Text(c, fmt.Sprint(len(entries))).FontSize(scaledFont(10.5)).FontWeight(600).TextColor(tk.TextSecondary).SingleLine()
+				})
+			})
 		})
 		if collapsed {
 			return
@@ -187,7 +219,15 @@ func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.En
 				reveal = i
 			}
 		}
-		ui.Column(c).FillWidth().Role(ui.RoleList).Label(title).Multiselectable(true).Children(func() {
+		listCol := ui.Column(c).FillWidth().Role(ui.RoleList).Label(title).Multiselectable(true)
+		if len(entries) > 0 {
+			if compact {
+				listCol.Padding(3, 3, 4, 3)
+			} else {
+				listCol.Padding(4, 6, 6, 6)
+			}
+		}
+		listCol.Children(func() {
 			virtualPatchRows(c, a.commitFilesViewport, &a.commitFilesScroll, heights, reveal, func(rowContext *ui.Context, i int) {
 				ui.Column(rowContext).FillWidth().Height(heights[i]).Shrink(0).Children(func() {
 					row := a.fileRow(rowContext, entries[i], staged)
@@ -476,11 +516,6 @@ func (a *app) diffPlaceholder(c *ui.Context, icon *ui.SVG, text string, hint ...
 // computed before layout, so it has to estimate the glyphs from it.
 const diffCodeSize float32 = 11.5
 
-// menloAdvance is Menlo's advance as a fraction of its size, rounded up a
-// little: over-measuring costs a few pixels of scroll range, under-measuring
-// clips the end of a long line where no scroll can reach it.
-const menloAdvance float32 = 0.62
-
 // diffHoverActionReserve is the room a row keeps on its right for the hover
 // action: the icon's box, the scroll bar the pane draws over its right edge,
 // and a little clearance.
@@ -522,21 +557,25 @@ func (a *app) syncDiffHoverScroll() bool {
 }
 
 func diffEstimatedAdvance(text string) float32 {
+	return diffEstimatedAdvanceWith(text, codeFontAdvance())
+}
+
+func diffEstimatedAdvanceWith(text string, glyphAdvance float32) float32 {
 	advance := float32(0)
 	for _, r := range text {
 		switch {
 		case r == '\t':
-			advance += 4 * menloAdvance // The renderer uses four spaces.
+			advance += 4 * glyphAdvance // The renderer uses four spaces.
 		case r < 0x80:
-			advance += menloAdvance
+			advance += glyphAdvance
 		default:
 			// CJK/fullwidth fallback glyphs use one em, rather than
-			// Menlo's narrower ordinary advance or two such advances.
+			// monospace's narrower ordinary advance or two such advances.
 			kind := unicodewidth.LookupRune(r).Kind()
 			if kind == unicodewidth.EastAsianWide || kind == unicodewidth.EastAsianFullwidth {
 				advance++
 			} else {
-				advance += menloAdvance
+				advance += glyphAdvance
 			}
 		}
 	}
@@ -544,9 +583,10 @@ func diffEstimatedAdvance(text string) float32 {
 }
 
 func (a *app) diffWidth(diff gitrepo.Diff) float32 {
+	glyphAdvance := codeFontAdvanceFor(a.codeFontKey())
 	var longest float32
 	for _, line := range diff.Lines {
-		longest = max(longest, diffEstimatedAdvance(line.Text))
+		longest = max(longest, diffEstimatedAdvanceWith(line.Text, glyphAdvance))
 	}
 	// The estimate has to follow the reader's text size: a fixed advance that
 	// fits the standard preset leaves the large preset's longest lines short.
@@ -600,11 +640,12 @@ func (a *app) diffLineForSide(c *ui.Context, line gitrepo.DiffLine, width float3
 		plain := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0).Padding(0, 8, 0, 12).Gap(8).AlignItems(ui.Center).
 			Background(bg)
 		plain.Children(func() {
-			ui.Text(c, lineNumber(line.Old)).Font("Menlo").FontSize(scaledFont(10)).Width(34).Shrink(0).
+			font := a.patchFontFamily()
+			ui.Text(c, lineNumber(line.Old)).Font(font).FontSize(scaledFont(10)).Width(34).Shrink(0).
 				TextAlign(ui.End).TextColor(gutter)
-			ui.Text(c, lineNumber(line.New)).Font("Menlo").FontSize(scaledFont(10)).Width(34).Shrink(0).
+			ui.Text(c, lineNumber(line.New)).Font(font).FontSize(scaledFont(10)).Width(34).Shrink(0).
 				TextAlign(ui.End).TextColor(gutter)
-			ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(a.patchFontSize()).
+			ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font(font).FontSize(a.patchFontSize()).
 				SingleLine().TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
 		})
 		return
@@ -718,7 +759,7 @@ func (a *app) plainHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32)
 	tk := theme.TokensOf(c)
 	ui.Row(c).Width(width).Height(24).Shrink(0).Padding(0, 12).AlignItems(ui.Center).
 		Background(tk.Info.Alpha(0.06).Over(tk.BgContainer)).Children(func() {
-		ui.Text(c, line.Text).Font("Menlo").FontSize(scaledFont(10.5)).SingleLine().
+		ui.Text(c, line.Text).Font(a.patchFontFamily()).FontSize(scaledFont(10.5)).SingleLine().
 			TextColor(tk.Info)
 	})
 }
@@ -903,9 +944,13 @@ func (a *app) operationCard(c *ui.Context) {
 	})
 }
 
+func (a *app) canShowAmendControl() bool {
+	return a.headMessage != "" || a.status.Head != ""
+}
+
 func (a *app) commitAmendControl(c *ui.Context) {
 	wasAmend := a.amend
-	if a.headMessage != "" {
+	if a.canShowAmendControl() {
 		choice.Checkbox(c, &a.amend, a.t("amendLast"), choice.CheckboxProps{Size: 14})
 	}
 	if a.amend != wasAmend {
@@ -920,6 +965,37 @@ func (a *app) commitAmendControl(c *ui.Context) {
 	}
 }
 
+// commitStatusPill shows the staged count or Amend HEAD state beside the
+// compact Commit button so the action button keeps a short, fixed label.
+func (a *app) commitStatusPill(c *ui.Context, staged int) {
+	tk := theme.TokensOf(c)
+	text := a.t("noStagedChanges")
+	bg := tk.BgContainer
+	border := tk.BorderSecondary
+	ink := tk.TextTertiary
+	dot := tk.TextTertiary
+	switch {
+	case a.amend:
+		text = a.t("amendHead")
+		bg = tk.PrimaryBg
+		ink = tk.PrimaryText
+		dot = tk.PrimaryText
+		border = tk.PrimaryText.Alpha(0.28)
+	case staged > 0:
+		text = a.stagedLabel(staged)
+		bg = tk.SuccessBg
+		ink = tk.SuccessText
+		dot = tk.SuccessText
+		border = tk.SuccessText.Alpha(0.28)
+	}
+	ui.Row(c).Height(scaledFont(24)).Padding(0, 9).Gap(5).Radius(999).
+		AlignItems(ui.Center).Shrink(0).
+		Background(bg).Border(1, border).Children(func() {
+		ui.Box(c).Size(6, 6).Radius(3).Background(dot).Shrink(0)
+		ui.Text(c, text).FontSize(scaledFont(11)).FontWeight(500).TextColor(ink).SingleLine()
+	})
+}
+
 // Both layouts share the same readiness and operation guards. Changes keeps
 // this footer outside its scrolling editor so a long message cannot hide it.
 func (a *app) commitAction(c *ui.Context, showCount bool) {
@@ -928,51 +1004,36 @@ func (a *app) commitAction(c *ui.Context, showCount bool) {
 	if a.amend {
 		label = a.t("amend")
 	}
-	visibleLabel := label
-	if showCount && staged == 0 && !a.amend && a.operation.Kind == "" {
-		visibleLabel = a.t("nothingToCommit")
-	} else if showCount {
-		visibleLabel += " · " + a.stagedLabel(staged)
-	}
 	ready := a.canCommit()
 	reason := a.commitDisabledReason()
 	description := reason
 	if showCount {
-		description = a.stagedLabel(staged) + ". " + reason
-	}
-	button := workbenchButton(c, visibleLabel, buttonPrimary, !ready).
-		Label(label).FillWidth().KeyShortcuts(ui.Cmd, ui.KeyEnter).
-		Description(description).Tooltip(reason)
-	if button.Clicked() {
-		a.commit()
-	}
-	if showCount {
-		if reason != "" && reason != a.t("commitTitleRequired") && reason != a.t("stagePrompt") {
-			display.Text(c, reason, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10), Rows: 2}).FillWidth()
+		if reason != "" {
+			description = a.stagedLabel(staged) + ". " + reason
+		} else {
+			description = a.stagedLabel(staged)
 		}
+	}
+	ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(10).Children(func() {
+		if showCount {
+			a.commitStatusPill(c, staged)
+		}
+		button := workbenchButton(c, label, buttonPrimary, !ready).
+			Label(label).MinWidth(scaledFont(76)).PaddingX(14).Shrink(0).
+			KeyShortcuts(ui.Cmd, ui.KeyEnter).
+			Description(description).Tooltip(reason)
+		if button.Clicked() {
+			a.commit()
+		}
+	})
+}
+
+// commitActionReason surfaces blocking operational errors below the footer row
+// without stretching the compact Commit button.
+func (a *app) commitActionReason(c *ui.Context) {
+	reason := a.commitDisabledReason()
+	if reason == "" || reason == a.t("stagePrompt") {
 		return
 	}
-	switch {
-	case a.operation.Kind != "" && !commitOperation(a.operation.Kind):
-		// A rebase continues through its own button, not this box.
-		style := display.TextSecondary
-		if a.operationConflicts() {
-			style = display.TextWarning
-		}
-		display.Text(c, a.tf("operationContinuePrompt", a.operation.Kind), display.TextProps{
-			Type: style, FontSize: scaledFont(10),
-		})
-	case commitOperation(a.operation.Kind) && a.operationConflicts():
-		// The commit finishes the operation, but only once every
-		// conflicted file is resolved.
-		display.Text(c, a.tf("commitOperationConflictPrompt", a.operation.Kind), display.TextProps{
-			Type: display.TextWarning, FontSize: scaledFont(10),
-		})
-	case staged == 0 && !a.amend:
-		prompt := a.t("stagePrompt")
-		if commitOperation(a.operation.Kind) {
-			prompt = a.tf("commitOperationPrompt", a.operation.Kind)
-		}
-		display.Text(c, prompt, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)})
-	}
+	display.Text(c, reason, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10.5), Rows: 2}).FillWidth()
 }

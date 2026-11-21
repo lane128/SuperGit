@@ -48,29 +48,37 @@ func (a *app) addRemoteDialog(c *ui.Context) {
 	}
 	tk := theme.TokensOf(c)
 	open, submit := true, false
-	ui.Modal(c, &open, func() {
-		ui.Column(c).Width(400).Padding(18).Gap(12).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).
+	workbenchModal(c, &open, func() {
+		ui.Column(c).Width(420).
+			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).Clip().
 			Children(func() {
-				display.Text(c, a.t("addRemote"), display.TextProps{Strong: true, FontSize: scaledFont(14)})
-				input := func(label string, value *string) (el ui.Element) {
-					ui.Column(c).FillWidth().Gap(4).Children(func() {
-						display.Text(c, label, display.TextProps{FontSize: scaledFont(12)})
-						el = field.Input(c, value, field.InputProps{Variant: field.InputFilled, Size: theme.Middle}).Label(label).Disabled(a.busy)
-					})
-					return el
-				}
-				name := input(a.t("remoteName"), &form.name).AutoFocus()
-				address := input(a.t("remoteAddress"), &form.address)
-				if form.err != "" {
-					display.Text(c, a.t("addRemoteFailed"), display.TextProps{Type: display.TextDanger, Strong: true, FontSize: scaledFont(12)})
-					layout.ScrollArea(c, layout.ScrollAreaProps{}, func() {
-						ui.Text(c, form.err).FillWidth().FontSize(scaledFont(12)).TextColor(tk.TextSecondary).Selectable()
-					}).MaxHeight(96)
-				}
+				ui.Row(c).FillWidth().Padding(16, 20, 12, 20).AlignItems(ui.Center).
+					BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary).Children(func() {
+					display.Text(c, a.t("addRemote"), display.TextProps{Strong: true, FontSize: scaledFont(15)})
+				})
+				var name, address ui.Element
+				ui.Column(c).FillWidth().Padding(16, 20, 18, 20).Gap(14).Children(func() {
+					input := func(label string, value *string) (el ui.Element) {
+						ui.Column(c).FillWidth().Gap(6).Children(func() {
+							display.Text(c, label, display.TextProps{FontSize: scaledFont(12)})
+							el = field.Input(c, value, field.InputProps{Variant: field.InputOutlined, Size: theme.Middle}).Label(label).FillWidth().Disabled(a.busy)
+						})
+						return el
+					}
+					name = input(a.t("remoteName"), &form.name).AutoFocus()
+					address = input(a.t("remoteAddress"), &form.address)
+					if form.err != "" {
+						display.Text(c, a.t("addRemoteFailed"), display.TextProps{Type: display.TextDanger, Strong: true, FontSize: scaledFont(12)})
+						layout.ScrollArea(c, layout.ScrollAreaProps{}, func() {
+							ui.Text(c, form.err).FillWidth().FontSize(scaledFont(12)).TextColor(tk.TextSecondary).Selectable()
+						}).MaxHeight(96)
+					}
+				})
 				ready := !a.busy && !a.loading && strings.TrimSpace(form.name) != "" && strings.TrimSpace(form.address) != ""
 				submit = ready && (name.Submitted() || address.Submitted())
-				ui.Row(c).FillWidth().Gap(8).Justify(ui.End).Children(func() {
+				ui.Row(c).FillWidth().Padding(12, 20).Gap(8).AlignItems(ui.Center).Justify(ui.End).
+					Background(tk.FillQuaternary.Over(tk.BgElevated)).
+					BorderWidth(1, 0, 0, 0).BorderColor(tk.BorderSecondary).Children(func() {
 					if workbenchButton(c, a.t("cancel"), buttonNormal, a.busy).Clicked() {
 						open = false
 					}

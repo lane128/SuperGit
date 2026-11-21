@@ -5,13 +5,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 	"supergit/internal/gitrepo"
 )
 
 func historyRefPillWidth(c *ui.Context, label string, icon bool, gap float32) float32 {
-	w, _ := c.MeasureText(0, ui.Span{Text: label, Size: scaledFont(11)})
+	w, _ := c.MeasureText(0, ui.Span{Text: label, Size: scaledFont(11), Weight: 600})
 	w += 2*refPillPadding + 2 // border
 	if icon {
 		w += scaledFont(11) + refPillGap
@@ -66,14 +65,14 @@ func (a *app) fitHistoryRefs(c *ui.Context, refs []string, head string, listWidt
 		width, readable := overflow, true
 		for _, ref := range shown {
 			badge := a.refBadge(ref)
-			icon := badge.Icon != nil || ref == head
+			icon := badge.Icon != nil
 			minimum := historyRefPillWidth(c, elideMiddle(badge.Label, 7), icon, 0)
 			readable = readable && minimum <= layout.maxWidth
 			width += min(layout.maxWidth+gap, historyRefPillWidth(c, elideMiddle(badge.Label, refBadgeRunes), icon, gap))
 		}
 		if readable && width <= budget {
 			layout.shown, layout.folded = shown, folded
-			layout.compactHead = metadata || rowRefsNarrow(listWidth) || head == "" || width+historyRefPillWidth(c, "HEAD", true, gap) > budget
+			layout.compactHead = true
 			return layout
 		}
 		if slots == 1 {
@@ -82,7 +81,7 @@ func (a *app) fitHistoryRefs(c *ui.Context, refs []string, head string, listWidt
 			ref := shown[0]
 			badge := a.refBadge(ref)
 			width := budget - overflow - gap
-			minimum := historyRefPillWidth(c, elideMiddle(badge.Label, 7), badge.Icon != nil || ref == head, 0)
+			minimum := historyRefPillWidth(c, elideMiddle(badge.Label, 7), badge.Icon != nil, 0)
 			if min(layout.maxWidth, width) >= minimum {
 				layout.shown, layout.folded = shown, folded
 				layout.maxWidth = min(layout.maxWidth, width)
@@ -96,17 +95,14 @@ func (a *app) fitHistoryRefs(c *ui.Context, refs []string, head string, listWidt
 
 func (a *app) commitRowRefs(c *ui.Context, commit gitrepo.Commit, graph *commitGraph, index int, rowBg ui.Color, head string, layout historyRefLayout) {
 	tk := theme.TokensOf(c)
-	if !layout.compactHead {
-		a.headTag(c, commit.Refs, rowBg, false)
-	}
 	for _, ref := range layout.shown {
 		badge := a.refBadge(ref)
 		// A ref can change position as more pills fit. Keep its open menu
 		// attached to the ref rather than to that position.
 		key := "history-ref:" + ref
-		label := historyRefPillLabel(c, badge.Label, badge.Icon != nil || ref == head, layout.maxWidth)
-		if layout.compactHead && ref == head {
-			pill := refPill(c.Key(key), refCapsuleColors(tk.Blue, rowBg), lucide.Check(), label).MaxWidth(layout.maxWidth).Tooltip(a.tf("headBadgeTip", head))
+		label := historyRefPillLabel(c, badge.Label, badge.Icon != nil, layout.maxWidth)
+		if ref == head {
+			pill := refPill(c.Key(key), headCapsuleColors(tk, rowBg), nil, label).MaxWidth(layout.maxWidth).Tooltip(a.tf("headBadgeTip", head))
 			a.refBadgeMenu(c, pill, ref, commit.SHA)
 			continue
 		}

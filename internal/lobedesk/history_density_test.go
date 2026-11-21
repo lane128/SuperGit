@@ -3,6 +3,7 @@ package lobedesk
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
@@ -129,8 +130,8 @@ func TestHistoryDensityKeepsTextAndRefsInsideRows(t *testing.T) {
 						t.Fatal("hidden author still rendered")
 					}
 					if columns.time {
-						check(formatDateTime(commit.Date), row.Bounds)
-					} else if _, ok := tt.Find(formatDateTime(commit.Date)); ok {
+						check(formatHistoryDateTime(commit.Date, time.Now()), row.Bounds)
+					} else if _, ok := tt.Find(formatHistoryDateTime(commit.Date, time.Now())); ok {
 						t.Fatal("hidden time still rendered")
 					}
 					work, ok := tt.AccessByRole(ui.RoleOption, a.t("noChangesShort"))

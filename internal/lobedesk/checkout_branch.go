@@ -137,9 +137,9 @@ func (a *app) checkoutBranchDialogFor(c *ui.Context, owner toastOwner) {
 		a.checkoutBranch.reveal = true
 	}
 	chosen := ""
-	ui.Modal(c, &a.checkoutBranch.open, func() {
+	workbenchModal(c, &a.checkoutBranch.open, func() {
 		ui.Column(c).Width(420).Padding(16).Gap(10).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).
+			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).
 			Children(func() {
 				display.Text(c, a.t("checkoutBranchesTitle"), display.TextProps{Strong: true, FontSize: scaledFont(14)})
 				display.Text(c, a.tf("checkoutBranchesMessage", shortSHA(a.checkoutBranch.sha), a.checkoutBranch.subject),

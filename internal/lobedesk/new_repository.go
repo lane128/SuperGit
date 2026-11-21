@@ -85,12 +85,12 @@ func (a *app) newRepositoryDialog(c *ui.Context) {
 	}
 	tk := theme.TokensOf(c)
 	open := a.newRepoForm.open
-	ui.Modal(c, &open, func() {
+	workbenchModal(c, &open, func() {
 		ui.Column(c).Width(480).MaxWidthPercent(95).Padding(18).Gap(10).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
+			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).Children(func() {
 			display.Text(c, a.t("newRepoTitle"), display.TextProps{Strong: true, FontSize: scaledFont(14)})
 			display.Text(c, a.t("cloneDestination"), display.TextProps{FontSize: scaledFont(12)})
-			path := field.Input(c, &a.newRepoForm.path, field.InputProps{Variant: field.InputFilled, Size: theme.Middle}).Label(a.t("cloneDestination")).FillWidth().Disabled(a.busy).AutoFocus()
+			path := field.Input(c, &a.newRepoForm.path, field.InputProps{Variant: field.InputOutlined, Size: theme.Middle}).Label(a.t("cloneDestination")).FillWidth().Disabled(a.busy).AutoFocus()
 			display.Text(c, a.t("newRepoHint"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
 			if a.newRepoForm.err != "" {
 				layout.ScrollArea(c, layout.ScrollAreaProps{}, func() { ui.Text(c, a.newRepoForm.err).FillWidth().TextColor(tk.Red).FontSize(scaledFont(12)) }).FillWidth().Height(100)

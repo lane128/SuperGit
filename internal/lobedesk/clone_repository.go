@@ -180,17 +180,17 @@ func (a *app) renderCloneRepositoryDialog(c *ui.Context, palette bool) {
 	var source ui.Element
 	content := func(panel ui.Element) {
 		panel.Padding(18).Gap(10).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
+			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).Children(func() {
 			display.Text(c, a.t("cloneRepoTitle"), display.TextProps{Strong: true, FontSize: scaledFont(14)})
 			display.Text(c, a.t("cloneSource"), display.TextProps{FontSize: scaledFont(12)})
-			address := field.Input(c, &a.cloneForm.address, field.InputProps{Variant: field.InputFilled, Size: theme.Middle}).
+			address := field.Input(c, &a.cloneForm.address, field.InputProps{Variant: field.InputOutlined, Size: theme.Middle}).
 				Label(a.t("cloneSource")).FillWidth().Disabled(a.busy)
 			source = address
 			if !palette {
 				address.AutoFocus()
 			}
 			display.Text(c, a.t("cloneDestination"), display.TextProps{FontSize: scaledFont(12)})
-			path := field.Input(c, &a.cloneForm.path, field.InputProps{Variant: field.InputFilled, Size: theme.Middle}).
+			path := field.Input(c, &a.cloneForm.path, field.InputProps{Variant: field.InputOutlined, Size: theme.Middle}).
 				Label(a.t("cloneDestination")).FillWidth().Disabled(a.busy)
 			display.Text(c, a.t("cloneHint"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
 			if a.cloneForm.err != "" {
@@ -242,7 +242,7 @@ func (a *app) renderCloneRepositoryDialog(c *ui.Context, palette bool) {
 			a.cloneForm.paletteFocus = false
 		}
 	} else {
-		ui.Modal(c, &open, func() { content(ui.Column(c).Width(480).MaxWidthPercent(95)) })
+		workbenchModal(c, &open, func() { content(ui.Column(c).Width(480).MaxWidthPercent(95)) })
 	}
 	if !open && !a.busy && !a.repositoryChooserOpen {
 		a.cloneForm = cloneFormState{}

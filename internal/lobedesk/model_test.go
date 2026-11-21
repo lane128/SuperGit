@@ -324,6 +324,24 @@ func TestFormatDateTime(t *testing.T) {
 	}
 }
 
+func TestFormatHistoryDateTime(t *testing.T) {
+	now := time.Date(2026, 11, 21, 22, 0, 0, 0, time.Local)
+	recent := now.Add(-2 * time.Hour).Format(time.RFC3339)
+	if got, want := formatHistoryDateTime(recent, now), now.Add(-2*time.Hour).Format("15:04"); got != want {
+		t.Errorf("recent formatHistoryDateTime() = %q; want %q", got, want)
+	}
+	older := now.Add(-26 * time.Hour).Format(time.RFC3339)
+	if got, want := formatHistoryDateTime(older, now), now.Add(-26*time.Hour).Format("2006-01-02 15:04"); got != want {
+		t.Errorf("older formatHistoryDateTime() = %q; want %q", got, want)
+	}
+	if got := formatHistoryDateTime("", now); got != "" {
+		t.Errorf("empty formatHistoryDateTime() = %q", got)
+	}
+	if got := formatHistoryDateTime("not a date", now); got != "not a date" {
+		t.Errorf("unparseable formatHistoryDateTime() = %q", got)
+	}
+}
+
 func TestWorktreePathFromParent(t *testing.T) {
 	tests := []struct {
 		parent, current, root, want string

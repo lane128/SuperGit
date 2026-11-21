@@ -71,19 +71,45 @@ func (a *app) commitIdentityReady() bool {
 	return err == "" && id.Name != "" && id.Email != ""
 }
 
+func (a *app) commitIdentityHasExtraLines() bool {
+	s := a.commitIdentity
+	if a.loading || a.repo == nil || !s.Loaded || s.Root != a.repo.Root || !a.commitIdentityReady() {
+		return true
+	}
+	id := s.Author
+	if a.amend {
+		id = s.HeadAuthor
+	}
+	return a.amend && s.CommitterError == "" && s.Committer != id
+}
+
 func (a *app) commitIdentityView(c *ui.Context) {
+	a.commitIdentityViewInline(c, false)
+}
+
+func (a *app) commitIdentityViewInline(c *ui.Context, inline bool) {
 	s := a.commitIdentity
 	if a.loading || a.repo == nil || !s.Loaded || s.Root != a.repo.Root {
-		display.Text(c, a.t("commitIdentityLoading"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
+		display.Text(c, a.t("commitIdentityLoading"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11.5)})
 		return
 	}
 	id, identityError := s.Author, s.AuthorError
 	if a.amend {
 		id, identityError = s.HeadAuthor, s.HeadAuthorError
 	}
-	ui.Column(c).FillWidth().Gap(3).Selectable().Children(func() {
+	if inline && identityError == "" && id.Name != "" && id.Email != "" && a.commitIdentityReady() {
+		full := fmt.Sprintf("%s: %s <%s>", a.t("author"), id.Name, id.Email)
+		ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Selectable().Children(func() {
+			display.Text(c, full, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11.5)}).
+				SingleLine().MinWidth(0).Shrink(1).Tooltip(full)
+		})
+		return
+	}
+	ui.Column(c).FillWidth().Gap(4).Selectable().Children(func() {
 		if identityError == "" && id.Name != "" && id.Email != "" {
-			display.Text(c, fmt.Sprintf("%s: %s <%s>", a.t("author"), id.Name, id.Email), display.TextProps{FontSize: scaledFont(11)})
+			full := fmt.Sprintf("%s: %s <%s>", a.t("author"), id.Name, id.Email)
+			display.Text(c, full, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11.5)}).
+				SingleLine().MinWidth(0).Tooltip(full)
 		}
 		if a.amend && s.CommitterError == "" && s.Committer != id {
 			display.Text(c, fmt.Sprintf("%s: %s <%s>", a.t("committer"), s.Committer.Name, s.Committer.Email), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})

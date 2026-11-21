@@ -210,7 +210,7 @@ func (a *app) remoteBranchRow(c *ui.Context, ref gitrepo.Branch, pos, size int) 
 				display.Text(c, a.tf("trackedBy", tracker), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).SingleLine()
 			}
 		})
-		display.Text(c, shortSHA(ref.SHA), display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Shrink(0)
+		display.Text(c, shortSHA(ref.SHA), display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Font(a.patchFontFamily()).Shrink(0)
 	})
 	row.Tooltip(ref.Name)
 	row.OnShortcut(0, ui.KeyEnter, func() { a.activateBranchSelection() })
@@ -650,7 +650,7 @@ func (a *app) branchRow(c *ui.Context, branch gitrepo.Branch, pos, size int) {
 			}
 			display.Text(c, upstream, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).SingleLine()
 		})
-		display.Text(c, shortSHA(branch.SHA), display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Shrink(0)
+		display.Text(c, shortSHA(branch.SHA), display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Font(a.patchFontFamily()).Shrink(0)
 		if !branch.Current {
 			button := workbenchButton(c, a.t("switch"), buttonNormal, a.busy || a.loading)
 			if button.Clicked() {

@@ -90,13 +90,14 @@ func (a *app) renderWorkbench(c *ui.Context, repositoryStrip func()) {
 // its own context, so the settings window and the main window agree whether
 // the theme is fixed or follows the system.
 func (a *app) applyTheme(c *ui.Context) {
+	cfg := themeConfigWithUIFont(a.palette, a.uiFontKey())
 	switch a.themeMode {
 	case "light":
-		c.SetTheme(themeConfig(a.palette).Theme(false))
+		c.SetTheme(cfg.Theme(false))
 	case "dark":
-		c.SetTheme(themeConfig(a.palette).Theme(true))
+		c.SetTheme(cfg.Theme(true))
 	default:
-		themeConfig(a.palette).Apply(c)
+		cfg.Apply(c)
 	}
 }
 
@@ -209,7 +210,7 @@ func (a *app) toolbarCommandControl(c *ui.Context, showBranch bool) {
 			Label(label).Tooltip(label + " (" + keys + ")")
 		iconWidth := scaledFont(32)
 		if showBranch {
-			button.Width(iconWidth).Shrink(0).PaddingX(0).Radius(7, 0, 0, 7)
+			button.Width(iconWidth).Shrink(0).PaddingX(0).Radius(6, 0, 0, 6).BorderWidth(1, 0, 1, 1)
 		} else {
 			button.FillWidth()
 		}
@@ -342,24 +343,27 @@ func itoa(n int) string {
 func (a *app) sidebar(c *ui.Context) float32 {
 	tk := a.sidebarTokens(c)
 	width := a.workbenchSidebarWidth()
-	ui.Column(c).Width(width).Shrink(0).AlignSelf(ui.Stretch).Padding(6, 6).
+	ui.Column(c).Width(width).Shrink(0).AlignSelf(ui.Stretch).Padding(6, 0).
 		Background(tk.BgContainer).
 		Children(func() {
-			a.sidebarHeader(c)
+			ui.Column(c).FillWidth().Padding(0, 6).Children(func() {
+				a.sidebarHeader(c)
+			})
 			if a.repo == nil && a.repositoryTabs != nil {
 				ui.Box(c).Grow(1)
 			} else {
-				ui.Column(c).FillWidth().Gap(1).Margin(0, 2).Children(func() {
+				ui.Column(c).FillWidth().Gap(1).Padding(0, 8, 6, 8).Children(func() {
 					a.sidebarItem(c, lucide.History(), "history", a.t("history"), shortcutKeys("page.history"))
 				})
 				layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.sidebarScroll}, func() {
-					// Keep counts inside the viewport and clear of the 12-DIP overlay scrollbar.
-					ui.Column(c).FillWidth().Gap(1).Padding(0, 12, 0, 4).Children(func() {
+					ui.Column(c).FillWidth().Gap(0).Children(func() {
 						a.sidebarRefGroups(c)
 					})
 				}).Grow(1).Basis(0).MinHeight(0)
 			}
-			a.sidebarItem(c, lucide.Settings(), "settings", a.t("settings"), shortcutKeys("window.settings"))
+			ui.Column(c).FillWidth().Padding(4, 6, 0, 6).Children(func() {
+				a.sidebarItem(c, lucide.Settings(), "settings", a.t("settings"), shortcutKeys("window.settings"))
+			})
 		})
 	return width
 }
@@ -489,27 +493,32 @@ func (a *app) openSidebarWorkspace(key string) {
 // navigates, so clicking its text cannot surprise with a page switch.
 func (a *app) sidebarGroup(c *ui.Context, key, title string, count int, items func()) ui.Element {
 	tk := a.sidebarTokens(c)
-	countInk := tertiaryTextInk(tk, tk.FillTertiary.Over(tk.BgContainer))
 	open := a.sidebarGroupOpen(key)
 	chevron := lucide.ChevronRight()
 	if open {
 		chevron = lucide.ChevronDown()
 	}
-	row := ui.ButtonBase(c).Label(a.t(title)).Row().FillWidth().Height(28).Padding(0, 2).Gap(2).
-		AlignItems(ui.Center).Radius(tk.BorderRadius).
-		Role(ui.RoleDisclosure).Expanded(open)
-	if row.Hovered() {
-		row.Background(tk.FillTertiary)
+	bottomBorder := float32(0)
+	if open || key == "submodules" {
+		bottomBorder = 1
 	}
+	// Keep counts inside the viewport and clear of the 12-DIP overlay scrollbar.
+	row := ui.ButtonBase(c).Label(a.t(title)).Row().FillWidth().Height(scaledFont(29)).Padding(0, 14, 0, 10).Gap(6).
+		AlignItems(ui.Center).Radius(0).Cursor(ui.CursorPointer).
+		Role(ui.RoleDisclosure).Expanded(open)
+	bg, divider, badgeBg := sidebarGroupHeaderColors(tk, row.Hovered())
+	row.Background(bg).BorderWidth(1, 0, bottomBorder, 0).BorderColor(divider)
 	row.Children(func() {
 		// The arrow is decoration now; the row itself is the control.
 		ui.Icon(c, chevron).FontSize(scaledFont(12)).TextColor(tk.TextSecondary).Shrink(0)
-		display.Text(c, a.t(title), display.TextProps{
-			Type: display.TextSecondary, Strong: true, FontSize: scaledFont(11),
-		}).TextColor(tk.TextSecondary).SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
+		ui.Text(c, a.t(title)).FontSize(scaledFont(11.5)).FontWeight(600).
+			TextColor(tk.Text).SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
 		if count > 0 {
-			display.Text(c, fmt.Sprint(count), display.TextProps{FontSize: scaledFont(10)}).
-				TextColor(countInk).Shrink(0)
+			ui.Row(c).Height(scaledFont(17)).MinWidth(scaledFont(20)).PaddingX(6).Radius(999).
+				Center().Shrink(0).Background(badgeBg).Border(1, divider).Children(func() {
+				ui.Text(c, fmt.Sprint(count)).FontSize(scaledFont(10.5)).FontWeight(600).
+					TextColor(tk.TextSecondary).SingleLine()
+			})
 		}
 	})
 	row.Tooltip(a.tf("foldGroup", a.t(title)))
@@ -517,7 +526,12 @@ func (a *app) sidebarGroup(c *ui.Context, key, title string, count int, items fu
 		a.toggleSidebarGroup(key)
 	}
 	if open {
-		ui.Column(c).FillWidth().Gap(1).Padding(0, 0, 0, 22).Children(items)
+		hasBody := count > 0 || (key == "remotes" && a.repo != nil)
+		body := ui.Column(c).FillWidth().Gap(1)
+		if hasBody {
+			body.Padding(4, 10, 6, 6)
+		}
+		body.Children(items)
 	}
 	return row
 }

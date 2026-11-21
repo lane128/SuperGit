@@ -97,6 +97,7 @@ func (a *app) appearanceCard(c *ui.Context) {
 		}, string(a.locale), func(key string) {
 			a.setLocale(locale(key))
 		})
+		a.uiFontFamilySetting(c)
 		// Text size scales every size the app draws, so this row itself grows or
 		// shrinks as soon as it is chosen, which is the clearest preview.
 		a.choiceRow(c, a.t("fontSize"), []choice.ToggleItem{
@@ -108,7 +109,9 @@ func (a *app) appearanceCard(c *ui.Context) {
 			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		})
+		a.codeFontFamilySetting(c)
 		a.codeFontSizeSetting(c)
+		a.fontPreviewBox(c)
 		settingsHelp(c, a.t("appearanceHelp"))
 	})
 }
@@ -226,7 +229,7 @@ func (a *app) choiceRow(c *ui.Context, label string, items []choice.ToggleItem, 
 				button := styleWorkbenchButton(c.Key(item.Value), ui.ButtonBase(c.Key(item.Value)), buttonNormal, item.Disabled, selected).
 					Role(ui.RoleToggleButton).Label(item.Label).Checked(selected).Shrink(0)
 				if !selected && !item.Disabled && !button.Hovered() && !button.Pressed() {
-					button.Background(ui.Transparent)
+					button.Background(ui.Transparent).Border(0, ui.Transparent)
 				}
 				button.Children(func() {
 					if item.Icon != nil {
@@ -377,7 +380,7 @@ func (a *app) shortcutsCard(c *ui.Context) {
 							Grow(1).Basis(0).MinWidth(0).SingleLine()
 						display.Text(c, s.Keys, display.TextProps{
 							Type: display.TextSecondary, Code: true, FontSize: scaledFont(11),
-						}).Shrink(0)
+						}).Font(a.patchFontFamily()).Shrink(0)
 					})
 				}
 			})
@@ -399,7 +402,7 @@ func (a *app) aboutCard(c *ui.Context) {
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Selectable().Children(func() {
 				display.Text(c, a.t("settingsPath"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
 				display.Text(c, path, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Code: true}).
-					SingleLine().Tooltip(path)
+					Font(a.patchFontFamily()).SingleLine().Tooltip(path)
 			})
 		}
 	})

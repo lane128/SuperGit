@@ -175,6 +175,10 @@ type app struct {
 	page         string
 	locale       locale
 	themeMode    string
+	uiFont       string
+	uiFontOpen   bool
+	codeFont     string
+	codeFontOpen bool
 	codeFontSize float32
 	splitDiff    bool
 	// palette is the key of the color scheme in appThemes; the theme mode
@@ -499,6 +503,8 @@ func Run(initialPath string) error {
 		locale:           locale(defaults.Language),
 		themeMode:        defaults.Theme,
 		palette:          defaults.Palette,
+		uiFont:           uiFontKeyOf(defaults.UIFont),
+		codeFont:         codeFontKeyOf(defaults.CodeFont),
 		dockIcon:         appicon.New(func(png []byte) error { return mygo.App.Dock.SetIcon(png) }),
 		lineAnchor:       -1,
 		lineCursor:       -1,

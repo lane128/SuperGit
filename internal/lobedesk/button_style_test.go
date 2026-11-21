@@ -12,21 +12,21 @@ import (
 func TestWorkbenchButtonColorsFollowSpecification(t *testing.T) {
 	for _, dark := range []bool{false, true} {
 		for role, colors := range map[buttonRole][]string{
-			buttonNormal:     {"#DEE4EF", "#D2DCEC", "#C6D3E7"},
-			buttonPrimary:    {"#115534", "#196641", "#0D442B"},
-			buttonDangerIcon: {"#F3E4E9", "#ECD6DD", "#E4C8D0"},
-			buttonDanger:     {"#A53A47", "#AF3B4A", "#8D2D38"},
+			buttonNormal:     {"#F6F8FA", "#F3F4F6", "#EBECF0"},
+			buttonPrimary:    {"#1F883D", "#1A7F37", "#187733"},
+			buttonDangerIcon: {"#FFEBE9", "#FFE0DD", "#FFD4D0"},
+			buttonDanger:     {"#CF222E", "#B61D28", "#A41923"},
 		} {
 			if dark {
 				switch role {
 				case buttonNormal:
-					colors = []string{"#333A4C", "#3D455B", "#464F67"}
+					colors = []string{"#21262D", "#30363D", "#282E33"}
 				case buttonPrimary:
-					colors = []string{"#2B5E40", "#356E4C", "#254F36"}
+					colors = []string{"#1F7E33", "#238636", "#1A6D2C"}
 				case buttonDangerIcon:
-					colors = []string{"#41333F", "#513A47", "#60414E"}
+					colors = []string{"#321F24", "#41262C", "#4F2C33"}
 				case buttonDanger:
-					colors = []string{"#A44451", "#AC4655", "#923642"}
+					colors = []string{"#C9312E", "#DA3633", "#B22927"}
 				}
 			}
 			for state, want := range colors {

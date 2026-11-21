@@ -51,7 +51,7 @@ func TestHistoryPatchKeepsEachFilesHorizontalPosition(t *testing.T) {
 
 	var textWidth float32
 	ui.NewTester(func(c *ui.Context) {
-		textWidth, _ = c.MeasureText(0, ui.Span{Text: longCode, Font: "Menlo", Size: scaledFont(diffCodeSize)})
+		textWidth, _ = c.MeasureText(0, ui.Span{Text: longCode, Font: a.patchFontFamily(), Size: scaledFont(diffCodeSize)})
 	}, 560, 100)
 	for _, width := range []int{980, 1600} {
 		view.SetSize(width, 760)

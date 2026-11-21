@@ -94,7 +94,7 @@ func (a *app) copyWindowPreferences(source *app) {
 	a.sidebarHidden, a.expandMerges = source.sidebarHidden, source.expandMerges
 	a.syncHiddenBranches(source.hiddenBranches)
 	a.setIgnoreDiffWhitespace(source.ignoreDiffWhitespace)
-	a.codeFontSize, a.splitDiff = source.codeFontSize, source.splitDiff
+	a.uiFont, a.codeFont, a.codeFontSize, a.splitDiff = source.uiFont, source.codeFont, source.codeFontSize, source.splitDiff
 	a.showGraph, a.historyLine, a.historyNode = source.showGraph, source.historyLine, source.historyNode
 	a.hideAuthor, a.hideTime = source.hideAuthor, source.hideTime
 	a.autoFetch, a.autoFetchPrune, a.autoFetchEvery = source.autoFetch, source.autoFetchPrune, source.autoFetchEvery

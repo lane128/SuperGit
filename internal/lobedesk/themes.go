@@ -51,7 +51,7 @@ func buildThemes() []appTheme {
 		switch list[i].key {
 		case themePaletteSuperGit:
 			list[i].config = theme.NewConfig(supergitTokens(false), supergitTokens(true))
-			list[i].dots = [3]ui.Color{ui.Hex("#8CB4FF"), ui.Hex("#8AD5AA"), ui.Hex("#F2A1AE")}
+			list[i].dots = [3]ui.Color{ui.Hex("#0969DA"), ui.Hex("#1F883D"), ui.Hex("#CF222E")}
 			// Keep the proven lane order while the workbench theme is introduced.
 			list[i].lanesLight = catppuccinLatte.laneColors()
 			list[i].lanesDark = catppuccinMocha.laneColors()

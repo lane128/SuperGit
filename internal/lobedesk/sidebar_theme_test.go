@@ -56,9 +56,9 @@ func TestSuperGitSidebarUsesItsOwnSurfaceAndSelection(t *testing.T) {
 				})
 			}, 500, 620)
 			light := supergitTokens(false)
-			ground, chosen := light.BgLayout, light.PrimaryBg
+			ground, chosen := light.BgContainerSecondary, light.PrimaryBg
 			if mode == "dark" {
-				ground, chosen = ui.Hex("#111D34"), ui.Hex("#22385F")
+				ground, chosen = ui.Hex("#12161D"), ui.Hex("#1B2B42")
 			}
 			pixel := func(x, y int) ui.Color {
 				p := tt.Image().RGBAAt(x, y)

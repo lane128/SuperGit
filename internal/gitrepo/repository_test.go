@@ -136,8 +136,16 @@ func TestCommitIncludesOnlyIndexAndKeepsOtherChanges(t *testing.T) {
 	if err != nil || len(status.Entries) != 1 || status.Entries[0].Path != "base.txt" {
 		t.Fatalf("remaining work: %#v %v", status, err)
 	}
-	if err := r.Commit(ctx, "  \n"); err == nil {
-		t.Fatal("empty message accepted")
+	// Empty commit messages are allowed when staged changes exist.
+	write(t, dir, "empty-msg.txt", "ok\n")
+	if err := r.Stage(ctx, "empty-msg.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Commit(ctx, "  \n"); err != nil {
+		t.Fatalf("empty message rejected: %v", err)
+	}
+	if got := git(t, dir, "log", "-1", "--format=%B"); strings.TrimSpace(got) != "" {
+		t.Fatalf("empty commit message = %q; want empty", got)
 	}
 }
 func TestCommitHookFailureIsReportedAndIndexPreserved(t *testing.T) {

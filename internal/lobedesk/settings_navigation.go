@@ -38,6 +38,8 @@ func (a *app) selectSettingsSection(key string) {
 	position := a.settingsPositions[key]
 	a.settingsScroll = ui.ScrollState{X: position.X, Y: position.Y}
 	a.paletteOpen = false
+	a.uiFontOpen = false
+	a.codeFontOpen = false
 	a.invalidate()
 }
 

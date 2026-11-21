@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -144,7 +145,10 @@ func TestAmendCommitReplacesHeadAndKeepsStagedTree(t *testing.T) {
 	if got := git(t, dir, "rev-list", "--count", "HEAD"); got != "1\n" {
 		t.Fatalf("commit count=%q", got)
 	}
-	if err := r.AmendCommit(ctx, "  "); err == nil {
-		t.Fatal("empty amend message accepted")
+	if err := r.AmendCommit(ctx, "  "); err != nil {
+		t.Fatalf("empty amend message rejected: %v", err)
+	}
+	if got := git(t, dir, "log", "-1", "--format=%B"); strings.TrimSpace(got) != "" {
+		t.Fatalf("amended empty message=%q; want empty", got)
 	}
 }

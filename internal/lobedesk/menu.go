@@ -103,33 +103,41 @@ func (a *app) promptDialogFor(c *ui.Context, owner toastOwner) {
 	}
 	tk := theme.TokensOf(c)
 	confirmed := false
-	ui.Modal(c.Key("workbench-prompt"), &a.prompt.open, func() {
-		ui.Column(c).Width(400).Padding(18).Gap(10).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).
+	workbenchModal(c.Key("workbench-prompt"), &a.prompt.open, func() {
+		ui.Column(c).Width(420).
+			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).Clip().
 			Children(func() {
-				display.Text(c, a.prompt.title, display.TextProps{Strong: true, FontSize: scaledFont(14)})
-				// AutoFocus, not Focus: Focus keeps the field on every
-				// frame, which takes Tab back before the reader can reach
-				// Cancel or the action.
-				input := field.Input(c, &a.prompt.value, field.InputProps{
-					Variant:     field.InputFilled,
-					Placeholder: a.prompt.placeholder,
-					Size:        theme.Middle,
-				}).AutoFocus()
-				// Select a prefilled value once, as renaming in Finder and
-				// every browser does: typing replaces the old name instead of
-				// appending to it. Doing it every frame would make each
-				// keystroke replace the one before.
-				if a.prompt.selectAll {
-					input.SetTextSelection(0, len([]rune(a.prompt.value)))
-					a.prompt.selectAll = false
-				}
+				ui.Row(c).FillWidth().Padding(16, 20, 12, 20).AlignItems(ui.Center).
+					BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary).Children(func() {
+					display.Text(c, a.prompt.title, display.TextProps{Strong: true, FontSize: scaledFont(15)})
+				})
+				var input ui.Element
+				ui.Column(c).FillWidth().Padding(16, 20, 18, 20).Children(func() {
+					// AutoFocus, not Focus: Focus keeps the field on every
+					// frame, which takes Tab back before the reader can reach
+					// Cancel or the action.
+					input = field.Input(c, &a.prompt.value, field.InputProps{
+						Variant:     field.InputOutlined,
+						Placeholder: a.prompt.placeholder,
+						Size:        theme.Middle,
+					}).FillWidth().AutoFocus()
+					// Select a prefilled value once, as renaming in Finder and
+					// every browser does: typing replaces the old name instead of
+					// appending to it. Doing it every frame would make each
+					// keystroke replace the one before.
+					if a.prompt.selectAll {
+						input.SetTextSelection(0, len([]rune(a.prompt.value)))
+						a.prompt.selectAll = false
+					}
+				})
 				ready := a.prompt.allowEmpty || strings.TrimSpace(a.prompt.value) != ""
 				if input.Submitted() && ready {
 					confirmed = true
 					a.prompt.open = false
 				}
-				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.End).Children(func() {
+				ui.Row(c).FillWidth().Padding(12, 20).Gap(8).AlignItems(ui.Center).Justify(ui.End).
+					Background(tk.FillQuaternary.Over(tk.BgElevated)).
+					BorderWidth(1, 0, 0, 0).BorderColor(tk.BorderSecondary).Children(func() {
 					if workbenchButton(c, a.t("cancel"), buttonNormal, false).Clicked() {
 						a.prompt.open = false
 					}
@@ -243,13 +251,17 @@ func (a *app) confirmDialogFor(c *ui.Context, owner toastOwner) {
 		confirmed = a.commitFilePatchScopeDialog(c, blocked)
 	} else {
 		// Other overlays can come and go while the confirmation is open.
-		ui.Modal(c.Key("workbench-confirmation"), &a.confirm.open, func() {
-			ui.Column(c).Width(430).Padding(20).Gap(10).
-				Background(tk.BgElevated).Radius(12).Border(1, tk.Border).
+		workbenchModal(c.Key("workbench-confirmation"), &a.confirm.open, func() {
+			ui.Column(c).Width(430).
+				Background(tk.BgElevated).Radius(12).Border(1, tk.Border).Clip().
 				Children(func() {
-					display.Text(c, a.confirm.title, display.TextProps{Strong: true, FontSize: scaledFont(14)})
-					display.Text(c, a.confirm.message, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12), Rows: 5})
-					ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.End).Margin(8, 0, 0, 0).
+					ui.Column(c).FillWidth().Padding(18, 20, 16, 20).Gap(8).Children(func() {
+						display.Text(c, a.confirm.title, display.TextProps{Strong: true, FontSize: scaledFont(15)})
+						display.Text(c, a.confirm.message, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12), Rows: 5})
+					})
+					ui.Row(c).FillWidth().Padding(12, 20).Gap(8).AlignItems(ui.Center).Justify(ui.End).
+						Background(tk.FillQuaternary.Over(tk.BgElevated)).
+						BorderWidth(1, 0, 0, 0).BorderColor(tk.BorderSecondary).
 						Children(func() {
 							if workbenchButton(c, a.t("cancel"), buttonNormal, false).Clicked() {
 								a.confirm.open = false

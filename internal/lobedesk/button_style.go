@@ -20,41 +20,48 @@ const (
 	buttonDangerIcon
 )
 
-// workbenchButtonColors separates action fills from selection and status inks.
-// Selection blue must never turn green when the primary action is styled.
+// workbenchButtonColors implements the Plan A+ GitHub Primer button grammar,
+// separating primary green CTAs and danger fills from neutral surface controls
+// and blue selection states.
 func workbenchButtonColors(tk *theme.Tokens, role buttonRole, hovered, pressed, disabled, selected bool) (ui.Color, ui.Color) {
 	if disabled {
-		if tk.Dark {
-			return ui.Hex("#2C3040"), ui.Hex("#A6ADC0")
+		if role == buttonPrimary {
+			if tk.Dark {
+				return ui.Hex("#1A4329"), ui.Hex("#9EC7AB")
+			}
+			return ui.Hex("#94D3A2"), ui.Hex("#FFFFFF")
 		}
-		return ui.Hex("#E2E6ED"), ui.Hex("#596578")
+		if tk.Dark {
+			return ui.Hex("#1B2027"), ui.Hex("#8B949E")
+		}
+		return ui.Hex("#F6F8FA"), ui.Hex("#656D76")
 	}
 	if selected {
 		if tk.Dark {
-			return ui.Hex("#374766"), ui.Hex("#E5EBFF")
+			return ui.Hex("#1B2D45"), ui.Hex("#79C0FF")
 		}
-		return ui.Hex("#D6E1F7"), ui.Hex("#244E9C")
+		return ui.Hex("#EDF4FF"), ui.Hex("#0969DA")
 	}
-	colors := [3]string{"#DEE4EF", "#D2DCEC", "#C6D3E7"}
+	colors := [3]string{"#F6F8FA", "#F3F4F6", "#EBECF0"}
 	ink := tk.Text
 	if tk.Dark {
-		colors = [3]string{"#333A4C", "#3D455B", "#464F67"}
+		colors = [3]string{"#21262D", "#30363D", "#282E33"}
 	}
 	switch role {
 	case buttonPrimary:
-		colors, ink = [3]string{"#115534", "#196641", "#0D442B"}, ui.Hex("#FFFFFF")
+		colors, ink = [3]string{"#1F883D", "#1A7F37", "#187733"}, ui.Hex("#FFFFFF")
 		if tk.Dark {
-			colors = [3]string{"#2B5E40", "#356E4C", "#254F36"}
+			colors = [3]string{"#1F7E33", "#238636", "#1A6D2C"}
 		}
 	case buttonDangerIcon:
-		colors, ink = [3]string{"#F3E4E9", "#ECD6DD", "#E4C8D0"}, ui.Hex("#94304A")
+		colors, ink = [3]string{"#FFEBE9", "#FFE0DD", "#FFD4D0"}, ui.Hex("#B61D28")
 		if tk.Dark {
-			colors, ink = [3]string{"#41333F", "#513A47", "#60414E"}, ui.Hex("#FFADB8")
+			colors, ink = [3]string{"#321F24", "#41262C", "#4F2C33"}, ui.Hex("#FF7B72")
 		}
 	case buttonDanger:
-		colors, ink = [3]string{"#A53A47", "#AF3B4A", "#8D2D38"}, ui.Hex("#FFFFFF")
+		colors, ink = [3]string{"#CF222E", "#B61D28", "#A41923"}, ui.Hex("#FFFFFF")
 		if tk.Dark {
-			colors = [3]string{"#A44451", "#AC4655", "#923642"}
+			colors = [3]string{"#C9312E", "#DA3633", "#B22927"}
 		}
 	}
 	state := 0
@@ -66,23 +73,80 @@ func workbenchButtonColors(tk *theme.Tokens, role buttonRole, hovered, pressed, 
 	return ui.Hex(colors[state]), ink
 }
 
+func workbenchButtonBorder(tk *theme.Tokens, role buttonRole, hovered, pressed, disabled, selected bool) ui.Color {
+	if disabled {
+		if role == buttonPrimary {
+			if tk.Dark {
+				return ui.Hex("#3FB950").Alpha(0.18)
+			}
+			return ui.Hex("#1F883D").Alpha(0.14)
+		}
+		if tk.Dark {
+			return ui.Hex("#252B33")
+		}
+		return ui.Hex("#E5E8EC")
+	}
+	if selected {
+		if tk.Dark {
+			return ui.Hex("#58A6FF").Alpha(0.36)
+		}
+		return ui.Hex("#0969DA").Alpha(0.34)
+	}
+	switch role {
+	case buttonPrimary, buttonDanger:
+		if tk.Dark {
+			return ui.Hex("#F0F6FC").Alpha(0.12)
+		}
+		return ui.Hex("#1F2328").Alpha(0.15)
+	case buttonDangerIcon:
+		if tk.Dark {
+			return ui.Hex("#F85149").Alpha(0.28)
+		}
+		return ui.Hex("#CF222E").Alpha(0.24)
+	default:
+		if tk.Dark {
+			if hovered || pressed {
+				return ui.Hex("#545D68")
+			}
+			return ui.Hex("#363D45")
+		}
+		if hovered || pressed {
+			return ui.Hex("#BAC2CA")
+		}
+		return ui.Hex("#D0D7DE")
+	}
+}
+
 // styleWorkbenchButton works on ButtonBase and native menu triggers alike.
 // Callers pass disabled before styling so its readable fill is applied without
 // the SDK's additional half-opacity. Native focus, click and menu semantics stay.
 func styleWorkbenchButton(c *ui.Context, b ui.Element, role buttonRole, disabled, selected bool) ui.Element {
 	tk := theme.TokensOf(c)
 	b.Disabled(disabled).DimDisabled(false)
-	bg, ink := workbenchButtonColors(tk, role, b.Hovered(), b.Pressed(), b.IsDisabled(), selected)
-	focus := ui.Hex("#2A66DC")
+	hovered, pressed, isDisabled := b.Hovered(), b.Pressed(), b.IsDisabled()
+	bg, ink := workbenchButtonColors(tk, role, hovered, pressed, isDisabled, selected)
+	border := workbenchButtonBorder(tk, role, hovered, pressed, isDisabled, selected)
+	focus := ui.Hex("#0969DA")
 	if tk.Dark {
-		focus = ui.Hex("#79A5FF")
+		focus = ui.Hex("#58A6FF")
 	}
-	if role == buttonPrimary && !disabled {
-		b.InsetShadow(0, 1, 0, 0, ui.Hex("#FFFFFF").Alpha(0.12))
+	if !isDisabled {
+		switch role {
+		case buttonPrimary, buttonDanger:
+			b.InsetShadow(0, 1, 0, 0, ui.Hex("#FFFFFF").Alpha(0.10))
+		case buttonNormal:
+			if !selected && !pressed {
+				sheen := ui.Hex("#FFFFFF").Alpha(0.55)
+				if tk.Dark {
+					sheen = ui.Hex("#FFFFFF").Alpha(0.04)
+				}
+				b.InsetShadow(0, 1, 0, 0, sheen)
+			}
+		}
 	}
-	return b.Height(scaledFont(workbenchButtonBaseHeight)).PaddingX(10).Gap(6).Radius(7).
+	return b.Height(scaledFont(workbenchButtonBaseHeight)).PaddingX(10).Gap(6).Radius(6).
 		FontSize(scaledFont(12)).FontWeight(500).
-		Background(bg).Border(0, ui.Transparent).TextColor(ink).
+		Background(bg).Border(1, border).TextColor(ink).
 		FocusRing(true).FocusRingColor(focus).Cursor(ui.CursorPointer).
 		Transition(ui.ElementTransition{Duration: 100 * time.Millisecond, Colors: true})
 }
@@ -105,11 +169,13 @@ func workbenchIconButton(c *ui.Context, icon *ui.SVG, title string, role buttonR
 func compactActionIcon(c *ui.Context, icon *ui.SVG, title string, role buttonRole, disabled bool) ui.Element {
 	b := ui.ButtonBase(c).Disabled(disabled).DimDisabled(false)
 	action.StyleActionIcon(c, b, icon, action.ActionIconProps{
-		Title: title, BlockSize: 24, GlyphSize: 15,
+		Title: title, BlockSize: 24, GlyphSize: 14,
 	})
 	tk := theme.TokensOf(c)
-	bg, ink := workbenchButtonColors(tk, role, b.Hovered(), b.Pressed(), b.IsDisabled(), false)
-	return b.Background(bg).TextColor(ink).Radius(6).FocusRing(true).FocusRingColor(tk.Blue)
+	hovered, pressed, isDisabled := b.Hovered(), b.Pressed(), b.IsDisabled()
+	bg, ink := workbenchButtonColors(tk, role, hovered, pressed, isDisabled, false)
+	border := workbenchButtonBorder(tk, role, hovered, pressed, isDisabled, false)
+	return b.Background(bg).Border(1, border).TextColor(ink).Radius(6).FocusRing(true).FocusRingColor(tk.Blue)
 }
 
 // Paint a single selection behind both the tab and its close target. The

@@ -31,6 +31,8 @@ type persistedSettings struct {
 	BranchDetailsSplit *float32 `json:"branchDetailsSplit,omitempty"`
 	HideDetails        *bool    `json:"hideHistoryDetails,omitempty"`
 	FontScale          *float32 `json:"fontScale,omitempty"`
+	UIFont             string   `json:"uiFont,omitempty"`       // empty uses the system UI font
+	CodeFont           string   `json:"codeFont,omitempty"`     // empty uses JetBrains Mono
 	CodeFontSize       *float32 `json:"codeFontSize,omitempty"` // 0 explicitly follows the interface scale
 	// The history page's details panes: the commit's message, its files and
 	// its patch are each shown by default and can be hidden from Settings.
@@ -72,7 +74,7 @@ func defaultSettings() persistedSettings {
 	info, changes, diff := true, true, true
 	hide := false
 	return persistedSettings{
-		Theme: "system", Palette: themePaletteCatppuccin, Language: string(localeChinese), CodeFontSize: new(float32),
+		Theme: "system", Palette: themePaletteSuperGit, Language: string(localeChinese), CodeFontSize: new(float32),
 		ShowGraph: &showGraph, AutoFetch: &autoFetch, AutoFetchPrune: &prune, AutoFetchEvery: &every,
 		DetailsInfo: &info, DetailsChanges: &changes, DetailsDiff: &diff,
 		HistoryLine: "standard", HistoryNode: "standard",
@@ -282,6 +284,10 @@ func (a *app) applySettings(settings persistedSettings) {
 		scale = *settings.FontScale
 	}
 	setUIFontScale(scale)
+	a.uiFont = uiFontKeyOf(settings.UIFont)
+	setUIFontKey(a.uiFont)
+	a.codeFont = codeFontKeyOf(settings.CodeFont)
+	setCodeFontKey(a.codeFont)
 	a.codeFontSize = 0
 	if settings.CodeFontSize != nil && validCodeFontSize(*settings.CodeFontSize) {
 		a.codeFontSize = *settings.CodeFontSize
@@ -511,6 +517,8 @@ func (a *app) saveSettingsFor(owner toastOwner) bool {
 			BranchDetailsSplit: splitSetting(a.branchSplit.share),
 			HideDetails:        hideSetting(a.historyDetailsHidden),
 			FontScale:          fontScaleSetting(uiFontScaleValue()),
+			UIFont:             uiFontSetting(a.uiFontKey()),
+			CodeFont:           codeFontSetting(a.codeFontKey()),
 			CodeFontSize:       new(a.codeFontSize),
 			DetailsInfo:        showSetting(!a.detailsInfoHidden),
 			DetailsChanges:     showSetting(!a.detailsChangesHidden),

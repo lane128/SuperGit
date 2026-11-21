@@ -35,6 +35,8 @@ func (a *app) openSettingsWindow() {
 	}
 	// The closed panel's dropdown state does not belong to the new one.
 	a.paletteOpen = false
+	a.uiFontOpen = false
+	a.codeFontOpen = false
 	w := mygo.NewWindow(mygo.WindowOptions{
 		Title:                a.settingsWindowTitle(),
 		Width:                settingsWindowWidth,

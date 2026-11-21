@@ -346,6 +346,24 @@ func formatDateTime(value string) string {
 	return formatDateTimeLayout(value, "2006-01-02 15:04:05")
 }
 
+// formatHistoryDateTime shows exact local clock time for commits within the
+// past 24 hours ("15:04") and exact date plus minute ("2006-01-02 15:04") for
+// older commits. Unparseable timestamps are returned verbatim.
+func formatHistoryDateTime(value string, now time.Time) string {
+	if value == "" {
+		return ""
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return value
+	}
+	local := parsed.Local()
+	if diff := now.Sub(local); diff >= 0 && diff < 24*time.Hour {
+		return local.Format("15:04")
+	}
+	return local.Format("2006-01-02 15:04")
+}
+
 // An unparseable timestamp is shown as it came from Git.
 func formatDateTimeLayout(value, layout string) string {
 	if value == "" {
@@ -560,9 +578,11 @@ func (a *app) commitDisabledReason() string {
 	if a.loadErr != "" {
 		return a.t("reloadFailed")
 	}
-	summary, _, _ := strings.Cut(a.commitText, "\n")
-	if strings.TrimSpace(summary) == "" {
-		return a.t("commitTitleRequired")
+	if strings.TrimSpace(a.commitText) != "" {
+		summary, _, _ := strings.Cut(a.commitText, "\n")
+		if strings.TrimSpace(summary) == "" {
+			return a.t("commitTitleRequired")
+		}
 	}
 	if !a.commitIdentityReady() {
 		if !a.commitIdentity.Loaded || a.commitIdentity.Root != a.repo.Root {

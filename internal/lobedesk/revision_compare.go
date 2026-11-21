@@ -158,9 +158,9 @@ func (a *app) comparisonDialog(c *ui.Context) {
 	width, height := c.Size()
 	panelWidth := min(1100, max(0, width-32))
 	tk := theme.TokensOf(c)
-	ui.Modal(c.Key(v), &v.open, func() {
+	workbenchModal(c.Key(v), &v.open, func() {
 		ui.Column(c).Width(panelWidth).Height(min(720, max(0, height-32))).Padding(16).Gap(10).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
+			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).Children(func() {
 			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 				display.Text(c, a.t("compareRevisions"), display.TextProps{Strong: true, FontSize: scaledFont(15)}).Grow(1)
 				if workbenchButton(c, a.t("close"), buttonNormal, false).Clicked() {

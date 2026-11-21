@@ -103,8 +103,9 @@ func (a *app) patchGutter(c *ui.Context, line gitrepo.DiffLine, side patchSide, 
 	button := ui.ButtonBase(c).Label(label).Row().Width(side.gutterWidth()).Height(a.patchRowHeight()).Shrink(0).
 		Padding(0, 8).Gap(8).AlignItems(ui.Center)
 	button.Children(func() {
+		font := a.patchFontFamily()
 		drawNumber := func(number int) {
-			ui.Text(c, lineNumber(number)).Font("Menlo").FontSize(scaledFont(10)).Width(34).Shrink(0).
+			ui.Text(c, lineNumber(number)).Font(font).FontSize(scaledFont(10)).Width(34).Shrink(0).
 				TextAlign(ui.End).TextColor(ink)
 		}
 		if side != patchNew {

@@ -264,11 +264,11 @@ func (r *Repository) Discard(ctx context.Context, path string, untracked bool) e
 }
 func (r *Repository) Commit(ctx context.Context, message string) error {
 	if strings.TrimSpace(message) == "" {
-		return errors.New("提交标题不能为空")
+		message = ""
 	}
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
-	_, err := run(ctx, r.Root, "", "commit", "-m", message)
+	_, err := run(ctx, r.Root, "", "commit", "--allow-empty-message", "-m", message)
 	return err
 }
 
@@ -319,17 +319,18 @@ func (r *Repository) undoCommit(ctx context.Context, expected *Status) error {
 }
 
 // AmendCommit replaces HEAD with a new commit that has message, keeping the
-// staged tree. It works with or without newly staged changes.
+// staged tree. It works with or without newly staged changes and allows empty
+// commit messages.
 func (r *Repository) AmendCommit(ctx context.Context, message string) error {
 	if strings.TrimSpace(message) == "" {
-		return errors.New("提交标题不能为空")
+		message = ""
 	}
 	if !r.hasHead(ctx) {
 		return errors.New("还没有可修改的提交")
 	}
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
-	_, err := run(ctx, r.Root, "", "commit", "--amend", "-m", message)
+	_, err := run(ctx, r.Root, "", "commit", "--amend", "--allow-empty-message", "-m", message)
 	return err
 }
 

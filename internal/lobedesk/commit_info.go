@@ -37,7 +37,7 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 				ui.Row(c).Grow(1)
 				a.stashActions(c, stash)
 			})
-			display.Text(c, a.t("stashTree")+"  "+stash.Tree, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).SingleLine().Tooltip(stash.Tree)
+			display.Text(c, a.t("stashTree")+"  "+stash.Tree, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Font(a.patchFontFamily()).SingleLine().Tooltip(stash.Tree)
 		}
 		subject := display.Text(c, commit.Subject, display.TextProps{Heading: 5, Strong: true, FontSize: scaledFont(tk.FontSize)})
 		a.commitMessageLinkMenu(c, subject, commit.Subject, scope)
@@ -68,7 +68,7 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 			// large preset pushed the copy button past the pane's edge, where
 			// it was clipped and unreachable.
 			display.Text(c, commit.SHA, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).
-				SingleLine().Grow(1).Basis(0).MinWidth(0)
+				Font(a.patchFontFamily()).SingleLine().Grow(1).Basis(0).MinWidth(0)
 			// The row menu already copies the SHA, but the reading eye is
 			// here; a copy button beside the hash saves hunting for the row.
 			copySHA := compactActionIcon(c, lucide.Copy(), a.t("copySHA"), buttonNormal, false).Shrink(0)
@@ -126,7 +126,7 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 					sha := parent
 					if a.selectedStash != "" && i > 0 {
 						// The index and untracked snapshots are not History tips.
-						display.Text(c, shortSHA(sha), display.TextProps{Code: true, FontSize: scaledFont(11)}).Tooltip(sha)
+						display.Text(c, shortSHA(sha), display.TextProps{Code: true, FontSize: scaledFont(11)}).Font(a.patchFontFamily()).Tooltip(sha)
 						continue
 					}
 					button := workbenchButton(c, shortSHA(sha), buttonNormal, false).Shrink(0)
@@ -160,7 +160,8 @@ func (a *app) commitSummaryRefs(c *ui.Context, scope ui.Element, tk *theme.Token
 	width = max(0, width-2*inset)
 	headerWidth := float32(0)
 	if head != "" {
-		headerWidth = historyRefPillWidth(c, "HEAD", true, gap)
+		w, _ := c.MeasureText(0, ui.Span{Text: "HEAD →", Size: scaledFont(11)})
+		headerWidth = w + gap
 	}
 	pillLimit := min(width, refCapsuleWidth(refCapsuleDetailWidth))
 	type inlineRef struct {
@@ -203,8 +204,11 @@ func (a *app) commitSummaryRefs(c *ui.Context, scope ui.Element, tk *theme.Token
 	expanded := ui.Local(group, "expanded", func() bool { return false })
 	previousShown := ui.Local(group, "shown", func() int { return shown })
 	group.Children(func() {
-		ui.Row(c).Gap(gap).Wrap().Children(func() {
-			a.headTag(c, rawRefs, tk.BgContainer, false)
+		ui.Row(c).Gap(gap).Wrap().AlignItems(ui.Center).Children(func() {
+			if head != "" {
+				display.Text(c, "HEAD →", display.TextProps{Type: display.TextSecondary, Strong: true, FontSize: scaledFont(11)}).
+					SingleLine().Shrink(0).Tooltip(a.tf("headBadgeTip", head))
+			}
 			var firstRevealed, lastFocusable ui.Element
 			foundRevealed := false
 			for i, ref := range refs[:shown] {
@@ -269,16 +273,16 @@ func (a *app) commitSummaryRef(c *ui.Context, tk *theme.Tokens, ref, label strin
 	} else if family, ok := refColor(tk, badge.Color); ok {
 		color = family
 	}
-	pill := refPill(c, refCapsuleColors(color, tk.BgContainer), badge.Icon, label).
+	chip := summaryRefChip(c, tk, color, badge.Icon, label).
 		MaxWidth(limit).Description(badge.Label)
 	if filterable {
-		pill.Focusable().Label(badge.Label).FocusRing(true)
+		chip.Focusable().Label(badge.Label).FocusRing(true)
 	}
 	if showTips {
-		pill.Tooltip(badge.Label)
+		chip.Tooltip(badge.Label)
 	}
-	a.refBadgeMenu(c, pill, ref, a.selectedSHA)
-	return pill, filterable
+	a.refBadgeMenu(c, chip, ref, a.selectedSHA)
+	return chip, filterable
 }
 
 // signatureTagColor maps Git's %G? letter to the badge's palette: a verified

@@ -132,9 +132,9 @@ func (a *app) blameDialogFor(c *ui.Context, owner toastOwner) {
 	}
 	tk := theme.TokensOf(c)
 	width, height := c.Size()
-	ui.Modal(c, &a.blameOpen, func() {
+	workbenchModal(c, &a.blameOpen, func() {
 		ui.Column(c).Width(min(900, max(0, width-40))).Height(min(620, max(0, height-40))).Padding(16).Gap(10).
-			Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Border(1, tk.Border).Children(func() {
+			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).Children(func() {
 			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Icon(c, lucide.FileSearch()).FontSize(scaledFont(15)).TextColor(tk.TextSecondary)
 				display.Text(c, a.t("blameTitle"), display.TextProps{Strong: true, FontSize: scaledFont(14)})
@@ -176,7 +176,7 @@ func (a *app) blameDialogFor(c *ui.Context, owner toastOwner) {
 				a.blameRows(c)
 			}
 		})
-	}).Padding(0) // The inner panel owns padding; Modal still supplies dismissal and shadow.
+	})
 	if !a.blameOpen {
 		a.clearBlame()
 	}
@@ -273,13 +273,14 @@ func (a *app) blameRows(c *ui.Context) {
 					row.OnShortcut(0, ui.KeyEnter, jump)
 				}
 				row.Children(func() {
+					font := a.patchFontFamily()
 					sha := shortSHA(line.SHA)
 					shaColor := tk.TextSecondary
 					if uncommitted {
 						sha = a.t("uncommitted")
 						shaColor = tk.Warning
 					}
-					ui.Text(c, sha).Font("Menlo").FontSize(scaledFont(9.5)).Width(78).Shrink(0).
+					ui.Text(c, sha).Font(font).FontSize(scaledFont(9.5)).Width(78).Shrink(0).
 						SingleLine().TextColor(shaColor)
 					author := line.Author
 					if author == "" || uncommitted {
@@ -290,15 +291,15 @@ func (a *app) blameRows(c *ui.Context) {
 					if !uncommitted && line.Subject != "" {
 						authorText.Tooltip(line.Subject)
 					}
-					ui.Text(c, formatDateTime(line.Date)).Font("Menlo").FontSize(scaledFont(9.5)).Width(118).Shrink(0).
+					ui.Text(c, formatDateTime(line.Date)).Font(font).FontSize(scaledFont(9.5)).Width(118).Shrink(0).
 						TextColor(gutter)
-					ui.Text(c, itoa(line.Line)).Font("Menlo").FontSize(scaledFont(9.5)).Width(38).Shrink(0).
+					ui.Text(c, itoa(line.Line)).Font(font).FontSize(scaledFont(9.5)).Width(38).Shrink(0).
 						TextAlign(ui.End).TextColor(gutter)
 					// The code text is not selectable: the whole row is the click
 					// target that jumps to its commit, and MyGo lets no text
 					// inside a clickable element be selected. Making the code
 					// selectable means moving the jump to the gutter columns.
-					ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font("Menlo").FontSize(scaledFont(11)).
+					ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font(font).FontSize(scaledFont(11)).
 						SingleLine().TextColor(tk.Text)
 				})
 				a.blameMenu(c, row, line)

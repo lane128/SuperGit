@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -978,8 +979,8 @@ func (a *app) historyEntryRow(c *ui.Context, commit gitrepo.Commit, stash *gitre
 		metadataGap := float32(8)
 		dateSize := scaledFont(11.5)
 		fullDate := formatDateTime(commit.Date)
-		date := fullDate
-		if !a.hideTime && !a.hideAuthor && listWidth > 0 && contentWidth < scaledFont(175) {
+		date := formatHistoryDateTime(commit.Date, time.Now())
+		if !a.hideTime && !a.hideAuthor && listWidth > 0 && contentWidth < scaledFont(175) && len(date) > 11 {
 			// Keep the same date format for every row at this width. The
 			// compact stamp leaves room for a recognizable author and refs.
 			date = formatDateTimeLayout(commit.Date, "01-02 15:04")
@@ -1578,7 +1579,7 @@ func (a *app) commitDiffFileHeader(c *ui.Context, sec commitDiffSection, width f
 			label = fmt.Sprintf("%s · %s", sec.Path, a.hunksLabel(countHunks(a.commitDiff, sec)))
 		}
 		display.Text(c, label, display.TextProps{Code: true, FontSize: scaledFont(10), Strong: selected}).
-			SingleLine().Grow(1).Basis(0).MinWidth(0)
+			Font(a.patchFontFamily()).SingleLine().Grow(1).Basis(0).MinWidth(0)
 	})
 	if row.Clicked() {
 		a.commitPath = sec.Path

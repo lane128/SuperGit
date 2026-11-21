@@ -40,7 +40,7 @@ func (a *app) requestCommitFilePatchForPlatform(target commitFilePatchTarget, pl
 func (a *app) commitFilePatchScopeDialog(c *ui.Context, blocked bool) bool {
 	confirmed := false
 	tk := theme.TokensOf(c)
-	ui.Modal(c, &a.confirm.open, func() {
+	workbenchModal(c, &a.confirm.open, func() {
 		ui.Column(c).Width(600).MaxWidthPercent(90).Height(420).MaxHeightPercent(90).Padding(20).Gap(12).
 			Background(tk.BgElevated).Radius(12).Border(1, tk.Border).Children(func() {
 			display.Text(c, a.confirm.title, display.TextProps{Strong: true, FontSize: scaledFont(14), Rows: 2}).FillWidth().Shrink(0)

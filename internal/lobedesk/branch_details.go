@@ -267,7 +267,7 @@ func (a *app) tagDetails(c *ui.Context, sel branchDetailSelection) {
 	}
 	if tag.SymbolicRef != "" {
 		display.Text(c, tag.SymbolicRef, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).
-			SingleLine().FillWidth().Tooltip(tag.SymbolicRef)
+			Font(a.patchFontFamily()).SingleLine().FillWidth().Tooltip(tag.SymbolicRef)
 	}
 }
 

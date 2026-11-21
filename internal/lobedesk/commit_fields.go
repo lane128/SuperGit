@@ -24,7 +24,7 @@ func (a *app) commitFieldBatchKey(k ui.TextKey) bool {
 
 func (a *app) commitMessageField(c *ui.Context) {
 	message := field.TextArea(c.Key("commit-message"), &a.commitText, field.TextAreaProps{
-		Variant: field.InputFilled, Placeholder: a.t("commitMessage"), MinRows: 1, MaxRows: 3,
+		Variant: field.InputFilled, Placeholder: a.t("commitMessage"), MinRows: 5, MaxRows: 9,
 	}).FillWidth().FontSize(scaledFont(12)).Label(a.t("commitMessage")).OnTextKey(a.commitFieldBatchKey)
 	a.consumeCommitMessageFocus(message)
 }

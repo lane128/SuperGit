@@ -230,8 +230,8 @@ func (a *app) snapshotFileDialog(c *ui.Context) {
 	}
 	width, height := c.Size()
 	tk := theme.TokensOf(c)
-	ui.Modal(c, &v.open, func() {
-		ui.Column(c).Width(min(900, max(0, width-40))).Height(min(620, max(0, height-40))).Padding(16).Gap(10).Background(tk.BgElevated).Radius(tk.BorderRadiusLG).Children(func() {
+	workbenchModal(c, &v.open, func() {
+		ui.Column(c).Width(min(900, max(0, width-40))).Height(min(620, max(0, height-40))).Padding(16).Gap(10).Background(tk.BgElevated).Radius(12).Border(1, tk.Border).Children(func() {
 			ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
 				display.Text(c, v.path, display.TextProps{Strong: true, FontSize: scaledFont(14)}).SingleLine().Grow(1).Basis(0).MinWidth(0).Tooltip(v.path)
 				display.Text(c, shortSHA(v.rev), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12)})
@@ -249,10 +249,10 @@ func (a *app) snapshotFileDialog(c *ui.Context) {
 					ui.Column(c).FillWidth().Gap(6).Children(func() { a.drawPicture(c, *v.picture) })
 					return
 				}
-				ui.Text(c, v.text).Selectable().Font("Menlo").FontSize(a.patchFontSize()).FillWidth().MinWidth(0)
+				ui.Text(c, v.text).Selectable().Font(a.patchFontFamily()).FontSize(a.patchFontSize()).FillWidth().MinWidth(0)
 			}).Fill()
 		})
-	}).Padding(0)
+	})
 	if !v.open {
 		*v = snapshotFileView{}
 	}

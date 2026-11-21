@@ -36,6 +36,7 @@ type diffFindSection struct {
 type diffFindExtent struct {
 	line        *gitrepo.DiffLine
 	end         int
+	font        string
 	size, width float32
 }
 
@@ -207,13 +208,14 @@ func (f *diffFindState) fitMatch(c *ui.Context, file detailFileKey, lines []gitr
 	if line.Kind == "hunk" {
 		size = max(size, scaledFont(10.5))
 	}
-	if f.extent.line != line || f.extent.end != m.end || f.extent.size != size {
+	font := codeFontFamily()
+	if f.extent.line != line || f.extent.end != m.end || f.extent.font != font || f.extent.size != size {
 		text := diffFindText(*line)
 		if m.end > len(text) {
 			return widths
 		}
-		width, _ := c.MeasureText(0, ui.Span{Text: text[:m.end], Font: "Menlo", Size: size})
-		f.extent = diffFindExtent{line: line, end: m.end, size: size, width: width}
+		width, _ := c.MeasureText(0, ui.Span{Text: text[:m.end], Font: font, Size: size})
+		f.extent = diffFindExtent{line: line, end: m.end, font: font, size: size, width: width}
 	}
 	if widths.columns > 0 && splitPatchCodeLine(line.Kind) {
 		widths.columns = max(widths.columns, 2*(f.extent.width+splitPatchReserve))
@@ -236,7 +238,8 @@ func (f *diffFindState) revealLine(file detailFileKey) int {
 }
 
 func (f *diffFindState) lineText(c *ui.Context, id diffFindLine, text string, size float32, mirrored ...bool) ui.Element {
-	drawPlain := func() ui.Element { return ui.Text(c, text).Font("Menlo").FontSize(size).SingleLine() }
+	font := codeFontFamily()
+	drawPlain := func() ui.Element { return ui.Text(c, text).Font(font).FontSize(size).SingleLine() }
 	if f == nil {
 		return drawPlain()
 	}
@@ -271,7 +274,7 @@ func (f *diffFindState) lineText(c *ui.Context, id diffFindLine, text string, si
 	}
 	var paragraph ui.Element
 	ui.Row(c.Key("matched-line")).Shrink(0).Children(func() {
-		paragraph = ui.RichText(c, spans...).Font("Menlo").FontSize(size).SingleLine()
+		paragraph = ui.RichText(c, spans...).Font(font).FontSize(size).SingleLine()
 		if !f.reveal || f.matches[f.active].line != id || len(mirrored) > 0 && mirrored[0] {
 			return
 		}
@@ -280,7 +283,7 @@ func (f *diffFindState) lineText(c *ui.Context, id diffFindLine, text string, si
 		// layout anchor so nested split and overview scrollers can expose a
 		// word at either end of a long line.
 		measure := func(part string) float32 {
-			w, _ := c.MeasureText(0, ui.Span{Text: part, Font: "Menlo", Size: size})
+			w, _ := c.MeasureText(0, ui.Span{Text: part, Font: font, Size: size})
 			return w
 		}
 		anchor := ui.Box(c.Key("find-reveal").Key(f.revealSeq)).Absolute().Left(measure(text[:m.start])).Top(0).
@@ -353,7 +356,7 @@ func (a *app) drawDiffFindBar(c *ui.Context, f *diffFindState, sections func() [
 		if n > 0 {
 			active = f.active + 1
 		}
-		ui.Text(c, fmt.Sprintf("%d/%d", active, n)).Font("Menlo").FontSize(scaledFont(10)).TextColor(tk.TextSecondary).Shrink(0)
+		ui.Text(c, fmt.Sprintf("%d/%d", active, n)).Font(a.patchFontFamily()).FontSize(scaledFont(10)).TextColor(tk.TextSecondary).Shrink(0)
 		for _, b := range []struct {
 			icon  *ui.SVG
 			label string

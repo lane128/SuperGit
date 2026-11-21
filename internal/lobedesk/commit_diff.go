@@ -115,10 +115,11 @@ func (a *app) visibleCommitSections() []commitDiffSection {
 }
 
 type historyPatchWidthCache struct {
-	first *gitrepo.DiffLine
-	font  float32
-	split bool
-	rows  map[int]patchWidths
+	first      *gitrepo.DiffLine
+	font       float32
+	fontFamily string
+	split      bool
+	rows       map[int]patchWidths
 }
 
 const historyPatchInset = 4
@@ -128,8 +129,10 @@ const historyPatchInset = 4
 // their tails neither clip nor scroll entirely past the right edge.
 func (a *app) historyPatchWidths(c *ui.Context, cache *historyPatchWidthCache, sections []commitDiffSection, lines []gitrepo.DiffLine) patchWidths {
 	font := a.patchFontSize()
-	if cache.first != &lines[0] || cache.font != font || cache.split != a.splitDiff {
-		*cache = historyPatchWidthCache{first: &lines[0], font: font, split: a.splitDiff, rows: make(map[int]patchWidths)}
+	family := a.patchFontFamily()
+	glyphAdvance := codeFontAdvanceFor(a.codeFontKey())
+	if cache.first != &lines[0] || cache.font != font || cache.fontFamily != family || cache.split != a.splitDiff {
+		*cache = historyPatchWidthCache{first: &lines[0], font: font, fontFamily: family, split: a.splitDiff, rows: make(map[int]patchWidths)}
 	}
 	viewport := a.commitDiffViewport.W - 2*historyPatchInset
 	widths := patchWidths{canvas: viewport}
@@ -139,7 +142,7 @@ func (a *app) historyPatchWidths(c *ui.Context, cache *historyPatchWidthCache, s
 		widths.canvas = 560 // The first pass has no measured pane yet.
 	}
 	for _, section := range sections {
-		widths.canvas = max(widths.canvas, diffEstimatedAdvance(section.Path)*max(font, scaledFont(10))+diffCodeReserve)
+		widths.canvas = max(widths.canvas, diffEstimatedAdvanceWith(section.Path, glyphAdvance)*max(font, scaledFont(10))+diffCodeReserve)
 		if a.commitCollapsed[section.Path] {
 			continue
 		}
@@ -147,9 +150,9 @@ func (a *app) historyPatchWidths(c *ui.Context, cache *historyPatchWidthCache, s
 		if !found {
 			for _, index := range section.Rows {
 				line := lines[index]
-				advance := diffEstimatedAdvance(line.Text) * font
+				advance := diffEstimatedAdvanceWith(line.Text, glyphAdvance) * font
 				if advance > 4000 {
-					advance, _ = c.MeasureText(0, ui.Span{Text: strings.ReplaceAll(line.Text, "\t", "    "), Font: "Menlo", Size: font})
+					advance, _ = c.MeasureText(0, ui.Span{Text: strings.ReplaceAll(line.Text, "\t", "    "), Font: family, Size: font})
 				}
 				if a.splitDiff && splitPatchCodeLine(line.Kind) {
 					// History has no staging action at the end of a code row.
