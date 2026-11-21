@@ -1,6 +1,8 @@
 package gitrepo
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -12,6 +14,10 @@ import (
 	"strings"
 	"unicode/utf8"
 )
+
+// ErrConflictMarkers is returned when a conflicted working file still contains
+// unresolved Git conflict markers (<<<<<<<, =======, >>>>>>> or |||||||).
+var ErrConflictMarkers = errors.New("结果仍包含冲突标记，请先完成编辑")
 
 type Conflict struct {
 	Path, Base, Ours, Theirs, Working string
@@ -180,13 +186,112 @@ func (r *Repository) Conflict(ctx context.Context, path string) (Conflict, error
 	c.Operation, err = r.Operation(ctx)
 	return c, err
 }
+func isConflictMarkerPrefix(prefix string) bool {
+	return prefix == "<<<<<<<" || prefix == "=======" || prefix == ">>>>>>>" || prefix == "|||||||"
+}
+
 func conflictMarkers(text string) bool {
 	for _, line := range strings.Split(text, "\n") {
-		if strings.HasPrefix(line, "<<<<<<<") || strings.HasPrefix(line, "=======") || strings.HasPrefix(line, ">>>>>>>") || strings.HasPrefix(line, "|||||||") {
+		if len(line) >= 7 && isConflictMarkerPrefix(line[:7]) {
 			return true
 		}
 	}
 	return false
+}
+
+// fileHasConflictMarkers scans a regular text file in the working tree for
+// unresolved Git conflict markers. Deleted files, non-regular entries and
+// binary files (containing a NUL byte in the first 8 KiB) return false so they
+// can still be staged after external resolution.
+func fileHasConflictMarkers(rootPath, path string) (bool, error) {
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return false, err
+	}
+	defer root.Close()
+	parent, err := conflictParent(root, path)
+	if err != nil {
+		return false, err
+	}
+	defer parent.Close()
+	base := filepath.Base(path)
+	info, err := parent.Lstat(base)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, nil
+	}
+	f, err := parent.Open(base)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	head := make([]byte, 8192)
+	n, readErr := f.Read(head)
+	if readErr != nil && !errors.Is(readErr, io.EOF) {
+		return false, readErr
+	}
+	head = head[:n]
+	if bytes.IndexByte(head, 0) >= 0 {
+		return false, nil
+	}
+	reader := bufio.NewReader(io.MultiReader(bytes.NewReader(head), f))
+	atLineStart := true
+	prefix := make([]byte, 0, 7)
+	for {
+		chunk, err := reader.ReadSlice('\n')
+		if atLineStart {
+			if len(prefix) < 7 {
+				need := 7 - len(prefix)
+				if len(chunk) < need {
+					prefix = append(prefix, chunk...)
+				} else {
+					prefix = append(prefix, chunk[:need]...)
+				}
+			}
+			if len(prefix) == 7 && isConflictMarkerPrefix(string(prefix)) {
+				return true, nil
+			}
+			if len(prefix) >= 7 || err == nil || errors.Is(err, io.EOF) {
+				atLineStart = false
+			}
+		}
+		if err == nil {
+			prefix = prefix[:0]
+			atLineStart = true
+			continue
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if errors.Is(err, io.EOF) {
+			return false, nil
+		}
+		return false, err
+	}
+}
+
+// MarkConflictResolved stages a conflicted path after verifying that the
+// working tree text file no longer contains unresolved Git conflict markers.
+func (r *Repository) MarkConflictResolved(ctx context.Context, path string) error {
+	if err := r.path(path); err != nil {
+		return err
+	}
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+	hasMarkers, err := fileHasConflictMarkers(r.Root, path)
+	if err != nil {
+		return err
+	}
+	if hasMarkers {
+		return ErrConflictMarkers
+	}
+	_, err = run(ctx, r.Root, "", "add", "--", path)
+	return err
 }
 func (r *Repository) ResolveConflictDeletion(ctx context.Context, original Conflict) error {
 	r.writeMu.Lock()
@@ -214,7 +319,7 @@ func (r *Repository) ResolveConflict(ctx context.Context, original Conflict, tex
 		return errors.New("结果必须为不超过 1 MiB 的文本")
 	}
 	if conflictMarkers(text) {
-		return errors.New("结果仍包含冲突标记，请先完成编辑")
+		return ErrConflictMarkers
 	}
 	current, err := r.Conflict(ctx, original.Path)
 	if err != nil {

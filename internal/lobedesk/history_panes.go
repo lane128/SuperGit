@@ -584,8 +584,9 @@ func (a *app) worktreeDiffHeader(c *ui.Context, tk *theme.Tokens) {
 		if !a.diffLoading && a.diffErr == "" && len(a.diff.Lines) > 0 && (!ok || !entry.Conflict) {
 			a.patchLayoutButton(c.Key("patch-layout"), func() {
 				lines := a.diff.Lines
-				before := newPatchRows(lines, nil, a.splitDiff)
-				after := newPatchRows(lines, nil, !a.splitDiff)
+				visible := worktreeVisiblePatchRows(lines)
+				before := newPatchRows(lines, visible, a.splitDiff)
+				after := newPatchRows(lines, visible, !a.splitDiff)
 				a.diffScroll.Y = a.patchOffset(before, after, a.diffScroll.Y)
 			})
 		}

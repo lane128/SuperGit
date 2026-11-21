@@ -1,6 +1,8 @@
 # SuperGit
 
-使用 Go + MyGo 原生 GPU UI 的 Git 桌面客户端。当前为 macOS 开发预览，使用真实仓库与系统 Git，中文界面，无 WebView。`design/` 保留完整产品原型；原型中的进阶功能以本文能力表为准。
+使用 Go + MyGo 原生 GPU UI 的 Git 桌面客户端。当前面向 macOS Apple Silicon，直接调用真实仓库与系统 Git，支持中英文界面，无 WebView。
+
+核心能力包括：同窗口多仓库标签、历史提交 DAG 与分支筛选、工作区与历史四列标签式详情、统一 / 左右分栏补丁视图、文件 / 片段 / 单行暂存与丢弃、图片变更对比、提交与 Amend、分支 / 远端 / 标签 / Stash / Worktree / Submodule 管理、Merge / Rebase / Cherry-pick / Revert / Reset、内置文本冲突编辑器与残留冲突标记保护、文件 Blame、命令面板，以及浅色 / 深色主题与独立界面 / 代码字体设置。`design/` 保留产品设计原型。
 
 新版工作台设计见 [布局对比 PDF](design/workbench-redesign/SuperGit-Design-Variants.pdf)、[UI 开发规范](design/workbench-redesign/UI-Spec.md) 和 [设计交接目录](design/workbench-redesign/README.md)。
 
@@ -93,8 +95,8 @@ sh scripts/create-workflow-demo.sh > build/workflow-demo-root.txt
 - 标签创建目前仅支持本地轻量标签；创建与浏览均不切换 HEAD、不改写 Index 或工作区、不推送。已有轻量／附注／符号引用（包括悬空引用）均拒绝覆盖；Git 引用事务 hooks 仍执行。浏览使用单条有输出上限的 Git 查询，读取失败明确报错；悬空符号引用按 Git 枚举行为省略，界面已说明。尚未读取附注正文／签名详情，附注／签名标签创建、删除、远端标签发布待后续实现。已知提示问题：通过标签打开的旧提交随后被分页载入时，“尚未载入”说明可能保留至刷新或显式选择该提交；固定 SHA 的详情仍正确。
 - 待实现：交互式 Rebase 计划、递归子模块发布向导、操作系统文件事件监听、快捷键自定义、monorepo 与很宽分支图的性能验证、签名与跨平台交付。
 - 按行操作只修改 Index，执行前重读并核对原 Diff；外部变化会拒绝旧选择。切换文件／分组／仓库及手动刷新会清空选择；自动刷新时，当前 Diff 内容不变则保留选择，内容变化则清空。包含无结尾换行标记的片段，需要选中该片段全部变化行，或使用片段操作；保留 CRLF 和工作区原始内容。
-- 二进制、符号链接、gitlink 与复杂重命名冲突需外部工具处理并暂存；文本冲突版本／结果限制 1 MiB。Ours / Theirs 对应 Index 阶段 2 / 3，Rebase 期间含义与普通合并不同。
-- 不提供丢弃改动、强制 Push、强制分支删除或强制 Worktree 移除。分叉后的 Pull 会停止，由使用者选择 Merge 或 Rebase。切换／合并保护被忽略文件；移除 Worktree 时若存在忽略文件会拒绝。Rebase 涉及中间提交的 checkout，目前存在忽略文件时保守停止，需先移出或备份。
+- 二进制、符号链接、gitlink 与复杂重命名冲突需外部工具处理并暂存；文本冲突编辑器支持版本对比与结果保存（限制 1 MiB），直接「标记为已解决」时也会检查工作区文本文件是否仍残留冲突标记（`<<<<<<<` / `=======` / `>>>>>>>` / `|||||||`）并阻止误暂存。Ours / Theirs 对应 Index 阶段 2 / 3，Rebase 期间含义与普通合并不同。
+- 丢弃改动、强制 Push（with-lease / force）与强制删除分支均需二次确认，默认不提供强制移除 Worktree。分叉后的 Pull 会停止，由使用者选择 Merge 或 Rebase。切换／合并保护被忽略文件；移除 Worktree 时若存在忽略文件会拒绝。Rebase 涉及中间提交的 checkout，目前存在忽略文件时保守停止，需先移出或备份。
 - 推送前检查源提交记录的子模块 gitlink 与已配置远端的跟踪引用，即使父仓库无需更新也会检查；需先初始化子模块并通过 Push／Fetch 核对。当前只支持单一 Fetch／Push 地址的远端，多地址配置需先在终端整理。
 - 自动检测使用本地 Git 轮询：活跃窗口约每 3 秒，后台约每 15 秒，重新聚焦时检查；同一仓库最多一个检查任务，应用写入期间暂停。检测到状态／Index 对象及模式／引用／配置／worktree／子模块当前指针或当前工作区 Diff 改变后刷新，保留提交说明、冲突编辑内容和确认目标。子模块已经偏离父指针后继续提交，也会更新；当前 Diff 读取失败不阻止其他仓库状态更新。检查超过 15 秒会取消并稍后重试，失败可手动刷新；不进行网络同步。历史搜索仅覆盖当前已加载内容。
 - 基础检测基准（本机 Apple M4，含 Git 子进程，5 次测量）：1 个跟踪文件约 44 ms，1,000 个约 58 ms；带 1 个已初始化子模块约 128 ms；当前 Diff 的读取另计。这是小型基线；另有万文件／万提交测试见下文，monorepo 与很宽的多分支图仍需验证。可运行 `go test ./internal/gitrepo -run '^$' -bench BenchmarkChangeStamp -benchtime=5x` 复测。
@@ -190,4 +192,8 @@ python3 -I scripts/native-workflow-smoke.py /path/to/root
 
 Smoke 只接受该脚本创建且 origin 仍指向本地 bare remote 的 fixture；会真实创建分支、推送、合并、解决冲突、操作 worktree、Clone / Init。使用新 fixture 运行，截图与日志保存在 `build/`。Git 后台任务用条件等待；`--settle` 只等待 UI 帧。
 
-代码分工：`internal/gitrepo` 管理 Git 子进程和模型，`internal/desktop` 管理原生 UI 与主线程状态，`cmd/supergit` 为入口。
+代码分工：`internal/gitrepo` 管理 Git 子进程和模型，`internal/lobedesk`（及回退版 `internal/desktop`）管理原生 UI 与主线程状态，`cmd/supergit` 为入口。
+
+## 许可证
+
+本项目代码采用 [GNU General Public License v3.0 (GPL-3.0)](LICENSE) 许可发布；内置字体遵循各自的 SIL Open Font License 1.1 协议，详见 [internal/lobedesk/fonts/LICENSES.txt](internal/lobedesk/fonts/LICENSES.txt)。

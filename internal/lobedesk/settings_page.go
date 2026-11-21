@@ -395,6 +395,12 @@ func (a *app) aboutCard(c *ui.Context) {
 		display.Text(c, a.t("settingsAboutText"), display.TextProps{
 			Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 2,
 		})
+		version := currentAppVersionLabel()
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Selectable().Children(func() {
+			display.Text(c, a.t("settingsVersion"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
+			display.Text(c, version, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Code: true}).
+				Font(a.patchFontFamily()).SingleLine()
+		})
 		if path, err := settingsPath(); err == nil {
 			// The row is the selectable scope: a paragraph on its own inside the
 			// page's scroll area would not be selectable, since MyGo needs a

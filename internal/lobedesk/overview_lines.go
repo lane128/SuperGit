@@ -119,7 +119,7 @@ func (a *app) overviewPatchLineForSide(c *ui.Context, target overviewPatchTarget
 	if selected && a.lineSel[index] {
 		bg = tk.Blue.Alpha(0.16).Over(bg)
 	}
-	row := ui.Row(c.Key(index)).Width(width).Height(a.patchRowHeight()).Shrink(0).Background(bg)
+	row := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0).Background(bg)
 	row.Children(func() {
 		numbers := a.patchGutter(c, line, side, gutterInk(tk, bg))
 		markDiffGutter(numbers, changed && selected && a.lineSel[index], gutterInk(tk, bg))

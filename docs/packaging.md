@@ -6,7 +6,7 @@
 
 | 目的 | 命令 | 实际入口 / 产物 |
 | --- | --- | --- |
-| 默认 macOS 应用包 | `make app` | `cmd/supergit` → `internal/lobedesk`，产物 `build/SuperGit.app`，包标识 `dev.supergit.preview` |
+| 默认 macOS 应用包 | `make app` | `cmd/supergit` → `internal/lobedesk`，产物 `build/SuperGit.app`，包标识 `cc.supermix.supergit` |
 | 旧桌面回退包 | `make desktop-app` | `cmd/supergit` + `legacydesktop`，产物 `build/SuperGit Desktop.app` |
 | Finder 启动的 Lobe 预览包 | `make lobe-app` | `cmd/supergit-lobe` → `build/SuperGit Lobe Preview.app` |
 | Lobe 开发二进制 | `make lobe-build` | `cmd/supergit-lobe` → `build/supergit-lobe` |

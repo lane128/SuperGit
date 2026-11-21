@@ -2,6 +2,7 @@ package lobedesk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -1104,7 +1105,11 @@ func (a *app) confirmForceDeleteBranch(branch gitrepo.Branch) {
 
 func (a *app) resolveConflict(path string) {
 	a.perform(a.t("resolveFailed"), a.t("resolveSuccess"), func(ctx context.Context, repo *gitrepo.Repository) error {
-		return repo.Stage(ctx, path)
+		err := repo.MarkConflictResolved(ctx, path)
+		if errors.Is(err, gitrepo.ErrConflictMarkers) {
+			return errors.New(a.t("resolveConflictMarkers"))
+		}
+		return err
 	})
 }
 

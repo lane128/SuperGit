@@ -21,7 +21,7 @@ subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=T
 identity = subprocess.check_output([
     "plutil", "-extract", "CFBundleIdentifier", "raw", "-o", "-", str(app / "Contents/Info.plist"),
 ], text=True).strip()
-if identity != "dev.supergit.preview":
+if identity != "cc.supermix.supergit":
     raise RuntimeError(f"Unexpected standard bundle identity: {identity}")
 subprocess.run([
     "go", "build", "-o", str(trial / "mygo-automation"),

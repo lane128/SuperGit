@@ -130,10 +130,10 @@ func canceledContext() context.Context {
 func TestABranchInTheSidebarLocatesItsTip(t *testing.T) {
 	a := &app{
 		locale: localeChinese, page: "history",
-		repo:     &gitrepo.Repository{Root: t.TempDir()},
-		branches: []gitrepo.Branch{{Name: "main", Current: true, SHA: "main-sha"}, {Name: "feat", SHA: "feat-sha"}},
-		commits:  []gitrepo.Commit{{SHA: "main-sha"}, {SHA: "feat-sha"}},
-		ctx:      canceledContext(),
+		repo:      &gitrepo.Repository{Root: t.TempDir()},
+		branches:  []gitrepo.Branch{{Name: "main", Current: true, SHA: "main-sha"}, {Name: "feat", SHA: "feat-sha"}},
+		commits:   []gitrepo.Commit{{SHA: "main-sha"}, {SHA: "feat-sha"}},
+		ctx:       canceledContext(),
 		runOnMain: func(func()) {},
 	}
 	tt := sidebarTester(a)

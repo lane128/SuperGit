@@ -343,12 +343,28 @@ func TestQuickCheckoutRemoteCancelRestoresBody(t *testing.T) {
 }
 
 func TestQuickCheckoutRemoteMouseBackRestoresSearch(t *testing.T) {
- a,_,target:=quickCheckoutFixture(t)
- a.remoteBranches=[]gitrepo.Branch{{Name:"origin/topic",SHA:target}}
- tt:=quickCheckoutTester(a);tt.Key(ui.Cmd,ui.KeyB);tt.Frame();tt.Type("origin/topic");tt.Frame();tt.Key(0,ui.KeyEnter);tt.Frame()
- back,ok:=tt.AccessByRole(ui.RoleButton,a.t("quickCheckoutBack"));if !ok{t.Fatal("Back missing")}
- tt.ClickAt(back.Bounds.X+back.Bounds.W/2,back.Bounds.Y+back.Bounds.H/2);tt.Frame();tt.Frame();tt.Key(0,ui.KeyEnd);tt.Type("X");tt.Frame()
- if a.quickCheckout.query!="origin/topicX" {t.Fatalf("mouse Back lost search input ownership: %q",a.quickCheckout.query)}
+	a, _, target := quickCheckoutFixture(t)
+	a.remoteBranches = []gitrepo.Branch{{Name: "origin/topic", SHA: target}}
+	tt := quickCheckoutTester(a)
+	tt.Key(ui.Cmd, ui.KeyB)
+	tt.Frame()
+	tt.Type("origin/topic")
+	tt.Frame()
+	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
+	back, ok := tt.AccessByRole(ui.RoleButton, a.t("quickCheckoutBack"))
+	if !ok {
+		t.Fatal("Back missing")
+	}
+	tt.ClickAt(back.Bounds.X+back.Bounds.W/2, back.Bounds.Y+back.Bounds.H/2)
+	tt.Frame()
+	tt.Frame()
+	tt.Key(0, ui.KeyEnd)
+	tt.Type("X")
+	tt.Frame()
+	if a.quickCheckout.query != "origin/topicX" {
+		t.Fatalf("mouse Back lost search input ownership: %q", a.quickCheckout.query)
+	}
 }
 
 func TestQuickCheckoutRemoteExplicitTrackers(t *testing.T) {

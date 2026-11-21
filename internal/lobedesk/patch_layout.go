@@ -2,12 +2,53 @@ package lobedesk
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 	"supergit/internal/gitrepo"
 )
+
+// isRedundantPatchHeaderLine identifies raw git diff boilerplate lines that
+// duplicate the file header. Meaningful metadata lines (renames, mode changes,
+// binary notices, "\ No newline at end of file", conflict previews) stay shown.
+func isRedundantPatchHeaderLine(line gitrepo.DiffLine) bool {
+	if line.Kind != "meta" || line.Hunk >= 0 {
+		return false
+	}
+	return strings.HasPrefix(line.Text, "diff --git ") ||
+		strings.HasPrefix(line.Text, "index ") ||
+		strings.HasPrefix(line.Text, "--- ") ||
+		strings.HasPrefix(line.Text, "+++ ")
+}
+
+// worktreeVisiblePatchRows returns the canonical line indexes to draw for a
+// workspace patch, omitting redundant diff/index/---/+++ header lines while
+// keeping indexes intact for line selection, hunk staging and find. Returns nil
+// when every line stays visible (including header-only patches).
+func worktreeVisiblePatchRows(lines []gitrepo.DiffLine) []int {
+	hasHidden := false
+	for _, line := range lines {
+		if isRedundantPatchHeaderLine(line) {
+			hasHidden = true
+			break
+		}
+	}
+	if !hasHidden {
+		return nil
+	}
+	visible := make([]int, 0, len(lines))
+	for i, line := range lines {
+		if !isRedundantPatchHeaderLine(line) {
+			visible = append(visible, i)
+		}
+	}
+	if len(visible) == 0 {
+		return nil
+	}
+	return visible
+}
 
 type patchRows struct {
 	lines   []gitrepo.DiffLine
@@ -177,13 +218,26 @@ func splitPatchCodeLine(kind string) bool {
 const splitPatchReserve = diffCodeReserve - 92 + 50 + 1
 
 func (a *app) splitPatchWidths(lines []gitrepo.DiffLine, viewport float32) patchWidths {
+	return a.splitPatchWidthsFor(lines, nil, viewport)
+}
+
+func (a *app) splitPatchWidthsFor(lines []gitrepo.DiffLine, visible []int, viewport float32) patchWidths {
 	var code, shared float32
-	for _, line := range lines {
+	measure := func(line gitrepo.DiffLine) {
 		advance := diffEstimatedAdvance(line.Text)
 		if splitPatchCodeLine(line.Kind) {
 			code = max(code, advance)
 		} else {
 			shared = max(shared, advance)
+		}
+	}
+	if visible != nil {
+		for _, i := range visible {
+			measure(lines[i])
+		}
+	} else {
+		for _, line := range lines {
+			measure(line)
 		}
 	}
 	font := a.patchFontSize()

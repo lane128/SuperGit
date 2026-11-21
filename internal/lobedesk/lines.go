@@ -32,7 +32,7 @@ func (a *app) clearLineSelection() {
 // the set the keyboard walks and the mouse extends over.
 func (a *app) lineIndices() []int {
 	diff := a.activeWorktreeDiff()
-	return newPatchRows(diff.Lines, nil, a.splitDiff).appendSelectionOrder(nil, func(kind string) bool {
+	return newPatchRows(diff.Lines, worktreeVisiblePatchRows(diff.Lines), a.splitDiff).appendSelectionOrder(nil, func(kind string) bool {
 		return kind == "add" || kind == "del"
 	})
 }

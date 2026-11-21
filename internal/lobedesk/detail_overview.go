@@ -99,7 +99,7 @@ func (a *app) overviewSectionHeight(entry worktreeOverviewEntry) (float32, bool)
 	if previewFor(entry.Key.Path, entry.Diff.Binary) != textPreview {
 		return height + previewSummaryHeight, true
 	}
-	rows := newPatchRows(entry.Diff.Lines, nil, a.splitDiff)
+	rows := newPatchRows(entry.Diff.Lines, worktreeVisiblePatchRows(entry.Diff.Lines), a.splitDiff)
 	for i := range rows.len() {
 		height += rows.height(a, i)
 	}
@@ -186,14 +186,15 @@ func (a *app) worktreeOverviewFile(c *ui.Context, tk *theme.Tokens, entry worktr
 		}
 		_, conflict := a.conflictPreviewEntry(key.Path)
 		split := a.splitDiff && !conflict
+		visible := worktreeVisiblePatchRows(entry.Diff.Lines)
 		var widths patchWidths
 		if split {
-			widths = a.splitPatchWidths(entry.Diff.Lines, a.commitDiffViewport.W)
+			widths = a.splitPatchWidthsFor(entry.Diff.Lines, visible, a.commitDiffViewport.W)
 		} else {
-			widths.canvas = a.diffWidth(entry.Diff)
+			widths.canvas = a.diffWidthForRows(entry.Diff.Lines, visible)
 		}
 		widths = a.diffFind.fitMatch(c, key, entry.Diff.Lines, widths, a.patchFontSize())
-		rows := newPatchRows(entry.Diff.Lines, nil, split)
+		rows := newPatchRows(entry.Diff.Lines, visible, split)
 		target := overviewPatchTarget{Root: root, Generation: seq, File: key, Diff: entry.Diff}
 		reveal := -1
 		findLine := a.diffFind.revealLine(key)

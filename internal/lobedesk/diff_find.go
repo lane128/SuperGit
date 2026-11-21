@@ -105,7 +105,7 @@ func (a *app) diffFindSections() []diffFindSection {
 			return nil
 		}
 		_, conflict := a.conflictPreviewEntry(a.selectedPath)
-		return []diffFindSection{{lines: a.diff.Lines, split: a.splitDiff && !conflict}}
+		return []diffFindSection{{lines: a.diff.Lines, visible: worktreeVisiblePatchRows(a.diff.Lines), split: a.splitDiff && !conflict}}
 	}
 	conflicts := make(map[string]bool)
 	if a.splitDiff {
@@ -117,7 +117,7 @@ func (a *app) diffFindSections() []diffFindSection {
 	}
 	for _, e := range a.overviewEntries {
 		if !e.Loading && e.Err == "" && !a.detailContexts.Worktree.Collapsed[e.Key] && len(e.Diff.Lines) > 0 {
-			out = append(out, diffFindSection{file: e.Key, lines: e.Diff.Lines, split: a.splitDiff && !conflicts[e.Key.Path]})
+			out = append(out, diffFindSection{file: e.Key, lines: e.Diff.Lines, visible: worktreeVisiblePatchRows(e.Diff.Lines), split: a.splitDiff && !conflicts[e.Key.Path]})
 		}
 	}
 	return out
@@ -125,7 +125,7 @@ func (a *app) diffFindSections() []diffFindSection {
 
 func sameFindSection(x, y diffFindSection) bool {
 	return x.file == y.file && x.split == y.split && len(x.lines) == len(y.lines) && &x.lines[0] == &y.lines[0] &&
-		len(x.visible) == len(y.visible) && (len(x.visible) == 0 || &x.visible[0] == &y.visible[0])
+		slices.Equal(x.visible, y.visible)
 }
 
 func (f *diffFindState) update(sections []diffFindSection) {

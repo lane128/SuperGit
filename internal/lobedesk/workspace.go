@@ -454,12 +454,13 @@ func (a *app) diffBody(c *ui.Context) {
 	_, conflict := a.conflictPreviewEntry(a.selectedPath)
 	split := a.splitDiff && !conflict
 	diff := a.diff
-	rows := newPatchRows(diff.Lines, nil, split)
+	visible := worktreeVisiblePatchRows(diff.Lines)
+	rows := newPatchRows(diff.Lines, visible, split)
 	var widths patchWidths
 	if split {
-		widths = a.splitPatchWidths(diff.Lines, a.diffViewportRect.W)
+		widths = a.splitPatchWidthsFor(diff.Lines, visible, a.diffViewportRect.W)
 	} else {
-		widths.canvas = a.diffWidth(diff)
+		widths.canvas = a.diffWidthForRows(diff.Lines, visible)
 	}
 	widths = a.diffFind.fitMatch(c, detailFileKey{}, diff.Lines, widths, a.patchFontSize())
 	heights := make([]float32, rows.len())
@@ -583,10 +584,20 @@ func diffEstimatedAdvanceWith(text string, glyphAdvance float32) float32 {
 }
 
 func (a *app) diffWidth(diff gitrepo.Diff) float32 {
+	return a.diffWidthForRows(diff.Lines, nil)
+}
+
+func (a *app) diffWidthForRows(lines []gitrepo.DiffLine, visible []int) float32 {
 	glyphAdvance := codeFontAdvanceFor(a.codeFontKey())
 	var longest float32
-	for _, line := range diff.Lines {
-		longest = max(longest, diffEstimatedAdvanceWith(line.Text, glyphAdvance))
+	if visible != nil {
+		for _, i := range visible {
+			longest = max(longest, diffEstimatedAdvanceWith(lines[i].Text, glyphAdvance))
+		}
+	} else {
+		for _, line := range lines {
+			longest = max(longest, diffEstimatedAdvanceWith(line.Text, glyphAdvance))
+		}
 	}
 	// The estimate has to follow the reader's text size: a fixed advance that
 	// fits the standard preset leaves the large preset's longest lines short.

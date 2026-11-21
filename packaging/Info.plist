@@ -4,7 +4,7 @@
 <dict>
     <key>CFBundleExecutable</key><string>supergit</string>
     <key>CFBundleIconFile</key><string>SuperGit.icns</string>
-    <key>CFBundleIdentifier</key><string>dev.supergit.preview</string>
+    <key>CFBundleIdentifier</key><string>cc.supermix.supergit</string>
     <key>CFBundleName</key><string>SuperGit</string>
     <key>CFBundleDisplayName</key><string>SuperGit</string>
     <key>CFBundlePackageType</key><string>APPL</string>
