@@ -3,7 +3,6 @@ package lobedesk
 import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
@@ -72,9 +71,7 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 				SingleLine().Grow(1).Basis(0).MinWidth(0)
 			// The row menu already copies the SHA, but the reading eye is
 			// here; a copy button beside the hash saves hunting for the row.
-			copySHA := action.ActionIcon(c, lucide.Copy(), action.ActionIconProps{
-				Size: theme.Small, Title: a.t("copySHA"),
-			}).Shrink(0)
+			copySHA := compactActionIcon(c, lucide.Copy(), a.t("copySHA"), buttonNormal, false).Shrink(0)
 			if copySHA.Clicked() {
 				a.copyText(commit.SHA)
 			}

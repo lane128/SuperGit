@@ -47,7 +47,7 @@ func (a *app) branchSelector(c *ui.Context, iconWidth float32) {
 	button := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, disabled, false).
 		Label(a.t("branches")).Description(caption).
 		Tooltip(caption+"\n"+a.t("quickCheckout")+" ("+shortcutKeys("branch.quickCheckout")+")").
-		Grow(1).Basis(0).MinWidth(0).Padding(0, iconWidth+padding, 0, padding).Radius(0, 6, 6, 0)
+		Grow(1).Basis(0).MinWidth(0).Padding(0, iconWidth+padding, 0, padding).Radius(0, 7, 7, 0)
 	button.Children(func() {
 		label := ui.Text(c.Key("branch-name"), name).FontSize(fontSize).SingleLine().MinWidth(0).Shrink(1)
 		if a.status.Branch == "" && !disabled {
@@ -101,9 +101,11 @@ func (a *app) filesToolbar(c *ui.Context) {
 		if reason != "" {
 			hint += "\n" + reason
 		}
-		button := action.ActionIcon(c.Key(item.kind), item.icon, action.ActionIconProps{
-			BlockSize: 24, GlyphSize: 14, Title: a.t(item.label), Danger: item.kind == "discard",
-		}).Disabled(reason != "").Description(hint).Tooltip(a.t(item.label) + "\n" + hint)
+		role := buttonNormal
+		if item.kind == "discard" {
+			role = buttonDangerIcon
+		}
+		button := compactActionIcon(c.Key(item.kind), item.icon, a.t(item.label), role, reason != "").Description(hint).Tooltip(a.t(item.label) + "\n" + hint)
 		if button.Clicked() {
 			item.run()
 		}

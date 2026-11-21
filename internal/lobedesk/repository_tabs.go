@@ -667,12 +667,11 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 	}
 	tk := theme.TokensOf(c)
 	selected := session == a
-	row = ui.Row(c).Shrink(0).Height(28).AlignItems(ui.Center).Radius(tk.BorderRadius)
+	row = ui.Row(c).Shrink(0).Height(28).AlignItems(ui.Center)
 	if selected {
-		row.Background(tk.PrimaryBg).BorderWidth(0, 0, 2, 0).BorderColor(tk.Primary)
-	} else if row.Hovered() {
-		row.Background(tk.FillTertiary)
+		row.Padding(0, 0, 2, 0)
 	}
+	ink := paintWorkbenchTab(row, tk, selected, 0)
 	row.Children(func() {
 		tip := root
 		if session.repositoryAlias != "" {
@@ -684,8 +683,8 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 			tab.Drag(repositoryTabDrag{session: session})
 		}
 		tab.Children(func() {
-			ui.Icon(c, icon).FontSize(scaledFont(12)).TextColor(tk.TextSecondary).Shrink(0)
-			display.Text(c, caption, display.TextProps{Strong: selected, FontSize: scaledFont(11.5)}).SingleLine().MaxWidth(repositoryTabCaptionWidth)
+			ui.Icon(c, icon).FontSize(scaledFont(12)).TextColor(ink).Shrink(0)
+			display.Text(c, caption, display.TextProps{Strong: selected, FontSize: scaledFont(11.5)}).TextColor(ink).SingleLine().MaxWidth(repositoryTabCaptionWidth)
 		})
 		if tabs.focusTab == session {
 			tab.Focus()
@@ -743,14 +742,15 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 		closeLabel := a.t("close") + " " + closeTarget
 		close := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, !canClose || clipped, false).
 			Width(scaledFont(workbenchButtonBaseHeight)).PaddingX(0).Label(closeLabel).Tooltip(closeLabel)
+		styleTabClose(close, tk, ink)
 		dirty := session.repo != nil && len(session.status.Entries) > 0
 		if dirty {
 			close.Description(a.t("repositoryTabUncommitted"))
 		}
 		close.Children(func() {
 			if dirty && !close.Hovered() && !close.Focused() {
-				size := scaledFont(8)
-				ui.Box(c).Width(size).Height(size).Radius(size / 2).Background(tk.TextSecondary)
+				size := scaledFont(6)
+				ui.Box(c).Width(size).Height(size).Radius(size / 2).Background(ink)
 			} else {
 				ui.Icon(c, lucide.X()).FontSize(scaledFont(14))
 			}

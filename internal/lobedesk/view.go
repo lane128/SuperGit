@@ -209,7 +209,7 @@ func (a *app) toolbarCommandControl(c *ui.Context, showBranch bool) {
 			Label(label).Tooltip(label + " (" + keys + ")")
 		iconWidth := scaledFont(32)
 		if showBranch {
-			button.Width(iconWidth).Shrink(0).PaddingX(0).Radius(6, 0, 0, 6)
+			button.Width(iconWidth).Shrink(0).PaddingX(0).Radius(7, 0, 0, 7)
 		} else {
 			button.FillWidth()
 		}

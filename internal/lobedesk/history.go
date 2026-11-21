@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/field"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
@@ -347,9 +346,7 @@ func (a *app) historyPageAtWidth(c *ui.Context, width float32) {
 				Variant: display.TagFilled, Color: display.TagInfo, Size: theme.Small, Round: true,
 				Icon: lucide.FileDiff(),
 			}).MaxWidth(a.historyHeaderLabelWidth()).Tooltip(a.fileFilter)
-			clear := action.ActionIcon(c, lucide.X(), action.ActionIconProps{
-				Size: theme.Small, Title: a.t("showAllHistory"),
-			})
+			clear := compactActionIcon(c, lucide.X(), a.t("showAllHistory"), buttonNormal, false)
 			if clear.Clicked() {
 				a.clearFileFilter()
 			}
@@ -442,7 +439,7 @@ func (a *app) historyDetailsToggle(c *ui.Context) bool {
 	if a.historyDetailsHidden {
 		icon, title = lucide.PanelRightOpen(), a.t("showCommitDetails")
 	}
-	return action.ActionIcon(c, icon, action.ActionIconProps{Size: theme.Small, Title: title}).Clicked()
+	return compactActionIcon(c, icon, title, buttonNormal, false).Clicked()
 }
 
 // historyListState tells the commit list what it draws: rows, a placeholder

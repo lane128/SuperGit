@@ -2,7 +2,6 @@ package lobedesk
 
 import (
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
@@ -24,10 +23,10 @@ func (a *app) worktreeOverview(c *ui.Context) {
 		display.Text(c, a.t("overviewChanges"), display.TextProps{Strong: true, FontSize: scaledFont(12)})
 		ui.Row(c).Grow(1).Basis(0)
 		a.patchLayoutButton(c.Key("patch-layout"), nil)
-		if action.ActionIcon(c, lucide.ChevronsDown(), action.ActionIconProps{Title: a.t("expandAllPatches"), Size: theme.Small}).Clicked() {
+		if compactActionIcon(c, lucide.ChevronsDown(), a.t("expandAllPatches"), buttonNormal, false).Clicked() {
 			a.setOverviewCollapsed(false)
 		}
-		if action.ActionIcon(c, lucide.ChevronsUp(), action.ActionIconProps{Title: a.t("collapseAllPatches"), Size: theme.Small}).Clicked() {
+		if compactActionIcon(c, lucide.ChevronsUp(), a.t("collapseAllPatches"), buttonNormal, false).Clicked() {
 			a.setOverviewCollapsed(true)
 		}
 	})
@@ -154,7 +153,7 @@ func (a *app) worktreeOverviewFile(c *ui.Context, tk *theme.Tokens, entry worktr
 				a.clearLineSelection()
 				a.invalidate()
 			}
-			if action.ActionIcon(c, lucide.ExternalLink(), action.ActionIconProps{Title: a.t("openFileTab") + " " + key.Path, Size: theme.Small}).Clicked() {
+			if compactActionIcon(c, lucide.ExternalLink(), a.t("openFileTab")+" "+key.Path, buttonNormal, false).Clicked() {
 				a.openDetailFile(key)
 			}
 		})

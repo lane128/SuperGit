@@ -2,9 +2,8 @@ package lobedesk
 
 import (
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
+
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
-	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
 func (a *app) fileActionButtons(c *ui.Context, target fileActionTarget) {
@@ -22,8 +21,8 @@ func (a *app) fileActionButtons(c *ui.Context, target fileActionTarget) {
 		if target.Entry.IsSubmodule() {
 			discardHint += "\n" + a.t("fileActionsProtected")
 		}
-		button := action.ActionIcon(c.Key("discard-file"), icon, action.ActionIconProps{Title: label, Size: theme.Small}).
-			Disabled(!ready || target.Entry.IsSubmodule()).Description(discardHint).Tooltip(label + "\n" + discardHint).Shrink(0)
+		button := compactActionIcon(c.Key("discard-file"), icon, label, buttonDangerIcon, !ready || target.Entry.IsSubmodule()).
+			Description(discardHint).Tooltip(label + "\n" + discardHint).Shrink(0)
 		if button.Clicked() && a.fileActionTargetCurrent(target) {
 			a.prepareDiscardTargets([]fileActionTarget{target}, false)
 		}

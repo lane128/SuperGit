@@ -225,6 +225,9 @@ func (a *app) choiceRow(c *ui.Context, label string, items []choice.ToggleItem, 
 				selected := item.Value == current
 				button := styleWorkbenchButton(c.Key(item.Value), ui.ButtonBase(c.Key(item.Value)), buttonNormal, item.Disabled, selected).
 					Role(ui.RoleToggleButton).Label(item.Label).Checked(selected).Shrink(0)
+				if !selected && !item.Disabled && !button.Hovered() && !button.Pressed() {
+					button.Background(ui.Transparent)
+				}
 				button.Children(func() {
 					if item.Icon != nil {
 						ui.Icon(c, item.Icon).FontSize(scaledFont(14))

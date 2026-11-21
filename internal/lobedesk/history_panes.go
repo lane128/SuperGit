@@ -369,17 +369,12 @@ func (a *app) worktreeCommitPane(c *ui.Context) {
 // each file tab projects exactly one path and, in the worktree, stage version.
 func (a *app) historyDiffPane(c *ui.Context) {
 	tk := theme.TokensOf(c)
-	// The strip wears a quiet fill so the active tab, painted in the page's
-	// own ground, reads as one of the pane and the others as put away.
 	// The files pane draws the divider between the two details columns; a
 	// border here would sit on the window's outer edge and leave the columns
 	// themselves separated by nothing.
 	pane := ui.Column(c).Grow(1).Basis(0).MinWidth(0).MinHeight(0).AlignSelf(ui.Stretch)
 	a.wireDiffFind(c, pane).
 		Children(func() {
-			// The active tab runs the full height of the strip and shares the
-			// page's ground, so it meets the body below with no gray seam; a
-			// bottom border here would cut that join.
 			// Keep the thumb visible on overflow so a clipped tab can be reached
 			// with a mouse even before the pointer enters the strip.
 			strip := ui.ScrollHorizontal(c).Height(32).Shrink(0).FillWidth().Background(tk.BgLayout).
@@ -432,9 +427,7 @@ func (a *app) detailTabStatus(file detailFileKey) string {
 	return ""
 }
 
-// detailTabButton draws one tab. It fills the strip and wears the page's
-// surface when active, so it reads as the pane's edge rather than a floating
-// pill. The tooltip identifies the full file path and its worktree version.
+// detailTabButton keeps the full path and worktree version in the tooltip.
 func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey) {
 	var name, suffix string
 	path := key.File.Path
@@ -458,10 +451,11 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 	}
 	c = c.Key(key)
 	active := a.detailTabs().Active == key
-	wrapper := ui.Row(c).Height(32).Shrink(0).MaxWidth(260).AlignItems(ui.Center).BorderWidth(0, 1, 2, 0).BorderColor(tk.BorderSecondary)
+	wrapper := ui.Row(c).Height(32).Shrink(0).MaxWidth(260).AlignItems(ui.Center).Padding(0, 1, 2, 0)
 	if active {
-		wrapper.Background(tk.BgContainer).BorderColor(tk.Blue).BorderWidth(0, 0, 2, 0)
+		wrapper.Padding(0, 0, 2, 0)
 	}
+	ink := paintWorkbenchTab(wrapper, tk, active, 2)
 	var close ui.Element
 	wrapper.Children(func() {
 		const tabPadding, captionWidth = 10, 204
@@ -472,23 +466,17 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 		if path != "" {
 			tab.Tooltip(path + suffix)
 		}
-		style := display.TextSecondary
-		if active {
-			style = display.TextDefault
-		} else if tab.Hovered() {
-			tab.Background(tk.FillSecondary)
-		}
 		tab.Children(func() {
-			props := display.TextProps{FontSize: scaledFont(11.5), Strong: active, Type: style}
+			props := display.TextProps{FontSize: scaledFont(11.5), Strong: active}
 			if path != "" {
 				if code := a.detailTabStatus(key.File); code != "" {
 					display.Text(c, code, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Shrink(0).Padding(0, 4).AccessHidden(true)
 				}
 			}
 			// The file name can shorten, but the two versions must stay distinct.
-			display.Text(c, name, props).SingleLine().MinWidth(0).Shrink(1)
+			display.Text(c, name, props).TextColor(ink).SingleLine().MinWidth(0).Shrink(1)
 			if suffix != "" {
-				display.Text(c, suffix, props).SingleLine().Shrink(0)
+				display.Text(c, suffix, props).TextColor(ink).SingleLine().Shrink(0)
 			}
 		})
 		if tab.Clicked() {
@@ -497,7 +485,8 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 		if !key.Summary {
 			close = ui.ButtonBase(c).Label(a.t("close") + " " + path).Width(22).Height(26).Shrink(0).Center()
 			a.wireDetailTabKeys(close, key)
-			close.Children(func() { ui.Icon(c, lucide.X()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary) })
+			styleTabClose(close, tk, ink)
+			close.Children(func() { ui.Icon(c, lucide.X()).FontSize(scaledFont(12)) })
 			if close.Clicked() {
 				a.closeDetailFile(key.File)
 				a.requestDetailTabFocus()
