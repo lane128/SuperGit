@@ -10,7 +10,11 @@ import (
 // A failed stash restore is not atomic, even when tracked edits were refused.
 func (a *app) operationErrorDescription(err error) string {
 	if errors.Is(err, gitrepo.ErrDirtyWorkingTree) {
-		return a.t("dirtyWorkingTreeGuidance")
+		guidance := a.t("dirtyWorkingTreeGuidance")
+		if err != gitrepo.ErrDirtyWorkingTree {
+			return guidance + "\n\n" + err.Error()
+		}
+		return guidance
 	}
 	var ignored *gitrepo.IgnoredFileError
 	if errors.As(err, &ignored) {

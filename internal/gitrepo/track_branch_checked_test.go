@@ -14,6 +14,7 @@ func checkedTrackFixture(t *testing.T) (*Repository, string) {
 	source := fixture(t)
 	seed(t, source)
 	git(t, source, "checkout", "-b", "topic")
+	write(t, source, "base.txt", "remote base\n")
 	write(t, source, "remote.txt", "remote tip\n")
 	git(t, source, "add", ".")
 	git(t, source, "commit", "-m", "remote topic")
@@ -51,7 +52,7 @@ func TestTrackBranchCheckedRejectsChangedTargetWithoutMutation(t *testing.T) {
 				write(t, r.Root, "base.txt", "preserve staged\n")
 				git(t, r.Root, "add", "base.txt")
 			case "untracked":
-				write(t, r.Root, "private.txt", "preserve untracked\n")
+				write(t, r.Root, "remote.txt", "preserve untracked\n")
 			case "ignored":
 				write(t, r.Root, ".git/info/exclude", "remote.txt\n")
 				write(t, r.Root, "remote.txt", "preserve ignored\n")
@@ -82,6 +83,20 @@ func TestTrackBranchCheckedRejectsChangedTargetWithoutMutation(t *testing.T) {
 				t.Fatal("rejected checkout changed HEAD, refs, configuration, index or working bytes")
 			}
 		})
+	}
+}
+
+func TestTrackBranchCheckedCarriesNonConflictingChanges(t *testing.T) {
+	r, sha := checkedTrackFixture(t)
+	write(t, r.Root, "notes.txt", "carry across track\n")
+	if err := r.TrackBranchChecked(context.Background(), "my-topic", "origin/topic", sha); err != nil {
+		t.Fatalf("non-conflicting remote checkout failed: %v", err)
+	}
+	if got := strings.TrimSpace(git(t, r.Root, "branch", "--show-current")); got != "my-topic" {
+		t.Fatalf("branch = %q, want my-topic", got)
+	}
+	if b, err := os.ReadFile(filepath.Join(r.Root, "notes.txt")); err != nil || string(b) != "carry across track\n" {
+		t.Fatalf("non-conflicting bytes changed: %q, %v", b, err)
 	}
 }
 

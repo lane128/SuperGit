@@ -229,8 +229,9 @@ func (a *app) checkoutBranchRow(c *ui.Context, branch gitrepo.Branch, pos, size 
 	pickerReveal(row, highlighted, &a.checkoutBranch.reveal)
 	row.Children(func() {
 		ui.Icon(c, lucide.GitBranch()).FontSize(scaledFont(12)).TextColor(tk.TextTertiary)
-		display.Text(c, branch.Name, display.TextProps{FontSize: scaledFont(12)}).SingleLine().Grow(1).MinWidth(0)
+		nameText := display.Text(c, branch.Name, display.TextProps{FontSize: scaledFont(12)}).SingleLine().Grow(1).MinWidth(0)
 		if branch.Current {
+			nameText.TextColor(tk.TextDisabled)
 			ui.Text(c, a.t("current")).FontSize(scaledFont(10)).TextColor(tk.TextSecondary)
 		}
 	})

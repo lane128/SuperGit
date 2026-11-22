@@ -5,6 +5,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,52 @@ func quickCheckoutTester(a *app) *ui.Tester {
 		a.registerShortcuts(c)
 		ui.Column(c).Fill().Children(func() { a.commitMessageField(c); a.quickCheckoutDialog(c) })
 	}, 600, 500)
+}
+
+func TestQuickCheckoutNoAvailableNotClipped(t *testing.T) {
+	branches := []gitrepo.Branch{
+		{Name: "codex/sublime-merge", SHA: "a"},
+		{Name: "codex/unified-branch-command", SHA: "b"},
+		{Name: "main", SHA: "m", Current: true},
+	}
+	for i := 0; i < 20; i++ {
+		branches = append(branches, gitrepo.Branch{Name: fmt.Sprintf("worktree-agent-%02d", i), SHA: fmt.Sprintf("s%d", i)})
+	}
+	a := &app{
+		repo:      &gitrepo.Repository{Root: t.TempDir()},
+		locale:    localeEnglish,
+		themeMode: "light",
+		status:    gitrepo.Status{Branch: "main", Entries: []gitrepo.Entry{{Path: "x.go", Conflict: true}}},
+		branches:  branches,
+	}
+	a.openQuickCheckout()
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.applyTheme(c)
+		ui.Column(c).Fill().Background(theme.TokensOf(c).BgLayout)
+		a.quickCheckoutDialog(c)
+	}, 900, 640)
+	tt.Type("code")
+	tt.Frame()
+	if dir := os.Getenv("SUPERGIT_QUICK_CHECKOUT_CAPTURE_DIR"); dir != "" {
+		f, err := os.Create(filepath.Join(dir, "no-available.png"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = png.Encode(f, tt.Image())
+		_ = f.Close()
+	}
+	dialog, ok := tt.AccessByRole(ui.RoleDialog, a.t("quickCheckout"))
+	if !ok {
+		t.Fatal("dialog missing")
+	}
+	msg, ok := tt.AccessByRole(ui.RoleText, a.t("quickCheckoutNoAvailable"))
+	if !ok {
+		t.Fatal("no-available message missing")
+	}
+	t.Logf("dialog=%+v msg=%+v", dialog.Bounds, msg.Bounds)
+	if msg.Bounds.Y+msg.Bounds.H > dialog.Bounds.Y+dialog.Bounds.H {
+		t.Fatalf("no-available text clipped by dialog: msg=%+v dialog=%+v", msg.Bounds, dialog.Bounds)
+	}
 }
 
 func TestQuickCheckoutRenderedBounds(t *testing.T) {
@@ -139,6 +186,7 @@ func TestQuickCheckoutOpensFromBodyAndCancelsOnce(t *testing.T) {
 	a, _ := overviewFixture(t)
 	a.locale, a.page = localeEnglish, "changes"
 	a.commitText, a.amend = "draft\n\nbody", true
+	a.status.Entries = []gitrepo.Entry{{Path: "same.go", Conflict: true}}
 	a.branches = []gitrepo.Branch{{Name: "main", SHA: "main-tip", Current: true}, {Name: "topic", SHA: "different-tip"}}
 	tt := quickCheckoutTester(a)
 	body, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
@@ -150,8 +198,8 @@ func TestQuickCheckoutOpensFromBodyAndCancelsOnce(t *testing.T) {
 	tt.Key(0, ui.KeyRight)
 	tt.Key(ui.Cmd, ui.KeyB)
 	tt.Frame()
-	if !a.quickCheckout.open || !tt.HasText("topic") || !tt.HasText(a.t("quickCheckoutDirty")) {
-		t.Fatal("dirty repository could not inspect all local branches/reasons")
+	if !a.quickCheckout.open || !tt.HasText("topic") || !tt.HasText(a.t("quickCheckoutConflict")) {
+		t.Fatal("conflicted repository could not inspect all local branches/reasons")
 	}
 	tt.SetFocused(true)
 	tt.Key(0, ui.KeyTab)
@@ -175,8 +223,84 @@ func TestQuickCheckoutOpensFromBodyAndCancelsOnce(t *testing.T) {
 	}
 }
 
+func TestQuickCheckoutDirtyTreeAllowsMouseClick(t *testing.T) {
+	t.Run("non-conflicting carries local changes", func(t *testing.T) {
+		a, callbacks, target := quickCheckoutFixture(t)
+		notesPath := filepath.Join(a.repo.Root, "notes.txt")
+		if err := os.WriteFile(notesPath, []byte("keep local note\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		a.status, err = a.repo.Status(a.ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tt := quickCheckoutTester(a)
+		tt.Key(ui.Cmd, ui.KeyB)
+		tt.Frame()
+		row, ok := tt.AccessByRole(ui.RoleOption, "topic · "+a.t("localBranches"))
+		if !ok {
+			t.Fatal("topic option missing")
+		}
+		if row.Disabled {
+			t.Fatal("dirty non-conflicting branch should be clickable")
+		}
+		tt.ClickAt(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2)
+		tt.Frame()
+		if a.quickCheckout.open {
+			t.Fatal("clicking topic did not close quick checkout")
+		}
+		waitQuickCheckout(t, a, callbacks)
+		if pullFixtureGit(t, a.repo.Root, "rev-parse", "HEAD") != target || a.status.Branch != "topic" {
+			t.Fatalf("dirty mouse checkout did not switch to topic: branch=%q", a.status.Branch)
+		}
+		data, err := os.ReadFile(notesPath)
+		if err != nil || string(data) != "keep local note\n" {
+			t.Fatalf("dirty mouse checkout lost local file: %q, %v", data, err)
+		}
+	})
+
+	t.Run("conflicting change rejected with localized guidance and git detail", func(t *testing.T) {
+		a, callbacks, _ := quickCheckoutFixture(t)
+		samePath := filepath.Join(a.repo.Root, "same.go")
+		if err := os.WriteFile(samePath, []byte("conflicting dirty edit\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		a.status, err = a.repo.Status(a.ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		beforeHead := pullFixtureGit(t, a.repo.Root, "rev-parse", "HEAD")
+		tt := quickCheckoutTester(a)
+		tt.Key(ui.Cmd, ui.KeyB)
+		tt.Frame()
+		row, ok := tt.AccessByRole(ui.RoleOption, "topic · "+a.t("localBranches"))
+		if !ok || row.Disabled {
+			t.Fatal("topic option should be clickable so git switch decides")
+		}
+		tt.ClickAt(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2)
+		tt.Frame()
+		waitQuickCheckout(t, a, callbacks)
+		if pullFixtureGit(t, a.repo.Root, "rev-parse", "HEAD") != beforeHead {
+			t.Fatal("conflicting checkout moved HEAD")
+		}
+		data, err := os.ReadFile(samePath)
+		if err != nil || string(data) != "conflicting dirty edit\n" {
+			t.Fatalf("conflicting checkout lost bytes: %q, %v", data, err)
+		}
+		if len(a.notices[toastMain]) == 0 {
+			t.Fatal("conflicting checkout missing error notice")
+		}
+		desc := a.notices[toastMain][0].description
+		if !strings.Contains(desc, a.t("dirtyWorkingTreeGuidance")) || !strings.Contains(desc, "same.go") {
+			t.Fatalf("expected localized guidance and conflicting file path, got %q", desc)
+		}
+	})
+}
+
 func TestQuickCheckoutAvailabilityAndStaleChoices(t *testing.T) {
-	for _, change := range []string{"current", "occupied", "dirty", "operation", "busy", "loading", "history", "chooser", "ref", "dialog", "root", "epoch", "generation", "tip", "closed", "conflict", "status error", "branches error", "worktrees error"} {
+	for _, change := range []string{"current", "occupied", "operation", "busy", "loading", "history", "chooser", "ref", "dialog", "root", "epoch", "generation", "tip", "closed", "conflict", "status error", "branches error", "worktrees error"} {
 		t.Run(change, func(t *testing.T) {
 			a, _ := overviewFixture(t)
 			a.status.Entries = nil
@@ -199,8 +323,6 @@ func TestQuickCheckoutAvailabilityAndStaleChoices(t *testing.T) {
 				name, sha = "main", "main-tip"
 			case "occupied":
 				a.worktrees = []gitrepo.Worktree{{Path: "/other-owned-worktree", Branch: "topic"}}
-			case "dirty":
-				a.status.Entries = []gitrepo.Entry{{Path: "owned", Worktree: 'M'}}
 			case "operation":
 				a.operation.Kind = "merge"
 			case "busy":

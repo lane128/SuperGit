@@ -13,8 +13,11 @@ func TestSlowRepositoryReadHasVisibleTitleBarProgress(t *testing.T) {
 		t.Run(string(language), func(t *testing.T) {
 			a := &app{locale: language, repo: &gitrepo.Repository{Root: t.TempDir()}, loading: true, loadSince: time.Now().Add(-time.Second)}
 			tt := titleBarTester(a)
-			if !tt.HasText(a.t("loadingRepo")) {
-				t.Fatal("slow repository read has no visible progress")
+			if _, ok := tt.AccessByRole(ui.RoleText, a.t("loadingRepo")); ok {
+				t.Fatal("slow repository read should not render duplicate left progress text when branch selector is visible")
+			}
+			if _, ok := tt.AccessByRole(ui.RoleProgress, a.t("loadingRepo")); !ok {
+				t.Fatal("slow repository read has no visible branch progress bar")
 			}
 			if _, ok := tt.AccessByRole(ui.RoleButton, a.t("cancel")); ok {
 				t.Fatal("repository read offers a cancel action that only stops writes")
@@ -25,8 +28,8 @@ func TestSlowRepositoryReadHasVisibleTitleBarProgress(t *testing.T) {
 			}
 			a.loading = false
 			tt.Frame()
-			if tt.HasText(a.t("loadingRepo")) {
-				t.Fatal("completed read kept title progress")
+			if _, ok := tt.AccessByRole(ui.RoleProgress, a.t("loadingRepo")); ok {
+				t.Fatal("completed read kept branch progress bar")
 			}
 		})
 	}

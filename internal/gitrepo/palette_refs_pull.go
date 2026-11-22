@@ -29,7 +29,7 @@ func (r *Repository) PullBranchChecked(ctx context.Context, remote Remote, branc
 		return err
 	}
 	_, err := run(ctx, r.Root, "", "merge", "--ff-only", "--no-edit", "--no-autostash", "--no-overwrite-ignore", "--", branch.SHA)
-	return err
+	return wrapDirtyTreeError(err)
 }
 
 func (r *Repository) checkPullHead(ctx context.Context, expected Status) error {
@@ -43,8 +43,10 @@ func (r *Repository) checkPullHead(ctx context.Context, expected Status) error {
 	if current.Head != expected.Head || current.Branch != expected.Branch {
 		return ErrIntegrationTargetChanged
 	}
-	if len(current.Entries) != 0 {
-		return ErrDirtyWorkingTree
+	for _, entry := range current.Entries {
+		if entry.Conflict {
+			return errors.New("请先处理冲突")
+		}
 	}
 	return nil
 }
@@ -64,7 +66,12 @@ func (r *Repository) fetchPullBranch(ctx context.Context, remote Remote, branch 
 	if err := r.checkRemote(ctx, remote.Name, false); err != nil {
 		return err
 	}
-	_, err := run(ctx, r.Root, "", "fetch", "--no-write-fetch-head", "--no-recurse-submodules", "--", remote.Name, "refs/heads/"+branch.Name)
+	fetchArgs := []string{"fetch", "--no-write-fetch-head", "--no-recurse-submodules"}
+	if hasProgress(ctx) {
+		fetchArgs = append(fetchArgs, "--progress")
+	}
+	fetchArgs = append(fetchArgs, "--", remote.Name, "refs/heads/"+branch.Name)
+	_, err := run(ctx, r.Root, "", fetchArgs...)
 	if err != nil {
 		return err
 	}

@@ -22,15 +22,30 @@ func TestBranchLifecycleAndDirtyCheckoutGuard(t *testing.T) {
 	if err := r.RenameBranch(ctx, "feature/native", "feature/renamed"); err != nil {
 		t.Fatal(err)
 	}
+	if err := r.SwitchBranch(ctx, "main"); err != nil {
+		t.Fatal(err)
+	}
+	write(t, dir, "base.txt", "committed on main\n")
+	git(t, dir, "commit", "-am", "main change")
 	write(t, dir, "base.txt", "uncommitted\n")
-	if err := r.SwitchBranch(ctx, "main"); err == nil {
-		t.Fatal("dirty checkout accepted")
+	if err := r.SwitchBranch(ctx, "feature/renamed"); err == nil {
+		t.Fatal("conflicting dirty checkout accepted")
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "base.txt")); string(b) != "uncommitted\n" {
 		t.Fatal("dirty work lost")
 	}
 	git(t, dir, "restore", "--", "base.txt")
+	write(t, dir, "notes.txt", "carry me\n")
+	if err := r.SwitchBranch(ctx, "feature/renamed"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "notes.txt")); string(b) != "carry me\n" {
+		t.Fatal("non-conflicting dirty work lost")
+	}
 	if err := r.SwitchBranch(ctx, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "notes.txt")); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.DeleteBranch(ctx, "feature/renamed"); err != nil {

@@ -55,10 +55,11 @@ func (r *Repository) CreateBranch(ctx context.Context, name, start string, check
 		return err
 	}
 	if checkout {
-		if err := r.clean(ctx); err != nil {
+		if err := r.operationReady(ctx); err != nil {
 			return err
 		}
 		_, err = run(ctx, r.Root, "", "switch", "--no-overwrite-ignore", "-c", name, sha)
+		return wrapDirtyTreeError(err)
 	} else {
 		_, err = run(ctx, r.Root, "", "branch", "--", name, sha)
 	}
@@ -80,13 +81,61 @@ func (r *Repository) SwitchBranch(ctx context.Context, name string) error {
 	return r.switchBranch(ctx, name, "")
 }
 
+func (r *Repository) operationReady(ctx context.Context) error {
+	if err := r.idle(ctx); err != nil {
+		return err
+	}
+	s, err := r.Status(ctx)
+	if err != nil {
+		return err
+	}
+	for _, entry := range s.Entries {
+		if entry.Conflict {
+			return errors.New("请先处理冲突")
+		}
+	}
+	return nil
+}
+
+type dirtyWorkingTreeError struct{ cause error }
+
+func (e dirtyWorkingTreeError) Error() string { return e.cause.Error() }
+
+func (e dirtyWorkingTreeError) Unwrap() []error { return []error{ErrDirtyWorkingTree, e.cause} }
+
+func wrapDirtyTreeError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	for _, needle := range []string{
+		"would be overwritten by checkout",
+		"would be overwritten by switch",
+		"would be overwritten by merge",
+		"would be overwritten by cherry-pick",
+		"would be overwritten by revert",
+		"Please commit your changes or stash them before you",
+		"cannot rebase: You have unstaged changes",
+		"cannot rebase: Your index contains uncommitted changes",
+		"cannot pull with rebase: You have unstaged changes",
+		"cannot pull with rebase: Your index contains uncommitted changes",
+		"Working tree contains unstaged changes",
+		"Index contains uncommitted changes",
+	} {
+		if strings.Contains(msg, needle) {
+			return dirtyWorkingTreeError{cause: err}
+		}
+	}
+	return err
+}
+
 func (r *Repository) switchBranch(ctx context.Context, name, expectedSHA string) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 	if err := r.branchName(ctx, name); err != nil {
 		return err
 	}
-	if err := r.clean(ctx); err != nil {
+	if err := r.operationReady(ctx); err != nil {
 		return err
 	}
 	if expectedSHA != "" {
@@ -99,26 +148,25 @@ func (r *Repository) switchBranch(ctx context.Context, name, expectedSHA string)
 		}
 	}
 	_, err := run(ctx, r.Root, "", "switch", "--no-guess", "--no-overwrite-ignore", "--", name)
-	return err
+	return wrapDirtyTreeError(err)
 }
 
-// CheckoutCommit puts the repository on a detached HEAD at sha. It requires a
-// clean tree like a branch switch, so checking out an old commit can never
-// drop uncommitted work.
+// CheckoutCommit puts the repository on a detached HEAD at sha. Non-conflicting
+// local changes are left to Git to carry or reject safely.
 func (r *Repository) CheckoutCommit(ctx context.Context, sha string) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 	if !oidRE.MatchString(sha) {
 		return errors.New("无效的提交 SHA")
 	}
-	if err := r.clean(ctx); err != nil {
+	if err := r.operationReady(ctx); err != nil {
 		return err
 	}
 	if _, err := r.resolve(ctx, sha); err != nil {
 		return err
 	}
 	_, err := run(ctx, r.Root, "", "switch", "--detach", "--no-guess", "--no-overwrite-ignore", "--", sha)
-	return err
+	return wrapDirtyTreeError(err)
 }
 
 var ErrResetTargetChanged = errors.New("repository HEAD or branch changed before reset")
@@ -278,9 +326,9 @@ func (r *Repository) trackBranch(ctx context.Context, name, remoteRef, expectedS
 	if expectedSHA != "" && sha != expectedSHA {
 		return ErrSwitchTargetChanged
 	}
-	if err := r.clean(ctx); err != nil {
+	if err := r.operationReady(ctx); err != nil {
 		return err
 	}
 	_, err = run(ctx, r.Root, "", "switch", "--no-overwrite-ignore", "-c", name, "--track", "refs/remotes/"+remoteRef)
-	return err
+	return wrapDirtyTreeError(err)
 }

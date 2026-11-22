@@ -105,7 +105,7 @@ func (r *Repository) RunFlow(ctx context.Context, q FlowCommand) error {
 	if err := r.checkPaletteStatus(ctx, q.Expected); err != nil {
 		return err
 	}
-	if err := r.clean(ctx); err != nil {
+	if err := r.operationReady(ctx); err != nil {
 		return err
 	}
 	config, err := r.FlowConfig(ctx)
@@ -217,7 +217,7 @@ func (r *Repository) RunFlow(ctx context.Context, q FlowCommand) error {
 		}
 	}
 	_, err = flowBinary().run(ctx, r.Root, "", append(args, command...)...)
-	return err
+	return wrapDirtyTreeError(err)
 }
 
 // AVH only offers to create a development branch when the production branch

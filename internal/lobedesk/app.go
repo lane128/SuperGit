@@ -138,8 +138,10 @@ type app struct {
 	busyKey string
 	// fetching is true while a fetch runs, automatic or manual, so the title
 	// bar can show progress without claiming other busy work is a fetch.
-	fetching bool
-	loadErr  string
+	fetching   bool
+	opSeq      uint64
+	opProgress gitrepo.OperationProgress
+	loadErr    string
 
 	status gitrepo.Status
 	// headMessage is the complete message of the commit HEAD points to, read on every
@@ -1587,10 +1589,22 @@ func (a *app) selectCommitFile(path string) {
 func (a *app) beginOperation(label busyLabel) (context.Context, context.CancelFunc) {
 	a.cancelLocalProbe()
 	ctx, cancel := context.WithTimeout(a.ctx, 3*time.Minute)
+	a.opSeq++
+	seq := a.opSeq
 	a.busy = true
 	a.busyKey = string(label)
 	a.opCancel = cancel
+	a.opProgress = gitrepo.OperationProgress{}
 	a.progressSince = time.Now()
+	ctx = gitrepo.WithProgress(ctx, func(update gitrepo.OperationProgress) {
+		a.hopToMain(func() {
+			if a.opSeq != seq || (!a.busy && !a.fetching) {
+				return
+			}
+			a.opProgress = update
+			a.invalidate()
+		})
+	})
 	// Nothing repaints on its own while the progress line waits out its
 	// delay, so ask for one frame when the wait ends. A finished operation
 	// makes it a no-op.
@@ -1605,6 +1619,7 @@ func (a *app) finishOperation() {
 	a.busy = false
 	a.busyKey = ""
 	a.opCancel = nil
+	a.opProgress = gitrepo.OperationProgress{}
 }
 
 func (a *app) perform(label, success string, fn func(context.Context, *gitrepo.Repository) error) {
@@ -1797,8 +1812,12 @@ func (a *app) fetchRemotes(targets []gitrepo.Remote, mode gitrepo.FetchMode, lab
 	a.performDone(label, success, func(error) {
 		a.fetching = false
 	}, func(ctx context.Context, repo *gitrepo.Repository) error {
-		for _, remote := range remotes {
-			if err := repo.FetchRemote(ctx, remote.Name, mode); err != nil {
+		for i, remote := range remotes {
+			remoteCtx := ctx
+			if len(remotes) > 1 {
+				remoteCtx = gitrepo.WithScaledProgress(ctx, float32(i)/float32(len(remotes)), float32(i+1)/float32(len(remotes)))
+			}
+			if err := repo.FetchRemote(remoteCtx, remote.Name, mode); err != nil {
 				return err
 			}
 		}

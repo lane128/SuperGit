@@ -146,7 +146,7 @@ func (r *Repository) integrate(ctx context.Context, kind, ref string, expected *
 			return ErrIntegrationTargetChanged
 		}
 	}
-	if err := r.clean(ctx); err != nil {
+	if err := r.operationReady(ctx); err != nil {
 		return err
 	}
 	sha, err := r.resolve(ctx, ref)
@@ -187,7 +187,7 @@ func (r *Repository) integrate(ctx context.Context, kind, ref string, expected *
 		return errors.New("不支持的整合操作")
 	}
 	_, err = run(ctx, r.Root, "", args...)
-	return err
+	return wrapDirtyTreeError(err)
 }
 func (r *Repository) ContinueChecked(ctx context.Context, expected Operation) error {
 	return r.continueOperation(ctx, expected.Kind, &expected)

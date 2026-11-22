@@ -163,16 +163,16 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 						a.invalidate()
 					}
 				}
-				// Background work can outlast the moment a toast would be read,
-				// so the bar says what it is doing while it runs instead of
-				// leaving a disabled button as the only sign. Fetching names
-				// itself; every other long operation shares one general line.
+				// When a repository is open, active progress is shown as a 2px
+				// line along the bottom of the branch selector so the left side
+				// stays uncluttered; fall back here only when no branch control
+				// is visible.
 				if a.loading && showBranch && !a.loadSince.IsZero() {
 					if remaining := progressDelay - time.Since(a.loadSince); remaining > 0 {
 						c.After(remaining)
 					}
 				}
-				if progress != "" {
+				if !showBranch && progress != "" {
 					icon := ui.Icon(c, lucide.LoaderCircle()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary)
 					icon.Rotate(icon.Loop("spin", 900*time.Millisecond, ui.Linear) * 360)
 					display.Text(c, progress, display.TextProps{

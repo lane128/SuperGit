@@ -138,7 +138,7 @@ func TestPaletteCreateBranchHandoff(t *testing.T) {
 
 func TestPaletteCreateBranchGuards(t *testing.T) {
 	entry := createBranchEntry(t, createBranchApp(t))
-	for _, reason := range []string{"nil", "head", "tracked", "untracked", "conflict", "operation", "busy", "loading", "reload", "chooser", "ref", "dialog"} {
+	for _, reason := range []string{"nil", "head", "conflict", "operation", "busy", "loading", "reload", "chooser", "ref", "dialog"} {
 		t.Run(reason, func(t *testing.T) {
 			a := createBranchApp(t)
 			a.openCommandPalette()
@@ -151,10 +151,6 @@ func TestPaletteCreateBranchGuards(t *testing.T) {
 				a.commandPalette.query = entry.ID
 			case "head":
 				a.status.Head = ""
-			case "tracked":
-				a.status.Entries = []gitrepo.Entry{{Path: "tracked", Index: 'M', Worktree: '.'}}
-			case "untracked":
-				a.status.Entries = []gitrepo.Entry{{Path: "new", Index: '?', Worktree: '?'}}
 			case "conflict":
 				a.status.Entries = []gitrepo.Entry{{Path: "conflict", Conflict: true}}
 			case "operation":
@@ -186,7 +182,7 @@ func TestPaletteCreateBranchGuards(t *testing.T) {
 			}
 		})
 	}
-	for _, change := range []string{"root", "epoch", "head", "branch", "dirty", "operation", "reopen"} {
+	for _, change := range []string{"root", "epoch", "head", "branch", "conflict", "operation", "reopen"} {
 		t.Run("accept/"+change, func(t *testing.T) {
 			a := createBranchApp(t)
 			entry.Run(a)
@@ -203,8 +199,8 @@ func TestPaletteCreateBranchGuards(t *testing.T) {
 				a.status.Head = strings.Repeat("b", 40)
 			case "branch":
 				a.status.Branch = "other"
-			case "dirty":
-				a.status.Entries = []gitrepo.Entry{{Path: "dirty", Worktree: 'M'}}
+			case "conflict":
+				a.status.Entries = []gitrepo.Entry{{Path: "conflict", Conflict: true}}
 			case "operation":
 				a.operation.Kind = "merge"
 			case "reopen":
@@ -329,7 +325,7 @@ func TestPaletteCreateBranchOwned(t *testing.T) {
 			if a.busy || a.commitText != "draft\n\nbody" || !a.amend || read(".git/index") != index || read("base.txt") != work {
 				t.Fatal("creation changed local content/draft")
 			}
-			if scenario == "invalid" || scenario == "duplicate" || scenario == "external dirty" {
+			if scenario == "invalid" || scenario == "duplicate" {
 				if pullFixtureGit(t, root, "for-each-ref") != refs || pullFixtureGit(t, root, "rev-parse", "HEAD") != sha || pullFixtureGit(t, root, "rev-parse", "--abbrev-ref", "HEAD") != headName {
 					t.Fatal("failed creation changed refs/HEAD")
 				}

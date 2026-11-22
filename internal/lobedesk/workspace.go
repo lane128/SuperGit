@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	unicodewidth "golang.org/x/text/width"
@@ -57,34 +58,80 @@ func (a *app) branchSelector(c *ui.Context, iconWidth float32) {
 	}
 	name := fitToolbarBranchName(c, branch, fontSize, available)
 	disabled := !a.canOpenQuickCheckout() || a.repositoryOpenPending() || a.historyRefPalette.active
-	button := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, disabled, false).
-		Label(a.t("branches")).Description(caption).
-		Tooltip(caption+"\n"+a.t("quickCheckout")+" ("+shortcutKeys("branch.quickCheckout")+")").
-		Grow(1).Basis(0).MinWidth(0).PaddingX(padding).Gap(groupGap).Radius(0, 6, 6, 0)
-	button.Children(func() {
-		label := ui.Text(c.Key("branch-name"), name).FontSize(fontSize).SingleLine().MinWidth(0).Grow(1).Basis(0)
-		if a.status.Branch == "" && !disabled {
-			label.TextColor(tk.Warning)
+	progress := a.progressText()
+	tooltip := caption + "\n" + a.t("quickCheckout") + " (" + shortcutKeys("branch.quickCheckout") + ")"
+	if progress != "" {
+		status := progress
+		if a.opProgress.Active && !a.opProgress.Indeterminate && a.opProgress.Fraction > 0 {
+			status = fmt.Sprintf("%s %d%%", progress, int(a.opProgress.Fraction*100+0.5))
 		}
-		bg, _ := workbenchButtonColors(tk, buttonNormal, button.Hovered(), button.Pressed(), button.IsDisabled(), false)
-		if counts {
-			ui.Box(c).Width(1).Height(fontSize + 2).Shrink(0).Background(tk.Border).AccessHidden(true)
+		tooltip = status + "\n" + tooltip
+	}
+	ui.Box(c).Grow(1).Basis(0).MinWidth(0).Children(func() {
+		button := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, disabled, false).
+			Label(a.t("branches")).Description(caption).
+			Tooltip(tooltip).
+			FillWidth().MinWidth(0).PaddingX(padding).Gap(groupGap).Radius(0, 6, 6, 0)
+		button.Children(func() {
+			label := ui.Text(c.Key("branch-name"), name).FontSize(fontSize).SingleLine().MinWidth(0).Grow(1).Basis(0)
+			if a.status.Branch == "" && !disabled {
+				label.TextColor(tk.Warning)
+			}
+			bg, _ := workbenchButtonColors(tk, buttonNormal, button.Hovered(), button.Pressed(), button.IsDisabled(), false)
+			if counts {
+				ui.Box(c).Width(1).Height(fontSize + 2).Shrink(0).Background(tk.Border).AccessHidden(true)
+			}
+			for _, item := range items {
+				ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(iconGap).TextColor(capsuleInk(item.ink, bg, 4.5)).AccessHidden(true).Children(func() {
+					if item.icon == nil {
+						ui.Text(c, item.text).FontSize(fontSize).SingleLine()
+						return
+					}
+					ui.Icon(c, item.icon).Size(fontSize, fontSize)
+					ui.Text(c, item.text).Font(a.patchFontFamily()).FontSize(fontSize).SingleLine()
+				})
+			}
+		})
+		if button.Clicked() {
+			button.Focus()
+			a.openQuickCheckout()
 		}
-		for _, item := range items {
-			ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(iconGap).TextColor(capsuleInk(item.ink, bg, 4.5)).AccessHidden(true).Children(func() {
-				if item.icon == nil {
-					ui.Text(c, item.text).FontSize(fontSize).SingleLine()
-					return
-				}
-				ui.Icon(c, item.icon).Size(fontSize, fontSize)
-				ui.Text(c, item.text).Font(a.patchFontFamily()).FontSize(fontSize).SingleLine()
-			})
+		if progress != "" {
+			a.branchProgressBar(c, tk, progress)
 		}
 	})
-	if button.Clicked() {
-		button.Focus()
-		a.openQuickCheckout()
+}
+
+const branchProgressHeight float32 = 2
+
+var branchProgressAnimation = ui.Animation{Duration: 180 * time.Millisecond, Ease: ui.EaseOut}
+
+func (a *app) branchProgressBar(c *ui.Context, tk *theme.Tokens, label string) {
+	bar := ui.Box(c.Key("branch-progress")).Absolute().Left(1).Right(1).Bottom(1).Height(branchProgressHeight).
+		Radius(0, 0, 5, 0).Clip().Role(ui.RoleProgress).Label(label).Background(tk.FillSecondary)
+	if a.opProgress.Active && !a.opProgress.Indeterminate && a.opProgress.Fraction > 0 {
+		fraction := min(float32(1), max(float32(0), a.opProgress.Fraction))
+		bar.Range(0, 1, float64(fraction))
+		shown := bar.AnimateTo("progress", fraction, branchProgressAnimation)
+		bar.DrawOver(func(p *ui.Painter, r ui.Rect) {
+			if shown <= 0 {
+				return
+			}
+			r.W *= shown
+			p.Fill(r, tk.Blue, 0)
+		})
+		return
 	}
+	phase := bar.Loop("indeterminate", 1250*time.Millisecond, ui.Linear)
+	bar.DrawOver(func(p *ui.Painter, r ui.Rect) {
+		segW := r.W * 0.34
+		x := r.X - segW + (r.W+segW)*phase
+		left := max(r.X, x)
+		right := min(r.X+r.W, x+segW)
+		if right > left {
+			p.Fill(ui.Rect{X: left, Y: r.Y, W: right - left, H: r.H}, tk.Blue, 1)
+		}
+	})
 }
 
 // Fit the visible name to the space left after reserving the complete tracking

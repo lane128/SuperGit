@@ -22,8 +22,8 @@ func flowPaletteActions() []paletteAction {
 			if reason := extensionIdle(a); reason != "" {
 				return reason
 			}
-			if action != "configure" && len(a.status.Entries) > 0 {
-				return a.t("dirtyWorkingTreeGuidance")
+			if action != "configure" && a.operationConflicts() {
+				return a.t("quickCheckoutConflict")
 			}
 			if action != "init" && action != "configure" && a.status.Head == "" {
 				return a.t("commandPaletteNeedHead")

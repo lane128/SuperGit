@@ -15,13 +15,8 @@ func (a *app) createBranchUnavailable() string {
 	if a.operation.Kind != "" {
 		return a.t("quickCheckoutOperation")
 	}
-	for _, entry := range a.status.Entries {
-		if entry.Conflict {
-			return a.t("quickCheckoutConflict")
-		}
-	}
-	if len(a.status.Entries) > 0 {
-		return a.t("quickCheckoutDirty")
+	if a.operationConflicts() {
+		return a.t("quickCheckoutConflict")
 	}
 	return ""
 }

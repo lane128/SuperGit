@@ -50,14 +50,21 @@ func TestTitleBarKeepsRepositoryActionsWithoutPageTabs(t *testing.T) {
 					t.Fatalf("%s/%v: the title bar still offers a %q page tab: %+v", language, scale, page, tab.Bounds)
 				}
 			}
+			if _, ok := tt.AccessByRole(ui.RoleText, a.progressText()); ok {
+				t.Errorf("%s/%v: left title bar still renders redundant progress text %q", language, scale, a.progressText())
+			}
+			if _, ok := tt.AccessByRole(ui.RoleButton, a.t("cancel")); ok {
+				t.Errorf("%s/%v: left title bar still renders redundant cancel button", language, scale)
+			}
+			if _, ok := tt.AccessByRole(ui.RoleProgress, a.progressText()); !ok {
+				t.Errorf("%s/%v: branch selector missing thin progress line for %q", language, scale, a.progressText())
+			}
 			var end float32
 			for _, control := range []struct {
 				role  ui.Role
 				label string
 			}{
 				{ui.RoleButton, a.tf("operation", "cherry-pick")},
-				{ui.RoleText, a.progressText()},
-				{ui.RoleButton, a.t("cancel")},
 				{ui.RoleButton, a.t("commandPalette")},
 				{ui.RoleButton, a.t("branches")},
 				{ui.RoleMenuButton, a.t("saveStashAction")},

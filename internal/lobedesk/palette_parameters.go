@@ -80,8 +80,8 @@ func (a *app) paletteMergeUnavailable() string {
 		return a.t("quickCheckoutReadError")
 	case a.operation.Kind != "":
 		return a.t("quickCheckoutOperation")
-	case len(a.status.Entries) != 0:
-		return a.t("dirtyWorkingTreeGuidance")
+	case a.operationConflicts():
+		return a.t("quickCheckoutConflict")
 	}
 	return ""
 }

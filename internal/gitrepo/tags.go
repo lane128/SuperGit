@@ -100,7 +100,12 @@ func (r *Repository) pushTag(ctx context.Context, remote, name string, expectedR
 	} else if _, err := r.resolve(ctx, refspec); err != nil {
 		return errors.New("标签不存在或已变化，请刷新列表")
 	}
-	_, err := run(ctx, r.Root, "", "push", "--no-force", "--no-recurse-submodules", "--", remote, refspec)
+	pushArgs := []string{"push", "--no-force", "--no-recurse-submodules"}
+	if hasProgress(ctx) {
+		pushArgs = append(pushArgs, "--progress")
+	}
+	pushArgs = append(pushArgs, "--", remote, refspec)
+	_, err := run(ctx, r.Root, "", pushArgs...)
 	return err
 }
 

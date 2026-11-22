@@ -34,7 +34,7 @@ func TestPaletteMergeIdenticalNamesAndMovedRef(t *testing.T) {
 }
 
 func TestPaletteMergeStateChangePreventsAcceptance(t *testing.T) {
-	for _, change := range []string{"detached", "dirty", "operation", "read error", "repository epoch"} {
+	for _, change := range []string{"detached", "conflict", "operation", "read error", "repository epoch"} {
 		t.Run(change, func(t *testing.T) {
 			a := headShortcutApp(t)
 			a.status.Branch = "main"
@@ -45,8 +45,8 @@ func TestPaletteMergeStateChangePreventsAcceptance(t *testing.T) {
 			switch change {
 			case "detached":
 				a.status.Branch = ""
-			case "dirty":
-				a.status.Entries = []gitrepo.Entry{{Path: "file", Worktree: 'M'}}
+			case "conflict":
+				a.status.Entries = []gitrepo.Entry{{Path: "file", Conflict: true}}
 			case "operation":
 				a.operation.Kind = "rebase"
 			case "read error":
@@ -59,6 +59,21 @@ func TestPaletteMergeStateChangePreventsAcceptance(t *testing.T) {
 				t.Fatalf("stale choice acted after %s", change)
 			}
 		})
+	}
+}
+
+func TestPaletteMergeAllowedWithNonConflictChanges(t *testing.T) {
+	a := headShortcutApp(t)
+	a.status.Branch = "main"
+	a.status.Entries = []gitrepo.Entry{{Path: "notes.txt", Worktree: 'M'}}
+	a.branches = []gitrepo.Branch{{Name: "main", SHA: a.status.Head, Current: true}, {Name: "topic", SHA: "1111111111"}}
+	if why := a.paletteMergeUnavailable(); why != "" {
+		t.Fatalf("palette merge should defer dirty checks to git, got %q", why)
+	}
+	a.setPaletteStage(paletteMergeRef, "")
+	rows := a.paletteChoices()
+	if len(rows) != 1 || rows[0].reason != "" {
+		t.Fatalf("expected enabled merge row with dirty worktree, got %+v", rows)
 	}
 }
 

@@ -104,8 +104,8 @@ func (a *app) paletteRefCheckoutReason() string {
 		return a.t("quickCheckoutReadError")
 	case a.operation.Kind != "":
 		return a.t("quickCheckoutOperation")
-	case len(a.status.Entries) != 0:
-		return a.t("quickCheckoutDirty")
+	case a.operationConflicts():
+		return a.t("quickCheckoutConflict")
 	default:
 		return ""
 	}

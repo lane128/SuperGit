@@ -91,7 +91,12 @@ func Clone(ctx context.Context, address, path string) (*Repository, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := run(ctx, "", "", "clone", "--no-recurse-submodules", "--", address, abs); err != nil {
+	args := []string{"clone", "--no-recurse-submodules"}
+	if hasProgress(ctx) {
+		args = append(args, "--progress")
+	}
+	args = append(args, "--", address, abs)
+	if _, err := run(ctx, "", "", args...); err != nil {
 		return nil, err
 	}
 	return Open(ctx, abs)
@@ -236,6 +241,9 @@ func (r *Repository) FetchRemote(ctx context.Context, remote string, mode FetchM
 		return err
 	}
 	args := []string{"fetch", "--no-recurse-submodules"}
+	if hasProgress(ctx) {
+		args = append(args, "--progress")
+	}
 	switch mode {
 	case FetchWithPrune:
 		args = append(args, "--prune")
@@ -252,7 +260,7 @@ func (r *Repository) FetchRemote(ctx context.Context, remote string, mode FetchM
 func (r *Repository) PullFF(ctx context.Context) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
-	if err := r.clean(ctx); err != nil {
+	if err := r.operationReady(ctx); err != nil {
 		return err
 	}
 	s, err := r.Status(ctx)
@@ -269,7 +277,12 @@ func (r *Repository) PullFF(ctx context.Context) error {
 	if err := r.checkRemote(ctx, strings.TrimSpace(remote), false); err != nil {
 		return err
 	}
-	if _, err = run(ctx, r.Root, "", "fetch", "--no-recurse-submodules", "--", strings.TrimSpace(remote)); err != nil {
+	fetchArgs := []string{"fetch", "--no-recurse-submodules"}
+	if hasProgress(ctx) {
+		fetchArgs = append(fetchArgs, "--progress")
+	}
+	fetchArgs = append(fetchArgs, "--", strings.TrimSpace(remote))
+	if _, err = run(ctx, r.Root, "", fetchArgs...); err != nil {
 		return err
 	}
 	sha, err := r.resolve(ctx, s.Upstream)
@@ -277,7 +290,7 @@ func (r *Repository) PullFF(ctx context.Context) error {
 		return err
 	}
 	_, err = run(ctx, r.Root, "", "merge", "--ff-only", "--no-edit", "--no-autostash", "--no-overwrite-ignore", "--", sha)
-	return err
+	return wrapDirtyTreeError(err)
 }
 
 var ErrPushTargetChanged = errors.New("source branch changed before push")
@@ -359,6 +372,9 @@ func (r *Repository) push(ctx context.Context, remote, source, destination, forc
 		return err
 	}
 	args := []string{"push", "--recurse-submodules=check"}
+	if hasProgress(ctx) {
+		args = append(args, "--progress")
+	}
 	if force != "" {
 		args = append(args, force)
 	} else {

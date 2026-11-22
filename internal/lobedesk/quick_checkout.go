@@ -79,9 +79,6 @@ func (a *app) quickCheckoutUnavailable(branch gitrepo.Branch) string {
 	if a.operation.Kind != "" {
 		return a.t("quickCheckoutOperation")
 	}
-	if len(a.status.Entries) > 0 {
-		return a.t("quickCheckoutDirty")
-	}
 	if branch.Name == "" || branch.SHA == "" {
 		return a.t("commandPaletteUnavailable")
 	}
@@ -187,9 +184,15 @@ func (a *app) quickCheckoutDialog(c *ui.Context) {
 						}
 						row.Children(func() {
 							ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(2).Children(func() {
-								display.Text(c, branch.Name, display.TextProps{FontSize: scaledFont(12)}).SingleLine()
+								nameText := display.Text(c, branch.Name, display.TextProps{FontSize: scaledFont(12)}).SingleLine()
+								if reason != "" {
+									nameText.TextColor(tk.TextDisabled)
+								}
 								if kindLabel != "" {
-									display.Text(c, kindLabel, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).SingleLine()
+									kindText := display.Text(c, kindLabel, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).SingleLine()
+									if reason != "" {
+										kindText.TextColor(tk.TextDisabled)
+									}
 								}
 								if reason != "" {
 									display.Text(c, reason, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 2})
@@ -207,11 +210,12 @@ func (a *app) quickCheckoutDialog(c *ui.Context) {
 					}
 					if len(matches) == 0 {
 						display.Text(c, a.t("searchNoBranches"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12)}).Padding(6, 8)
-					} else if first() < 0 {
-						display.Text(c, a.t("quickCheckoutNoAvailable"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12), Rows: 2}).Padding(6, 8)
 					}
 				})
 			}).MaxHeight(min(float32(pickerListMaxHeight), max(0, height-150)))
+			if len(matches) > 0 && first() < 0 {
+				display.Text(c, a.t("quickCheckoutNoAvailable"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12), Rows: 2}).Padding(6, 8)
+			}
 			if hasActive {
 				search.ActiveDescendant(active)
 			}

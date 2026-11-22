@@ -87,12 +87,25 @@ func runOutputContext(ctx context.Context, root string, input string, stdout io.
 	}
 	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "LC_ALL=C")
 	var stderr = limitedBuffer{limit: 256 << 10}
+	var progressWriter *progressStderrWriter
 	cmd.Stdout = stdout
-	cmd.Stderr = &stderr
+	if fn := progressFromContext(ctx); fn != nil {
+		command := ""
+		if len(args) > 0 {
+			command = args[0]
+		}
+		progressWriter = newProgressStderrWriter(&stderr, command, fn)
+		cmd.Stderr = progressWriter
+	} else {
+		cmd.Stderr = &stderr
+	}
 	if input != "" {
 		cmd.Stdin = strings.NewReader(input)
 	}
 	err := cmd.Run()
+	if progressWriter != nil {
+		progressWriter.Flush()
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("Git 操作已取消或超时: %w", ctx.Err())
