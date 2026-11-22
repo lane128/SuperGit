@@ -1,199 +1,55 @@
 # SuperGit
 
-使用 Go + MyGo 原生 GPU UI 的 Git 桌面客户端。当前面向 macOS Apple Silicon，直接调用真实仓库与系统 Git，支持中英文界面，无 WebView。
+English | [简体中文](README.zh-CN.md)
 
-核心能力包括：同窗口多仓库标签、历史提交 DAG 与分支筛选、工作区与历史四列标签式详情、统一 / 左右分栏补丁视图、文件 / 片段 / 单行暂存与丢弃、图片变更对比、提交与 Amend、分支 / 远端 / 标签 / Stash / Worktree / Submodule 管理、Merge / Rebase / Cherry-pick / Revert / Reset、内置文本冲突编辑器与残留冲突标记保护、文件 Blame、命令面板，以及浅色 / 深色主题与独立界面 / 代码字体设置。
+A fast, native GPU-accelerated Git desktop client built with Go, [MyGo](https://github.com/egoist/mygo), and [Lobe MyGo](https://mygo.lobehub.com) — no WebView, powered directly by your system Git.
 
-设计原型保存在本机 `design/` 目录。工作台功能和操作见[命令映射](docs/workbench-command-map.md)。
+> Built and verified on **macOS (Apple Silicon)**. Supports English and Simplified Chinese.
 
-## 运行
+## Features
 
-本机环境：Go 1.27.3、MyGo v0.8.3、macOS Apple Silicon、Xcode、系统 Git。首次构建下载 Go modules；原生构建需要 CGO 与 macOS SDK。
+- **Multi-Repository Workbench**: Tabbed repositories in one window with drag reordering, dirty indicators, reopen closed tabs (`⌘⇧T`), session restore, and live local change detection.
+- **History Graph & Diff**: Real parent-SHA commit DAG with ref filtering and search; unified and side-by-side diffs with file, hunk, and line-level staging, separate staged/unstaged tabs, and image diff preview.
+- **Complete Git Workflows**: Commit & Amend, Branches, Tags, Remotes, Stashes, Worktrees, Submodules, File Blame, Merge, Rebase, Cherry-pick, Revert, and Reset.
+- **Built-in Conflict Editor**: 3-way text conflict resolution (Base / Ours / Theirs / Result) with residual conflict-marker guards before marking files resolved.
+- **Remote Sync & Security**: Fetch, fast-forward Pull, Push / Force-with-lease, ahead/behind counts, and live transfer progress. Uses your system Git credential helper and SSH agent — never stores tokens.
+- **Keyboard-First & Customizable**: Command palette (`⌘P`), quick checkout (`⌘B`), quick repository switcher (`⌘⇧O`), Light/Dark themes, independent UI & code fonts, and signed in-app updates.
+
+## Getting Started
+
+**Requirements:** macOS (Apple Silicon) · Go 1.27+ · Xcode Command Line Tools (CGO + macOS SDK) · System `git`
 
 ```sh
+# Build and launch the macOS app bundle
 make app
 open build/SuperGit.app
-# 或直接打开指定工作区
+
+# Or open a repository directly
 ./build/supergit /path/to/repository
 ```
 
-首页可打开、克隆或初始化仓库。Clone / Init / 新 Worktree 要求不存在的新目录；选择父目录后可编辑新目录名称。克隆不自动初始化子模块。认证沿用系统 Git 凭据助手和 SSH agent，不在应用中保存令牌。
-
-`make app` 打包时把版本写入 `Info.plist`：短版本取最近标签（`v1.2.3` → `1.2.3`），构建号取提交数；没有可用标签、不在 Git 仓库或 git 不可用时沿用 `packaging/Info.plist` 里的值，源码里的 plist 不会被改写。规则与测试在 `tools/appversion/`。
-
-### 标签式工作台
-
-`make app` 从 `cmd/supergit` 构建基于 [Lobe MyGo](https://mygo.lobehub.com) 的标签式工作台。History 使用「位置 / 提交 / 文件 / 标签式详情」布局。`make lobe-app` 生成拥有独立应用标识的本地预览包。`make desktop-app` 生成旧界面的 `build/SuperGit Desktop.app`，供回退时使用。新版逐项验收见 [能力差距表](docs/lobe-capability-gaps.md)。
+For development and verification:
 
 ```sh
-make app
-open build/SuperGit.app
+make test   # Run Go tests
+make check  # Run tests, race detector, and go vet
+make demo   # Launch with a temporary demo repository
 ```
 
-请从上面的 `build/SuperGit.app` 路径打开刚构建的应用。此前安装的 `/Applications/SuperGit Lobe.app` 不会随本地构建更新。
+## Common Shortcuts
 
-在同一窗口打开第二个仓库，点击顶部「打开仓库…」，或使用侧栏的「打开 Git 仓库」。选择另一个 Git 工作区会打开独立的仓库标签，选择已打开的工作区会切回原标签。也可以先点击右上角的「新建标签」（`+`），再从欢迎页打开仓库。
-
-标签栏放不下全部标签时，点击左右箭头可滚动浏览。点击顶部列表按钮可搜索并切换到其他已打开的标签，包括欢迎页。有未提交改动的仓库标签显示圆点，鼠标移到圆点上可看到关闭按钮。把顶部标签拖到另一标签上可调整顺序，按 `Esc` 可取消当前拖动。`Ctrl+Tab` 和 `Ctrl+Shift+Tab` 分别切换到下一个和上一个仓库标签。关闭仓库标签后，可在「文件」菜单或命令面板选择「重新打开已关闭标签页」，也可按 `⌘⇧T`（Windows/Linux 上为 `Ctrl+Shift+T`）。仓库回到原标签位置并读取当前 Git 状态。正常退出后，从 Finder 重新启动会恢复已打开的仓库标签及其顺序，并选中最近活动的仓库。命令行可用 `make lobe-run REPO=/path/to/repository` 单独打开指定仓库。
-
-Lobe 的工作区首标签为「提交」，包含提交表单和全部改动；历史首标签为「摘要」，包含完整说明与全部补丁。点击文件打开可关闭的独立标签，同路径的已暂存、未暂存版本分开显示；切换标签保留提交草稿与各自滚动位置。标签仅在当前会话中保留。已通过 macOS 原生交互、16 组截图矩阵、2000 行补丁虚拟化测试与一次独立代码审查；审查发现的刷新目标错位已修复。文件列表现以一个 Tab 入口导航，↑/↓ 切文件，←/→ 到达分组标题与行内按钮，Shift+Tab 返回此前聚焦行；Space / Enter 使用聚焦文件的路径及暂存分组。工作区总览会优先读取视口内展开的待加载文件块，单文件与总览按刷新代次复用成功补丁，额外缓存预算为 16 MiB；手动重试仍读取 Git。跨平台发布门槛仍保留，执行进度见 `TODO.md`。
-
-本轮工作台改进增加三个可拖动并持久化的分栏边界、固定的已修改 / 未跟踪 / 已暂存分组、单行提交标题与多行说明、有效 Author / Email，以及带目标校验和确认的文件头 / 批量操作。主历史、引用历史与按文件历史自动分批读取完整范围，保留取消与失败重试，展开侧栏不再截断引用。按文件历史固定起始 HEAD 并跟随重命名；为避免 Git `--skip` 丢失祖先，每页重走此前范围并流式跳过旧记录，保留内存有界，深历史的遍历成本仍会增长。本轮完整显示矩阵、分栏重启和独立审查已执行；两项重要发现修复后再次通过全量测试、竞态检查、vet、构建和真实 Git 原生冒烟。后续已修复缩窄详情区后活动标签留在屏外的问题：自动显露活动标签和关闭按钮，回归测试、全量检查、新一轮完整显示矩阵与分栏重启验证通过。新增菜单 / 状态区域待范围明确；安装版尚未更新。详细证据与平台限制见改进计划及执行记录。
-
-Lobe 已接通独立于自动 Fetch 的本地变化检测：前台约 3 秒、后台约 15 秒，窗口聚焦立即检查。外部保存、暂存、提交、切分支与子模块 HEAD 变化会刷新；保留提交草稿与输入焦点，写入期间暂停检测。Git 元数据之外，还观察当前改动文件的大小、mtime、模式和链接目标；保持相同元数据的字节改写不保证识别。原生验证使用临时仓库与独立偏好，方法见 `docs/e2e-automation.md`；平台、构建状态、实际场景与待调查问题见 [Lobe 试用记录](docs/lobe-trial-log.md)。
-
-默认工作台在系统用户配置目录的 `supergit/settings.json` 保存外观、代码字号和详情选项。打开的仓库标签和最多 12 个最近仓库分别保存。旧桌面回退包继续使用 `SuperGit/preferences.json`。默认工作台可从旧文件读取尚未设置的主题、代码字号和最近仓库路径，具体优先级见 [打包说明](docs/packaging.md)。
-
-`⌘O` 打开、`⌘R` 刷新、`⌘Enter` 提交 Index。分隔线可拖动。正常退出时，普通提交草稿随各自的仓库标签保存在本机，会在恢复工作台时还原。
-
-## 能力表
-
-| 工作流 | 当前行为 |
-|---|---|
-| 仓库入口 | 打开现有工作区、Init、Clone、最近仓库导航 |
-| 工作树行 | 已并入历史页首行，与提交线图同屏：未暂存／已暂存双分组，保留部分暂存；文件暂存／取消暂存，支持重命名及特殊文件名；自动检测外部文件和 Git 状态变化 |
-| Diff | 带行号的统一／左右 Diff；普通已跟踪文本支持行级及片段暂存／取消暂存，切换视图保留选中行；历史 Diff 只读；新文件、删除、重命名、二进制使用文件级暂存 |
-| Commit | 只提交 Index，保留真实 Git hooks；失败保留说明和 Index；首次提交前可取消暂存且保留文件 |
-| 历史线图 | 真实父 SHA DAG，所有引用及 detached HEAD；初始 300 条，每次追加 300 条直至末尾，无 2000 条截断；搜索已加载的 SHA、标题、作者、引用，缺失或过滤父提交显示边界 |
-| 提交详情 | 完整提交说明（正文与 trailers）、父提交跳转、变更文件及 Diff；merge 与第一父提交比较；普通提交可 Cherry-pick / Revert，或从此创建分支 |
-| 分支 | 创建、切换、重命名、安全删除、从远端创建跟踪分支；切换前检查脏状态，保留 Git 的 worktree 占用保护 |
-| 标签 | 从所选历史提交创建本地轻量标签，确认名称及完整 SHA，拒绝覆盖已有引用；分支页只读浏览可解析的本地标签，按名称／标签对象 SHA／目标 SHA 搜索，并打开准确提交详情 |
-| 远端同步 | 查看／添加远端、Fetch、仅快进 Pull、普通 Push、首次设置 upstream；推送确认显示远端、源／目标分支 |
-| Stash | 保存（可含未跟踪文件）、列表及只读 Diff、失败重试、应用、应用并移除、删除；按 SHA 选择，位置变化时拒绝误删，恢复前要求干净，冲突时保留条目 |
-| 整合操作 | Merge、普通 Rebase、Cherry-pick、Revert；进行中状态、继续／中止；执行前检查工作区与已有操作 |
-| 冲突 | 普通文本 Base／Ours／Theirs 与最终结果编辑，保存并暂存；拒绝剩余标记与外部变化；删除／修改冲突可明确接受删除 |
-| Worktree | 浏览／进入、新路径新分支创建、安全移除干净且未锁定的其他工作区，保留分支 |
-| Submodule | 父 HEAD／Index gitlink／子模块 HEAD 三个指针与 dirty；进入并返回父仓库；显式初始化／checkout 到 Index 指针，保留内部 dirty，不跟随远端最新版本 |
-| 操作状态 | 后台串行写入、过期读取隔离、具体目标确认、网络任务取消、错误记录；辅助数据读取失败仍保留有效工作区状态 |
-
-分支页的本地标签区区分轻量标签、附注标签和符号引用，分别显示标签对象与最终目标的完整 SHA 和对象类型。提交型标签（含嵌套附注标签）可打开完整提交说明、文件与 Diff，即使目标尚未载入历史分页；此时保留固定 SHA 的详情并明确提示，不插入虚构图行或自动载入全部历史。快照刷新保留详情，明确选择另一历史提交会替换它。树／blob 标签仍显示，但不能打开提交详情。空列表、搜索无匹配、读取失败分别显示；失败可只读重试。Git 会静默跳过悬空符号引用，界面因此明确只列出可解析标签，不提供原始引用完整性诊断。
-
-Stash 预览区区分未选择、读取中、失败和成功的空差异。读取失败可重试当前 SHA；外部新增条目导致序号移动时不改选其他条目，已移除的 SHA 会明确报错。快速选择、打开仓库和写入会取消旧读取；未完成的预览可重试，快照刷新保留已选 SHA 的预览。预览始终只读，列表重置在下次界面构建时执行。
-
-删除、覆盖、远端写入和中止操作需在应用中确认具体目标。取消只请求停止 Git 并刷新实际结果；已完成的本地或远端写入不会自动回滚。Git 客户端与终端仍可能并发改变仓库。
-
-## 演示
-
-```sh
-make demo
-```
-
-每次在临时目录新建仓库，包含真实 merge、两段文本改动、Index、新文件、worktree，以及有指针变化和内部改动的 submodule。路径写入 `build/demo-root.txt`，不修改已有仓库。
-
-同步和冲突演示使用另一个隔离脚本，创建本地 bare remote、分叉分支和未跟踪草稿：
-
-```sh
-sh scripts/create-workflow-demo.sh > build/workflow-demo-root.txt
-# 输出文件中的根目录下，workspace 为工作区，remote.git 为本地远端
-```
-
-脚本会在这些新仓库中真实提交和推送，使用仓库局部测试身份。
-
-## 当前边界与后续
-
-- 本机 macOS Apple Silicon 验证；`.app` 仅做本地 ad-hoc 签名，未做开发者签名、公证或发布，依赖系统 Git，无自动更新。Windows / Linux 尚未验证。
-- 标签创建目前仅支持本地轻量标签；创建与浏览均不切换 HEAD、不改写 Index 或工作区、不推送。已有轻量／附注／符号引用（包括悬空引用）均拒绝覆盖；Git 引用事务 hooks 仍执行。浏览使用单条有输出上限的 Git 查询，读取失败明确报错；悬空符号引用按 Git 枚举行为省略，界面已说明。尚未读取附注正文／签名详情，附注／签名标签创建、删除、远端标签发布待后续实现。已知提示问题：通过标签打开的旧提交随后被分页载入时，“尚未载入”说明可能保留至刷新或显式选择该提交；固定 SHA 的详情仍正确。
-- 待实现：交互式 Rebase 计划、递归子模块发布向导、操作系统文件事件监听、快捷键自定义、monorepo 与很宽分支图的性能验证、签名与跨平台交付。
-- 按行操作只修改 Index，执行前重读并核对原 Diff；外部变化会拒绝旧选择。切换文件／分组／仓库及手动刷新会清空选择；自动刷新时，当前 Diff 内容不变则保留选择，内容变化则清空。包含无结尾换行标记的片段，需要选中该片段全部变化行，或使用片段操作；保留 CRLF 和工作区原始内容。
-- 二进制、符号链接、gitlink 与复杂重命名冲突需外部工具处理并暂存；文本冲突编辑器支持版本对比与结果保存（限制 1 MiB），直接「标记为已解决」时也会检查工作区文本文件是否仍残留冲突标记（`<<<<<<<` / `=======` / `>>>>>>>` / `|||||||`）并阻止误暂存。Ours / Theirs 对应 Index 阶段 2 / 3，Rebase 期间含义与普通合并不同。
-- 丢弃改动、强制 Push（with-lease / force）与强制删除分支均需二次确认，默认不提供强制移除 Worktree。分叉后的 Pull 会停止，由使用者选择 Merge 或 Rebase。切换／合并保护被忽略文件；移除 Worktree 时若存在忽略文件会拒绝。Rebase 涉及中间提交的 checkout，目前存在忽略文件时保守停止，需先移出或备份。
-- 推送前检查源提交记录的子模块 gitlink 与已配置远端的跟踪引用，即使父仓库无需更新也会检查；需先初始化子模块并通过 Push／Fetch 核对。当前只支持单一 Fetch／Push 地址的远端，多地址配置需先在终端整理。
-- 自动检测使用本地 Git 轮询：活跃窗口约每 3 秒，后台约每 15 秒，重新聚焦时检查；同一仓库最多一个检查任务，应用写入期间暂停。检测到状态／Index 对象及模式／引用／配置／worktree／子模块当前指针或当前工作区 Diff 改变后刷新，保留提交说明、冲突编辑内容和确认目标。子模块已经偏离父指针后继续提交，也会更新；当前 Diff 读取失败不阻止其他仓库状态更新。检查超过 15 秒会取消并稍后重试，失败可手动刷新；不进行网络同步。历史搜索仅覆盖当前已加载内容。
-- 基础检测基准（本机 Apple M4，含 Git 子进程，5 次测量）：1 个跟踪文件约 44 ms，1,000 个约 58 ms；带 1 个已初始化子模块约 128 ms；当前 Diff 的读取另计。这是小型基线；另有万文件／万提交测试见下文，monorepo 与很宽的多分支图仍需验证。可运行 `go test ./internal/gitrepo -run '^$' -bench BenchmarkChangeStamp -benchtime=5x` 复测。
-- Git 普通输出上限 4 MiB、stderr 256 KiB，超限报错；未跟踪新文件超过 1 MiB 提示文件级操作；单条命令最多 2 分钟。网络无流式进度。
-- 历史分页固定当前所有引用和 detached HEAD 的起始提交 SHA；追加期间外部引用移动不会改变这批历史的顺序，刷新后采用新起点并保留已加载深度。加载和失败重试只读，不改变已选提交／文件 Diff；刷新、写入及切换仓库会取消并拒绝过期页面。到末尾后禁用继续加载；历史读取失败时保留已加载记录，按钮标明失败并要求刷新重试，不把失败显示成末尾。搜索变化在下次界面构建时重置列表状态，不在回调中清空。每条 Git 历史命令最多返回 300 条及一条前瞻记录，仍受输出上限约束；很长的单条元数据仍可能超限。Git `--skip` 会重新遍历前面的历史，深分页和深度刷新会逐渐变慢，已加载记录与 DAG 占用会增长；尚未做流式遍历或历史淘汰。
-- 自动刷新在当前文件消失时会回退到其他变更文件；文件或 Index／工作区分组变化时，清空旧 Diff／选行并从顶部显示。目标未变时保留滚动位置；历史文件的 Diff 滚动与工作区独立。
-- Git hooks、凭据或签名如需交互，应先在终端配置；当前未内置交互式终端。操作记录不持久化。
-
-## 键盘操作
-
-macOS 常用快捷键与侧栏顺序一致，控件悬停提示和辅助功能信息也会显示对应按键：
-
-| 快捷键 | 操作 |
+| Shortcut | Action |
 | --- | --- |
-| ⌘1 | 历史线图（首行是工作树），并聚焦提交列表 |
-| ⌘2 | 分支 |
-| ⌘3 | 子模块 |
-| ⌘4 | 分支 |
-| ⌘5 | 远端与同步 |
-| ⌘6 | Stash |
-| ⌘7 | 冲突处理 |
-| ⌘8 | 仓库入口 |
-| ⌘9 | Worktrees |
-| ⌘F | 在历史页聚焦搜索已加载提交 |
-| ⌘→ | 提交列表获得焦点时，进入变更文件列表 |
-| ⌘← | 变更文件列表获得焦点时，返回提交列表 |
-| ⌘O | 打开仓库 |
-| ⌘R | 刷新当前仓库 |
-| ⌘Enter | 仅在工作树行提交 Index 内容 |
-| Esc | 取消空闲的操作表单或确认页 |
+| `⌘P` | Command Palette |
+| `⌘B` | Quick Checkout Branch |
+| `⌘O` / `⌘⇧O` | Open / Switch Repository |
+| `⌘R` | Reload Repository |
+| `⌘↵` | Commit Staged Changes |
+| `⌘,` | Settings |
 
-工作区文件列表获得焦点时，↑／↓ 跨“未暂存／已暂存”分组选择文件并显示 Diff，Home／End 跳转首尾；分组标题不会被选中。同一路径的 Index 和工作区版本分别选择。Enter 重新读取普通文件 Diff，或明确进入所选冲突文件的编辑页；方向键浏览冲突只显示只读差异。刷新按原始路径及分组保持选择；文件移出当前分组时跟随剩余分组，消失时回退其他变更文件并保持键盘可继续浏览。连续切换会取消过期的 Diff 读取；提交说明仍处理自己的方向键和换行。工作区 Diff 读取失败会在预览区明确报错，并提供固定当前原始路径及 Index／工作区分组的只读重试；失败会清除不可用的 Diff 与选中行，不显示成“没有文本差异”。自动检测当前文件失败时也会清除旧预览；之后读取成功可自动恢复，包括成功的空 Diff。切换目标或清空工作区会清除旧错误，提交草稿和编辑焦点保留。自动恢复若被打开仓库或写入打断，尚未成功的空预览仍可重试，不标成空差异。
+More documentation: [Full Shortcuts](docs/shortcuts.md) · [Packaging & Release Signing](docs/packaging.md)
 
-历史列表获得焦点时，↑／↓ 选择相邻提交，Home／End 跳转到当前结果首尾并滚动到所选行，Enter 重新读取所选提交详情。搜索框中的 Enter／Esc 把焦点交回结果列表并保留搜索文字；输入框仍处理自己的方向键。列表按 SHA 保持选择，筛选后仍显示原提交的详情；无匹配行时保留已有详情，直到使用者明确选择其他结果。后台刷新期间可继续只读浏览当前历史，刷新替换模型后拒绝旧回调；连续切换提交会取消已过期的详情 Git 读取。
+## License
 
-提交列表中的 ⌘→ 聚焦右侧变更文件，文件列表中的 ⌘← 返回提交列表；这些按键仅由对应列表处理。变更文件支持 ↑／↓、Home／End 和 Enter，始终显示所选提交的只读 Diff。快速切换会取消过期读取；仓库快照刷新保留当前文件，切换提交后自动选择新提交的首个文件，空提交没有文件选择。提交元数据和变更文件分别滚动，详情区高度仍可拖动调整。完整提交说明按所选 SHA 独立后台读取，正文保留换行、缩进和 trailers；源编码由 Git 转为 UTF-8。长正文在元数据区域滚动，切换文件与快照刷新保留说明。读取失败可针对当前提交重试，文件列表和 Diff 仍可用；说明上限 1 MiB，超限或无效文本会明确报错，不截断展示。父提交跳转在写入或打开仓库期间暂停。历史变更文件与文件 Diff 分别显示读取失败，并提供固定当前 SHA／路径的重试入口；失败不会显示为空提交或“没有文本差异”。重试文件列表不重读提交说明，重试 Diff 保留文件列表；切换目标清除旧错误，被写入或打开仓库打断的未完成读取可重试。
-
-进行中操作条出现或消失时，页面根控件保持稳定身份，保留原有文件列表／编辑器焦点与提交草稿。
-
-操作表单和确认页会暂停上述导航、打开、刷新和提交快捷键，先取消或完成当前操作再切换。写入和打开仓库期间也暂停页面快捷键。普通 Enter 在提交说明和冲突结果的多行编辑框内换行；历史、冲突、表单等页面的 ⌘Enter 不提交后台工作区草稿，Esc 不会丢弃冲突编辑或中断 Git 进程。当前不提供快捷键重映射，也没有全局无修饰字母／方向键操作。
-
-## 验证
-
-```sh
-make check
-make app e2e-build
-```
-
-覆盖真实临时 Git 仓库、分支与远端、分叉拒绝、Stash 身份及冲突保留、冲突编辑／删除／继续／中止、worktree 与 submodule 保护、行级部分暂存与反向操作、空文件／不等长替换／多片段偏移／CRLF／无结尾换行、特殊路径、hooks、异步结果隔离、Diff 选择身份、操作确认、偏好持久化与 DAG。`check` 执行全部测试、race detector、`go vet`。
-
-原生自动化仅在显式 `e2e` 构建中链接 MyGo automation 插件。普通二进制不链接自动化服务。
-
-Lobe 标签式布局用 `make lobe-e2e-build && python3 -I scripts/native-narrow-shots.py` 复查：脚本自建夹具，覆盖 980／1320／1600×640 × 中文／英文 × 浅色／深色，另加四组 1.15 大字号关键组合。每组保存长说明摘要、13 文件标签与长路径、空提交、工作区四张截图和无障碍快照到 `build/narrow-shots/`；检查最小列宽与活动标签、关闭入口可见性。`python3 -I scripts/native-detail-tabs-smoke.py` 另验证双版本标签、草稿、浏览只读、指定文件暂存及刷新、超限失败重试。实际结果及剩余验收见 TODO.md。`make e2e-build` 构建默认标签式工作台的自动化二进制。
-
-```sh
-make native-check
-make desktop-native-check
-```
-
-`make native-check` 通过标准 `make app` 配方构建隔离的 macOS 测试包，先验证顶部新建标签、系统文件夹打开事件、两个仓库各自的草稿与重启恢复，再检查外部编辑刷新、部分暂存、提交、同步、Stash、Merge 冲突取边和子模块。
-
-旧桌面回退检查 `make desktop-native-check` 构建、启动并操作真实窗口，分别使用新的本地仓库、bare remote 和独立测试偏好验证日常工作流与精细 Diff 操作，随后关闭测试窗口，保留 fixture 与 `build/` 中的截图。覆盖成功流程、脏工作区拒绝、网络任务取消、左右视图共享选行、部分暂存／取消暂存、旧 Diff 拒绝和历史只读。另验证自动检测外部连续编辑、暂存／提交／切换分支、子模块连续移动 HEAD、超大 Diff 失败后的分支更新、未变 Diff 选行及冲突草稿保留。另有独立的 12,024 次提交／10,001 个文件 fixture，验证历史逐页加载至 2,400 条、越过原 2,000 条边界后的准确 SHA／Diff、虚拟滚动，以及外部提交后保留深度刷新并继续加载至 2,700 条；并验证历史列表方向键／首尾跳转、搜索编辑和结果焦点、筛选后准确 SHA／Diff、刷新插入提交后的选择与焦点保留及空结果不误选。键盘场景用真实按键验证导航／搜索焦点、普通草稿编辑、表单／确认页保护、Esc 取消、工作区显式提交，以及 Diff 滚动保留／回退和冲突草稿保护。工作区文件场景另外验证跨组导航跳过标题、同路径双版本的准确 Diff、首尾滚动、刷新后的路径／分组保持、组移动和消失回退、提交说明按键隔离、冲突显式激活、空列表及刷新不抢编辑焦点；浏览前后核对 Index、HEAD 和文件内容。无文件变化的真实 Merge 场景验证进行中操作条出现／消失时，文件列表与提交编辑器分别保持焦点及草稿。另用超限文本验证工作区与 Index Diff 的局部报错、同路径双分组重试与恢复，以及已脏文件连续编辑后自动失败／恢复不抢编辑焦点、不改写仓库。提交变更文件场景使用 64 文件提交，验证列表间焦点往返、首尾与连续快速导航、准确只读 Diff、快照刷新保持选择、空提交和提交替换后的文件身份，并核对浏览未改写仓库。该场景还验证完整提交说明的中文、缩进和 trailers、固定元数据区域滚动、快速切换与刷新后的消息身份，以及超限说明失败后重试仍不影响准确文件 Diff。另外构造缺失 tree／blob 的本地历史提交，验证文件列表／Diff 明确报错、重试固定对象、切换文件清除旧错误，以及补回对象后重试恢复；核对 HEAD、Index 与工作区内容未变。独立 Stash fixture 验证未选择／空差异、超限失败及只读重试、reflog 序号移动与快速切换后的 SHA 身份，以及所选条目被移除后拒绝改读其他条目；核对 HEAD、Index、工作区和 Stash 列表没有被浏览操作改写。独立标签 fixture 验证名称可编辑而目标 SHA 只读、表单与确认取消均无写入、在较早提交创建轻量标签并刷新历史标记、重复名称拒绝覆盖，以及外部 HEAD 推进后拒绝旧确认；核对 HEAD、Index、工作区字节与本地测试远端标签。单独验证可运行 `python3 -I scripts/check-native-workflows.py --diff`、`--watch`、`--history`、`--keyboard`、`--files`、`--commit-files`、`--stash` 或 `--tags`（需先 `make desktop-e2e-build`）。需要可用的 macOS 图形会话。
-
-标签原生场景还验证空／搜索／无匹配、附注／符号／非提交对象、插入分支后搜索框焦点、未载入历史的旧提交及嵌套标签详情、刷新保留与显式选择替换，以及缺失对象报错和 fixture 修复后的重试恢复。悬空符号标签单独核对保留并明确枚举限制；浏览前后核对引用、HEAD、Index、工作区字节及本地测试远端标签。不会在已有用户仓库中执行这些测试。
-
-性能测量可复现：
-
-```sh
-# 仅操作新建的本地测试仓库；输出其临时根目录
-history_fixture=$(python3 -I scripts/create-history-demo.py)
-SUPERGIT_BENCH_REPO="$history_fixture/workspace" go test ./internal/gitrepo ./internal/desktop -run '^$' -bench BenchmarkLarge -benchmem -benchtime=5x
-go test ./internal/desktop -run '^$' -bench BenchmarkHistory -benchmem -benchtime=1000x
-```
-
-分页实现时复测，本机 Apple M4，真实 fixture 的五次平均墙钟时间（含 Git 子进程）：300／2,000 条历史约 61／295 ms，Status 约 152 ms，ChangeStamp 约 196 ms，完整 2,000 条 snapshot 约 699 ms（`build/history-pagination-benchmark.log`）。该 fixture 工作区干净、包含 24 次合并、不含子模块；不代表一般 monorepo 或宽图性能。历史深度刷新现在分成多个 300 条读取，子进程和重复遍历的成本更高；继续加载只追加一页，不重读整个 snapshot。原生测试从 300 逐页加载到 2,400 条约 0.534 秒，包含自动化与等待，不是 UI 帧时间。该基准早于标签浏览，本轮 snapshot 新增一条标签查询，其耗时尚未重新测量。
-
-历史展示按仓库版本及搜索条件缓存；重复绘制不再重新筛选和排列 DAG，绘制时通过连线区间索引跳过不相交的分支。2,000 条提交、25 个可见行的纯模型对照：原空搜索／匹配搜索约 135／567 µs，每次分配 0.67／1.24 MB；缓存后约 1.05／1.06 µs、零分配。搜索或 snapshot 变化后的冷构建约 569 µs、1.40 MB。以上不含 UI 布局、文字和 GPU 绘制，不是完整帧耗时；原生 smoke 记录的命令耗时也包含自动化和等待。基准保留原算法作为对照，日志为 `build/history-benchmark-after.log`、`build/history-git-benchmark.log`。
-
-也可手动启动旧桌面回退版进行验证。
-
-```sh
-make desktop-e2e-build
-sh scripts/create-workflow-demo.sh > build/workflow-demo-root.txt
-# 用输出文件中的真实 root 替换下文 /path/to/root
-SUPERGIT_TEST_CONFIG_DIR=/path/to/root/config \
-  MYGO_AUTOMATION="$PWD/build/workflows.sock" ./build/supergit-desktop-e2e /path/to/root/workspace
-# 另一个终端
-./build/mygo-automation open --session product --socket "$PWD/build/workflows.sock"
-python3 -I scripts/native-workflow-smoke.py /path/to/root
-```
-
-自动化操作的细节（坐标换算、右键菜单、滚动与等待）见 [docs/e2e-automation.md](docs/e2e-automation.md)。
-
-Smoke 只接受该脚本创建且 origin 仍指向本地 bare remote 的 fixture；会真实创建分支、推送、合并、解决冲突、操作 worktree、Clone / Init。使用新 fixture 运行，截图与日志保存在 `build/`。Git 后台任务用条件等待；`--settle` 只等待 UI 帧。
-
-代码分工：`internal/gitrepo` 管理 Git 子进程和模型，`internal/lobedesk`（及回退版 `internal/desktop`）管理原生 UI 与主线程状态，`cmd/supergit` 为入口。
-
-## 许可证
-
-本项目代码采用 [GNU General Public License v3.0 (GPL-3.0)](LICENSE) 许可发布；内置字体遵循各自的 SIL Open Font License 1.1 协议，详见 [internal/lobedesk/fonts/LICENSES.txt](internal/lobedesk/fonts/LICENSES.txt)。
+Code is licensed under [GNU General Public License v3.0 (GPL-3.0)](LICENSE).
+Bundled fonts are licensed under SIL Open Font License 1.1 — see [internal/lobedesk/fonts/LICENSES.txt](internal/lobedesk/fonts/LICENSES.txt).
