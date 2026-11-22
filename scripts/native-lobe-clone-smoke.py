@@ -119,10 +119,10 @@ def root_ready(repo):
 def no_form():assert not any(e[1]=='textField' and e[2]==source_field for e in entries()),'Clone form remains open'
 
 def open_clone(repo=None):
-    if repo is None:press('button','Clone repository…')
+    if repo is None:press('button','Clone Repository')
     else:
         row=next(e for e in entries() if e[1]=='button' and e[2]==repo.name and 'bounds=46,' in e[3])
-        auto('press',row[0],'--settle');press('menuItem','Clone repository…')
+        auto('press',row[0],'--settle');press('menuItem','Clone Repository')
     wait('Clone repository');control('textField',source_field)
 
 def stop():
@@ -164,7 +164,7 @@ try:
     before=originals();(root/'before.git.json').write_text(json.dumps(before,indent=2)+'\n')
     expected_head=git(source,'rev-parse','HEAD');expected_index=git(source,'ls-files','--stage','-z')
     step='01-empty-state-cancel'
-    start();wait('Clone repository…');open_clone()
+    start();wait('Clone Repository');open_clone()
     assert 'disabled' in control('button','Clone',enabled=False)[3],'Blank Clone form allowed submit'
     fill(source_field,str(remote));fill(destination_field,str(cancelled_destination));evidence(step+'-filled')
     press('button','Cancel');no_form();assert not cancelled_destination.exists();evidence(step)

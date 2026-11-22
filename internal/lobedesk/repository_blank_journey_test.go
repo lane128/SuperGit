@@ -109,7 +109,7 @@ func TestBlankRepositoryTabJourney(t *testing.T) {
 	if alpha, ok := view.AccessByRole(ui.RoleTab, filepath.Base(aRoot)); !ok || alpha.Offscreen || alpha.Disabled {
 		t.Fatalf("Alpha inaccessible while blank active: %+v", alpha)
 	}
-	const openWelcomeRepository = "Open Repository…"
+	const openWelcomeRepository = "Open Repository"
 	click(ui.RoleButton, openWelcomeRepository)
 	if calls != 1 || tabs.active != blank || blank.repo != nil || len(tabs.sessions) != 2 || blank.loading || blank.repositoryChooserOpen || a.commitText != aSummary+"\n\n"+aBody {
 		t.Fatal("cancel disturbed the blank tab or original draft")

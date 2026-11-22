@@ -157,6 +157,15 @@ func workbenchButton(c *ui.Context, label string, role buttonRole, disabled bool
 	return b
 }
 
+func workbenchIconLabelButton(c *ui.Context, icon *ui.SVG, label string, role buttonRole, disabled bool) ui.Element {
+	b := styleWorkbenchButton(c, ui.ButtonBase(c).Label(label), role, disabled, false)
+	b.Children(func() {
+		ui.Icon(c, icon).FontSize(scaledFont(14)).Shrink(0)
+		ui.Text(c, label).SingleLine()
+	})
+	return b
+}
+
 func workbenchIconButton(c *ui.Context, icon *ui.SVG, title string, role buttonRole, disabled bool) ui.Element {
 	b := styleWorkbenchButton(c, ui.ButtonBase(c), role, disabled, false).
 		Width(scaledFont(workbenchButtonBaseHeight)).PaddingX(0).Label(title).Tooltip(title)

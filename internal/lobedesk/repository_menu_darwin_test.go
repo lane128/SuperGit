@@ -32,24 +32,40 @@ func TestRepositoryFileMenuOffersSwitchRepository(t *testing.T) {
 func TestRepositoryFileMenuOffersNewAndClone(t *testing.T) {
 	oldMenu := mygo.App.Menu()
 	t.Cleanup(func() { mygo.App.SetMenu(oldMenu) })
-	a := &app{locale: localeEnglish, window: &mygo.Window{}}
-	tabs := newRepositoryTabs(context.Background(), a)
-	tabs.installRepositoryMenu()
-	want := map[string]bool{a.t("newRepo"): false, a.t("cloneRepo"): false}
-	for _, item := range mygo.App.Menu().Items() {
-		if item.Role != mygo.RoleFileMenu {
-			continue
-		}
-		for _, child := range item.Submenu {
-			if _, ok := want[child.Label]; ok && child.Click != nil && !child.Disabled {
-				want[child.Label] = true
-			}
-		}
+	cases := []struct {
+		name   string
+		locale locale
+		labels []string
+	}{
+		{name: "english", locale: localeEnglish, labels: []string{"New Repository", "Clone Repository"}},
+		{name: "chinese", locale: localeChinese, labels: []string{"创建仓库", "克隆仓库"}},
 	}
-	for name, found := range want {
-		if !found {
-			t.Errorf("File has no enabled %q action", name)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &app{locale: tc.locale, window: &mygo.Window{}}
+			tabs := newRepositoryTabs(t.Context(), a)
+			t.Cleanup(tabs.shutdown)
+			tabs.installRepositoryMenu()
+			want := make(map[string]bool, len(tc.labels))
+			for _, label := range tc.labels {
+				want[label] = false
+			}
+			for _, item := range mygo.App.Menu().Items() {
+				if item.Role != mygo.RoleFileMenu {
+					continue
+				}
+				for _, child := range item.Submenu {
+					if _, ok := want[child.Label]; ok && child.Click != nil && !child.Disabled {
+						want[child.Label] = true
+					}
+				}
+			}
+			for name, found := range want {
+				if !found {
+					t.Errorf("File has no enabled %q action", name)
+				}
+			}
+		})
 	}
 }
 

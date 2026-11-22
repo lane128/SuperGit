@@ -847,16 +847,18 @@ func (a *app) emptyPage(c *ui.Context) {
 			display.Text(c, a.loadErr, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 3}).
 				MaxWidth(520).TextAlign(ui.Center)
 		}
-		choose := workbenchButton(c, a.t("chooseFolder"), buttonPrimary, blocked)
-		if choose.Clicked() {
-			a.chooseRepository()
-		}
-		if workbenchButton(c, a.t("newRepo"), buttonNormal, !a.canShowCloneRepository()).Clicked() {
-			a.showNewRepository()
-		}
-		if workbenchButton(c, a.t("cloneRepo"), buttonNormal, !a.canShowCloneRepository()).Clicked() {
-			a.showCloneRepository()
-		}
+		ui.Column(c).Width(scaledFont(220)).Gap(8).Shrink(0).Children(func() {
+			choose := workbenchIconLabelButton(c, lucide.FolderOpen(), a.t("chooseFolder"), buttonPrimary, blocked).FillWidth()
+			if choose.Clicked() {
+				a.chooseRepository()
+			}
+			if workbenchIconLabelButton(c, lucide.FolderPlus(), a.t("newRepo"), buttonNormal, !a.canShowCloneRepository()).FillWidth().Clicked() {
+				a.showNewRepository()
+			}
+			if workbenchIconLabelButton(c, lucide.Download(), a.t("cloneRepo"), buttonNormal, !a.canShowCloneRepository()).FillWidth().Clicked() {
+				a.showCloneRepository()
+			}
+		})
 		a.welcomeRecentRepositories(c)
 	})
 }

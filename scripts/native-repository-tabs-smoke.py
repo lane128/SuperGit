@@ -140,7 +140,7 @@ def run(bundle, driver, artifacts, scratch):
         field = one(snapshot(), 'textField', 'Commit message').split()[0]
         auto('fill', field, 'Alpha fixture draft\n\nAlpha fixture body', '--settle')
         loaded = snapshot()
-        for label in ('Open Repository…', 'Open a Git repository'):
+        for label in ('Open Repository', 'Open a Git repository'):
             assert not control(loaded, 'button', label), f'Duplicate open button in workbench: {label}'
         branch = one(loaded, 'button', 'Branches')
         x, _, width, _ = rect(branch)
@@ -153,7 +153,7 @@ def run(bundle, driver, artifacts, scratch):
         auto('key', 'Escape', '--settle')
         click('button', 'New Tab')
         welcome = selected('Welcome')
-        open_button = one(welcome, 'button', 'Open Repository…')
+        open_button = one(welcome, 'button', 'Open Repository')
         assert ' disabled' not in open_button and ' offscreen' not in open_button, open_button
         assert beta.name not in welcome, 'Beta unexpectedly appeared in Recents'
         auto('screenshot', artifacts / 'welcome.png')

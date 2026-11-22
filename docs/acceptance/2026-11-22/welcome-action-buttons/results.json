@@ -1,0 +1,170 @@
+[
+  {
+    "name": "welcome-en-light-1280x800",
+    "lang": "en",
+    "theme": "light",
+    "size": "1280x800",
+    "fontScale": 1.0,
+    "buttons": [
+      {
+        "label": "Open Repository",
+        "x": 625.5,
+        "y": 416.9052734375,
+        "w": 220.0,
+        "h": 29.0
+      },
+      {
+        "label": "New Repository",
+        "x": 625.5,
+        "y": 453.9052734375,
+        "w": 220.0,
+        "h": 29.0
+      },
+      {
+        "label": "Clone Repository",
+        "x": 625.5,
+        "y": 490.9052734375,
+        "w": 220.0,
+        "h": 29.0
+      }
+    ],
+    "screenshot": "welcome-en-light-1280x800.png",
+    "dialogsVerified": true
+  },
+  {
+    "name": "welcome-en-dark-1280x800",
+    "lang": "en",
+    "theme": "dark",
+    "size": "1280x800",
+    "fontScale": 1.0,
+    "buttons": [
+      {
+        "label": "Open Repository",
+        "x": 625.5,
+        "y": 416.9052734375,
+        "w": 220.0,
+        "h": 29.0
+      },
+      {
+        "label": "New Repository",
+        "x": 625.5,
+        "y": 453.9052734375,
+        "w": 220.0,
+        "h": 29.0
+      },
+      {
+        "label": "Clone Repository",
+        "x": 625.5,
+        "y": 490.9052734375,
+        "w": 220.0,
+        "h": 29.0
+      }
+    ],
+    "screenshot": "welcome-en-dark-1280x800.png"
+  },
+  {
+    "name": "welcome-zh-light-980x640",
+    "lang": "zh",
+    "theme": "light",
+    "size": "980x640",
+    "fontScale": 1.0,
+    "buttons": [
+      {
+        "label": "打开仓库",
+        "x": 475.5,
+        "y": 336.9052734375,
+        "w": 220.0,
+        "h": 29.0
+      },
+      {
+        "label": "创建仓库",
+        "x": 475.5,
+        "y": 373.9052734375,
+        "w": 220.0,
+        "h": 29.0
+      },
+      {
+        "label": "克隆仓库",
+        "x": 475.5,
+        "y": 410.9052734375,
+        "w": 220.0,
+        "h": 29.0
+      }
+    ],
+    "screenshot": "welcome-zh-light-980x640.png"
+  },
+  {
+    "name": "welcome-zh-dark-980x640-large",
+    "lang": "zh",
+    "theme": "dark",
+    "size": "980x640",
+    "fontScale": 1.15,
+    "buttons": [
+      {
+        "label": "打开仓库",
+        "x": 459.0,
+        "y": 335.091064453125,
+        "w": 253.0,
+        "h": 33.349998474121094
+      },
+      {
+        "label": "创建仓库",
+        "x": 459.0,
+        "y": 376.4410705566406,
+        "w": 253.0,
+        "h": 33.349998474121094
+      },
+      {
+        "label": "克隆仓库",
+        "x": 459.0,
+        "y": 417.79107666015625,
+        "w": 253.0,
+        "h": 33.349998474121094
+      }
+    ],
+    "screenshot": "welcome-zh-dark-980x640-large.png"
+  },
+  {
+    "name": "welcome-en-light-980x640-small",
+    "lang": "en",
+    "theme": "light",
+    "size": "980x640",
+    "fontScale": 0.9,
+    "buttons": [
+      {
+        "label": "Open Repository",
+        "x": 486.5,
+        "y": 338.11474609375,
+        "w": 198.0,
+        "h": 26.099998474121094
+      },
+      {
+        "label": "New Repository",
+        "x": 486.5,
+        "y": 372.2147521972656,
+        "w": 198.0,
+        "h": 26.099998474121094
+      },
+      {
+        "label": "Clone Repository",
+        "x": 486.5,
+        "y": 406.31475830078125,
+        "w": 198.0,
+        "h": 26.099998474121094
+      }
+    ],
+    "screenshot": "welcome-en-light-980x640-small.png"
+  },
+  {
+    "name": "repo-menu-en-light",
+    "lang": "en",
+    "theme": "light",
+    "size": "1100x720",
+    "fontScale": 1.0,
+    "menuLabels": [
+      "New Repository",
+      "Clone Repository"
+    ],
+    "screenshot": "repo-menu-en-light.png"
+  }
+]

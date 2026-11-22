@@ -112,10 +112,10 @@ def root_ready(repo):
     ready()
 
 def open_new(repo=None):
-    if repo is None:press('button','New repository…')
+    if repo is None:press('button','New Repository')
     else:
         title=next(e for e in entries() if e[1]=='button' and e[2]==repo.name and 'bounds=46,' in e[3])
-        auto('press',title[0],'--settle');press('menuItem','New repository…')
+        auto('press',title[0],'--settle');press('menuItem','New Repository')
     wait('New repository');control('textField',field)
 
 def no_form():assert not any(e[1]=='textField' and e[2]==field for e in entries()),'New repository form remains open'
@@ -203,7 +203,7 @@ try:
     bootstrap=False
     before=originals();(root/'before.git.json').write_text(json.dumps(before,indent=2)+'\n')
     step='01-empty-entry-cancel'
-    start();wait('New repository…');open_new()
+    start();wait('New Repository');open_new()
     assert 'disabled' in control('button','Create',enabled=False)[3],'Blank form allowed Create'
     fill(field,str(cancelled));press('button','Cancel');no_form();assert not cancelled.exists();evidence(step)
     note('PASS empty-state New repository entry/Cancel leaves destination absent and original fingerprints unchanged')
