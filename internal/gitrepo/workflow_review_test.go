@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestIgnoredContentPreservedBySwitchAndWorktreeRemove(t *testing.T) {
+func TestSwitchMatchesNativeGitOnIgnoredAndWorktreeRemovePreservesIgnored(t *testing.T) {
 	ctx := context.Background()
 	dir := fixture(t)
 	seed(t, dir)
@@ -22,13 +22,14 @@ func TestIgnoredContentPreservedBySwitchAndWorktreeRemove(t *testing.T) {
 	git(t, dir, "switch", "main")
 	write(t, dir, "ignored.txt", "valuable local content\n")
 	r := openTest(t, dir)
-	if err := r.SwitchBranch(ctx, "other"); err == nil {
-		t.Error("switch must refuse ignored-file collision")
+	if err := r.SwitchBranch(ctx, "other"); err != nil {
+		t.Fatalf("switch should match native git and allow overwriting ignored file: %v", err)
 	}
 	b, _ := os.ReadFile(filepath.Join(dir, "ignored.txt"))
-	if string(b) != "valuable local content\n" {
-		t.Error("switch overwrote ignored content")
+	if string(b) != "tracked replacement\n" {
+		t.Fatalf("switch did not check out tracked ignored.txt: %q", b)
 	}
+	git(t, dir, "switch", "main")
 	wt := filepath.Join(t.TempDir(), "worktree")
 	if err := r.AddWorktree(ctx, wt, "review", "main"); err != nil {
 		t.Fatal(err)

@@ -10,6 +10,10 @@ import (
 // Keep its legacy text for callers that render backend errors directly.
 var ErrDirtyWorkingTree = errors.New("工作区或暂存区有改动，请先提交或保存 Stash")
 
+// ErrUntrackedOverwrite identifies a Git refusal because untracked local files
+// would be overwritten or removed by the target operation.
+var ErrUntrackedOverwrite = errors.New("存在会被此操作覆盖的未跟踪本地文件，请先移走、备份或清理后重试")
+
 func (r *Repository) clean(ctx context.Context) error {
 	if err := r.idle(ctx); err != nil {
 		return err
@@ -58,7 +62,7 @@ func (r *Repository) CreateBranch(ctx context.Context, name, start string, check
 		if err := r.operationReady(ctx); err != nil {
 			return err
 		}
-		_, err = run(ctx, r.Root, "", "switch", "--no-overwrite-ignore", "-c", name, sha)
+		_, err = run(ctx, r.Root, "", "switch", "-c", name, sha)
 		return wrapDirtyTreeError(err)
 	} else {
 		_, err = run(ctx, r.Root, "", "branch", "--", name, sha)
@@ -103,28 +107,36 @@ func (e dirtyWorkingTreeError) Error() string { return e.cause.Error() }
 
 func (e dirtyWorkingTreeError) Unwrap() []error { return []error{ErrDirtyWorkingTree, e.cause} }
 
+type untrackedOverwriteError struct{ cause error }
+
+func (e untrackedOverwriteError) Error() string { return e.cause.Error() }
+
+func (e untrackedOverwriteError) Unwrap() []error { return []error{ErrUntrackedOverwrite, e.cause} }
+
 func wrapDirtyTreeError(err error) error {
 	if err == nil {
 		return nil
 	}
-	msg := err.Error()
+	lower := strings.ToLower(err.Error())
 	for _, needle := range []string{
-		"would be overwritten by checkout",
-		"would be overwritten by switch",
-		"would be overwritten by merge",
-		"would be overwritten by cherry-pick",
-		"would be overwritten by revert",
-		"Please commit your changes or stash them before you",
-		"cannot rebase: You have unstaged changes",
-		"cannot rebase: Your index contains uncommitted changes",
-		"cannot pull with rebase: You have unstaged changes",
-		"cannot pull with rebase: Your index contains uncommitted changes",
-		"Working tree contains unstaged changes",
-		"Index contains uncommitted changes",
+		"your local changes to the following files would be overwritten",
+		"your local changes would be overwritten by",
+		"please commit your changes or stash them before you",
+		"cannot rebase: you have unstaged changes",
+		"cannot rebase: your index contains uncommitted changes",
+		"cannot pull with rebase: you have unstaged changes",
+		"cannot pull with rebase: your index contains uncommitted changes",
+		"working tree contains unstaged changes",
+		"index contains uncommitted changes",
 	} {
-		if strings.Contains(msg, needle) {
+		if strings.Contains(lower, needle) {
 			return dirtyWorkingTreeError{cause: err}
 		}
+	}
+	if strings.Contains(lower, "please move or remove them before you") ||
+		(strings.Contains(lower, "untracked working tree file") &&
+			(strings.Contains(lower, "would be overwritten") || strings.Contains(lower, "would be removed"))) {
+		return untrackedOverwriteError{cause: err}
 	}
 	return err
 }
@@ -147,7 +159,7 @@ func (r *Repository) switchBranch(ctx context.Context, name, expectedSHA string)
 			return ErrSwitchTargetChanged
 		}
 	}
-	_, err := run(ctx, r.Root, "", "switch", "--no-guess", "--no-overwrite-ignore", "--", name)
+	_, err := run(ctx, r.Root, "", "switch", "--no-guess", "--", name)
 	return wrapDirtyTreeError(err)
 }
 
@@ -165,7 +177,7 @@ func (r *Repository) CheckoutCommit(ctx context.Context, sha string) error {
 	if _, err := r.resolve(ctx, sha); err != nil {
 		return err
 	}
-	_, err := run(ctx, r.Root, "", "switch", "--detach", "--no-guess", "--no-overwrite-ignore", "--", sha)
+	_, err := run(ctx, r.Root, "", "switch", "--detach", "--no-guess", "--", sha)
 	return wrapDirtyTreeError(err)
 }
 
@@ -329,6 +341,6 @@ func (r *Repository) trackBranch(ctx context.Context, name, remoteRef, expectedS
 	if err := r.operationReady(ctx); err != nil {
 		return err
 	}
-	_, err = run(ctx, r.Root, "", "switch", "--no-overwrite-ignore", "-c", name, "--track", "refs/remotes/"+remoteRef)
+	_, err = run(ctx, r.Root, "", "switch", "-c", name, "--track", "refs/remotes/"+remoteRef)
 	return wrapDirtyTreeError(err)
 }

@@ -30,7 +30,7 @@ func checkedTrackFixture(t *testing.T) (*Repository, string) {
 
 // Losing the displayed-tip check would allow moved or deleted candidates to act.
 func TestTrackBranchCheckedRejectsChangedTargetWithoutMutation(t *testing.T) {
-	for _, mode := range []string{"invalid", "empty", "moved", "deleted", "collision", "dirty", "staged", "untracked", "ignored"} {
+	for _, mode := range []string{"invalid", "empty", "moved", "deleted", "collision", "dirty", "staged", "untracked"} {
 		t.Run(mode, func(t *testing.T) {
 			r, sha := checkedTrackFixture(t)
 			switch mode {
@@ -53,9 +53,6 @@ func TestTrackBranchCheckedRejectsChangedTargetWithoutMutation(t *testing.T) {
 				git(t, r.Root, "add", "base.txt")
 			case "untracked":
 				write(t, r.Root, "remote.txt", "preserve untracked\n")
-			case "ignored":
-				write(t, r.Root, ".git/info/exclude", "remote.txt\n")
-				write(t, r.Root, "remote.txt", "preserve ignored\n")
 			}
 			snapshot := func() string {
 				var files strings.Builder
@@ -74,15 +71,36 @@ func TestTrackBranchCheckedRejectsChangedTargetWithoutMutation(t *testing.T) {
 			if err == nil {
 				t.Fatal("unsafe remote checkout accepted")
 			}
-			if mode == "invalid" || mode == "empty" || mode == "moved" || mode == "deleted" {
+			switch mode {
+			case "invalid", "empty", "moved", "deleted":
 				if !errors.Is(err, ErrSwitchTargetChanged) {
 					t.Fatalf("unrecognizable changed target: %v", err)
+				}
+			case "dirty", "staged":
+				if !errors.Is(err, ErrDirtyWorkingTree) {
+					t.Fatalf("tracked conflict expected ErrDirtyWorkingTree, got: %v", err)
+				}
+			case "untracked":
+				if !errors.Is(err, ErrUntrackedOverwrite) || errors.Is(err, ErrDirtyWorkingTree) {
+					t.Fatalf("untracked conflict expected ErrUntrackedOverwrite (not ErrDirtyWorkingTree), got: %v", err)
 				}
 			}
 			if after := snapshot(); after != before {
 				t.Fatal("rejected checkout changed HEAD, refs, configuration, index or working bytes")
 			}
 		})
+	}
+}
+
+func TestTrackBranchCheckedAllowsOverwritingIgnoredLikeNativeGit(t *testing.T) {
+	r, sha := checkedTrackFixture(t)
+	write(t, r.Root, ".git/info/exclude", "remote.txt\n")
+	write(t, r.Root, "remote.txt", "ignored local copy\n")
+	if err := r.TrackBranchChecked(context.Background(), "destination", "origin/topic", sha); err != nil {
+		t.Fatalf("track branch should match native git for ignored file: %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(r.Root, "remote.txt")); err != nil || string(b) != "remote tip\n" {
+		t.Fatalf("expected tracked remote.txt after switch, got %q, %v", b, err)
 	}
 }
 

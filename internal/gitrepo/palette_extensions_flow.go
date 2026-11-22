@@ -116,9 +116,6 @@ func (r *Repository) RunFlow(ctx context.Context, q FlowCommand) error {
 		return ErrIntegrationTargetChanged
 	}
 	if q.Action == "init" {
-		if err := r.noIgnored(ctx); err != nil {
-			return err
-		}
 		return r.initPaletteFlow(ctx, q)
 	}
 	if !flowKind(q.Kind) || q.Kind == "support" && (q.Action == "finish" || q.Action == "publish") {
@@ -157,9 +154,6 @@ func (r *Repository) RunFlow(ctx context.Context, q FlowCommand) error {
 		} else {
 			refs = append(refs, q.Base)
 		}
-		if err := r.protectIgnored(ctx, q.Base); err != nil {
-			return err
-		}
 		command = append(command, q.Name, q.Base)
 	case "finish", "rebase", "publish":
 		refs = append(refs, target)
@@ -176,11 +170,6 @@ func (r *Repository) RunFlow(ctx context.Context, q FlowCommand) error {
 			if err := r.checkRemote(ctx, q.Remote.Name, true); err != nil {
 				return err
 			}
-			if err := r.protectIgnored(ctx, target); err != nil {
-				return err
-			}
-		} else if err := r.noIgnored(ctx); err != nil {
-			return err
 		}
 		if q.Action == "finish" {
 			// Finishing is a local operation. AVH otherwise deletes an existing

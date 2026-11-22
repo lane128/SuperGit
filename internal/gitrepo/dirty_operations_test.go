@@ -176,4 +176,60 @@ func TestGitDelegatedDirtyOperations(t *testing.T) {
 			t.Fatalf("CheckoutCommit dropped non-conflicting edit: %q %v", b, err)
 		}
 	})
+
+	t.Run("untracked file collision returns ErrUntrackedOverwrite instead of ErrDirtyWorkingTree", func(t *testing.T) {
+		dir := fixture(t)
+		seed(t, dir)
+		git(t, dir, "switch", "-c", "topic")
+		write(t, dir, "collide.txt", "from topic\n")
+		git(t, dir, "add", "--", "collide.txt")
+		git(t, dir, "commit", "-m", "add collide")
+		topicSHA := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+		git(t, dir, "switch", "main")
+
+		repo := openTest(t, dir)
+		write(t, dir, "collide.txt", "untracked local\n")
+
+		if err := repo.SwitchBranch(ctx, "topic"); !errors.Is(err, ErrUntrackedOverwrite) || errors.Is(err, ErrDirtyWorkingTree) {
+			t.Fatalf("switch untracked collision expected ErrUntrackedOverwrite only, got: %v", err)
+		}
+		if err := repo.Integrate(ctx, "merge", topicSHA); !errors.Is(err, ErrUntrackedOverwrite) || errors.Is(err, ErrDirtyWorkingTree) {
+			t.Fatalf("merge untracked collision expected ErrUntrackedOverwrite only, got: %v", err)
+		}
+		if b, err := os.ReadFile(filepath.Join(dir, "collide.txt")); err != nil || string(b) != "untracked local\n" {
+			t.Fatalf("untracked collision changed local bytes: %q %v", b, err)
+		}
+	})
+
+	t.Run("ignored files do not block rebase or cherry-pick like native git", func(t *testing.T) {
+		dir := fixture(t)
+		seed(t, dir)
+		write(t, dir, ".gitignore", "build/\nignored.txt\n")
+		git(t, dir, "add", ".gitignore")
+		git(t, dir, "commit", "-m", "ignore rules")
+		git(t, dir, "switch", "-c", "topic")
+		write(t, dir, "topic.txt", "topic\n")
+		write(t, dir, "ignored.txt", "tracked in topic\n")
+		git(t, dir, "add", "-f", "--", "topic.txt", "ignored.txt")
+		git(t, dir, "commit", "-m", "topic commit")
+		topicSHA := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+		git(t, dir, "switch", "main")
+		write(t, dir, "main.txt", "main\n")
+		git(t, dir, "add", "--", "main.txt")
+		git(t, dir, "commit", "-m", "main commit")
+		mainSHA := strings.TrimSpace(git(t, dir, "rev-parse", "HEAD"))
+
+		repo := openTest(t, dir)
+		write(t, dir, "build/output.bin", "local build artifact\n")
+		write(t, dir, "ignored.txt", "local ignored copy\n")
+
+		if err := repo.Integrate(ctx, "cherry-pick", topicSHA); err != nil {
+			t.Fatalf("cherry-pick should match native git with ignored files: %v", err)
+		}
+		git(t, dir, "switch", "topic")
+		write(t, dir, "build/output.bin", "local build artifact\n")
+		if err := repo.Integrate(ctx, "rebase", mainSHA); err != nil {
+			t.Fatalf("rebase should match native git with unrelated ignored files: %v", err)
+		}
+	})
 }

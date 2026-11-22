@@ -156,32 +156,10 @@ func (r *Repository) integrate(ctx context.Context, kind, ref string, expected *
 	var args []string
 	switch kind {
 	case "merge":
-		args = []string{"merge", "--no-edit", "--no-autostash", "--no-overwrite-ignore", "--", sha}
+		args = []string{"merge", "--no-edit", "--no-autostash", "--", sha}
 	case "rebase":
-		// Rebase can check out intermediate replay trees, not only its final tree.
-		if err := r.noIgnored(ctx); err != nil {
-			return err
-		}
 		args = []string{"rebase", "--no-autostash", "--", sha}
 	case "cherry-pick", "revert":
-		target := sha
-		if kind == "revert" {
-			parents, e := run(ctx, r.Root, "", "show", "-s", "--format=%P", sha)
-			if e != nil {
-				return e
-			}
-			fields := strings.Fields(parents)
-			if len(fields) == 0 {
-				target = ""
-			} else {
-				target = fields[0]
-			}
-		}
-		if target != "" {
-			if err := r.protectIgnored(ctx, target); err != nil {
-				return err
-			}
-		}
 		args = []string{kind, "--no-edit", sha}
 	default:
 		return errors.New("不支持的整合操作")

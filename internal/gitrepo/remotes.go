@@ -289,7 +289,7 @@ func (r *Repository) PullFF(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = run(ctx, r.Root, "", "merge", "--ff-only", "--no-edit", "--no-autostash", "--no-overwrite-ignore", "--", sha)
+	_, err = run(ctx, r.Root, "", "merge", "--ff-only", "--no-edit", "--no-autostash", "--", sha)
 	return wrapDirtyTreeError(err)
 }
 

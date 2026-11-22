@@ -16,6 +16,13 @@ func (a *app) operationErrorDescription(err error) string {
 		}
 		return guidance
 	}
+	if errors.Is(err, gitrepo.ErrUntrackedOverwrite) {
+		guidance := a.t("untrackedOverwriteGuidance")
+		if err != gitrepo.ErrUntrackedOverwrite {
+			return guidance + "\n\n" + err.Error()
+		}
+		return guidance
+	}
 	var ignored *gitrepo.IgnoredFileError
 	if errors.As(err, &ignored) {
 		key := "ignoredFileGuidance"

@@ -28,7 +28,7 @@ func (r *Repository) PullBranchChecked(ctx context.Context, remote Remote, branc
 	if err := r.checkPullHead(ctx, current); err != nil {
 		return err
 	}
-	_, err := run(ctx, r.Root, "", "merge", "--ff-only", "--no-edit", "--no-autostash", "--no-overwrite-ignore", "--", branch.SHA)
+	_, err := run(ctx, r.Root, "", "merge", "--ff-only", "--no-edit", "--no-autostash", "--", branch.SHA)
 	return wrapDirtyTreeError(err)
 }
 
