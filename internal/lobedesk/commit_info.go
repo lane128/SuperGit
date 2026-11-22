@@ -62,66 +62,76 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 			message := display.Text(c, body, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12)})
 			a.commitMessageLinkMenu(c, message, body, scope)
 		}
-		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-			// The hash gives way when the pane is too narrow for it and the
-			// button together: without the shrink the 40-character SHA at the
-			// large preset pushed the copy button past the pane's edge, where
-			// it was clipped and unreachable.
-			display.Text(c, commit.SHA, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).
-				Font(a.patchFontFamily()).SingleLine().Grow(1).Basis(0).MinWidth(0)
-			// The row menu already copies the SHA, but the reading eye is
-			// here; a copy button beside the hash saves hunting for the row.
-			copySHA := compactActionIcon(c, lucide.Copy(), a.t("copySHA"), buttonNormal, false).Shrink(0)
-			if copySHA.Clicked() {
-				a.copyText(commit.SHA)
-			}
+		ui.Column(c).FillWidth().Gap(2).Children(func() {
+			a.commitSummaryMetadata(c, commit, showTips)
 		})
-		// Author and date share one row. Two full metadata rows cost about
-		// 26px, which in a short pane is a line of the message body; the date
-		// keeps its old value right-aligned, so a long author name elides
-		// instead of pushing it off the edge.
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			display.Text(c, a.t("author"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).Width(54)
-			author := display.Text(c, commit.Author, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).
-				Grow(1).Basis(0).MinWidth(0).SingleLine()
-			// The name gives way to the date when the pane is narrow, so the
-			// tooltip is where the whole name is read. It stays on truncated
-			// text only: a tooltip repeating a name that already fits is noise.
-			author.Description(commit.Author)
-			if showTips {
-				author.Tooltip(commit.Author)
-			}
-			a.commitAuthorMenu(c, author, commit.Author, commit.AuthorEmail)
-			dateText := formatDateTime(commit.Date)
-			date := display.Text(c, dateText, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).
-				Shrink(0).SingleLine()
-			a.commitDateMenu(c, date, dateText)
+	})
+}
+
+func (a *app) commitSummaryMetadata(c *ui.Context, commit gitrepo.Commit, showTips bool) {
+	// Use the tallest single-line control as a floor, not a fixed height:
+	// wrapped identities and multiple parents must still be able to grow.
+	rowHeight := max(float32(24), scaledFont(24))
+	field := func(label string, values func()) {
+		ui.Row(c).FillWidth().MinHeight(rowHeight).Gap(8).AlignItems(ui.Center).Children(func() {
+			display.Text(c, label, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).Width(scaledFont(54)).Shrink(0)
+			ui.Row(c).Grow(1).Basis(0).MinWidth(0).Gap(4).AlignItems(ui.Center).Children(values)
 		})
-		// Git verified the signature (or failed to). Unsigned commits get no
-		// row at all: a badge saying "unsigned" on every ordinary commit would
-		// be noise, and the reader asked for signed history by signing.
-		if sig := a.commitSig; sig.Signed() {
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-				display.Tag(c, a.signatureLabel(sig.Status), display.TagProps{
-					Variant: display.TagFilled,
-					Color:   display.TagColor(signatureTagColor(sig.Status)),
-					Size:    theme.Small,
-					Round:   true,
-					Icon:    signatureIcon(sig.Status),
-				}).Shrink(0)
-				if sig.Signer != "" {
-					signer := display.Text(c, sig.Signer, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).
-						Grow(1).Basis(0).MinWidth(0).SingleLine()
-					signer.Description(sig.Signer)
-					if showTips {
-						signer.Tooltip(sig.Signer)
-					}
-				}
-			})
+	}
+	field(a.t("summaryHash"), func() {
+		// Natural width keeps Copy next to the hash; only the text shrinks.
+		hash := display.Text(c, commit.SHA, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).
+			Font(a.patchFontFamily()).SingleLine().Shrink(1).MinWidth(0).Description(commit.SHA)
+		if showTips {
+			hash.Tooltip(commit.SHA)
 		}
-		if len(commit.Parents) > 0 {
-			ui.Row(c).FillWidth().Gap(8).Wrap().AlignItems(ui.Center).Children(func() {
-				display.Text(c, a.t("parent"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).Width(54)
+		if compactActionIcon(c, lucide.Copy(), a.t("copySHA"), buttonNormal, false).Shrink(0).Clicked() {
+			a.copyText(commit.SHA)
+		}
+	})
+	field(a.t("author"), func() {
+		identity := commit.Author
+		if commit.AuthorEmail != "" {
+			identity += "<" + commit.AuthorEmail + ">"
+		}
+		author := display.Text(c, identity, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).
+			MinWidth(0).Shrink(1).Description(identity)
+		if showTips {
+			author.Tooltip(identity)
+		}
+		a.commitAuthorMenu(c, author, commit.Author, commit.AuthorEmail)
+	})
+	field(a.t("summaryDate"), func() {
+		dateText := formatDateTime(commit.Date)
+		date := display.Text(c, dateText, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).MinWidth(0).Shrink(1)
+		a.commitDateMenu(c, date, dateText)
+	})
+	// Git verified the signature (or failed to). Unsigned commits get no
+	// row at all: a badge saying "unsigned" on every ordinary commit would
+	// be noise, and the reader asked for signed history by signing.
+	if sig := a.commitSig; sig.Signed() {
+		ui.Row(c).MinHeight(rowHeight).Gap(6).AlignItems(ui.Center).Children(func() {
+			display.Tag(c, a.signatureLabel(sig.Status), display.TagProps{
+				Variant: display.TagFilled,
+				Color:   display.TagColor(signatureTagColor(sig.Status)),
+				Size:    theme.Small,
+				Round:   true,
+				Icon:    signatureIcon(sig.Status),
+			}).Shrink(0)
+			if sig.Signer != "" {
+				signer := display.Text(c, sig.Signer, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).
+					Grow(1).Basis(0).MinWidth(0).SingleLine()
+				signer.Description(sig.Signer)
+				if showTips {
+					signer.Tooltip(sig.Signer)
+				}
+			}
+		})
+	}
+	if len(commit.Parents) > 0 {
+		field(a.t("parent"), func() {
+			tk := theme.TokensOf(c)
+			ui.Row(c).FillWidth().Gap(12).Wrap().AlignItems(ui.Center).Children(func() {
 				for i, parent := range commit.Parents {
 					sha := parent
 					if a.selectedStash != "" && i > 0 {
@@ -129,8 +139,16 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 						display.Text(c, shortSHA(sha), display.TextProps{Code: true, FontSize: scaledFont(11)}).Font(a.patchFontFamily()).Tooltip(sha)
 						continue
 					}
-					button := workbenchButton(c, shortSHA(sha), buttonNormal, false).Shrink(0)
-					if button.Clicked() {
+					// Empty URL: this is history navigation, not an external link.
+					link := ui.Link(c.Key(sha), shortSHA(sha), "").Font(a.patchFontFamily()).FontSize(scaledFont(11)).
+						SingleLine().Shrink(0).Underline().TextColor(tk.Link).FocusRing(true).FocusRingColor(tk.Link).Description(sha)
+					if link.Hovered() {
+						link.TextColor(tk.LinkHover)
+					}
+					if showTips {
+						link.Tooltip(sha)
+					}
+					if link.Clicked() {
 						if a.selectedStash != "" {
 							a.showCommit(sha)
 						} else {
@@ -139,8 +157,8 @@ func (a *app) commitInfoContent(c *ui.Context, commit gitrepo.Commit, tk *theme.
 					}
 				}
 			})
-		}
-	})
+		})
+	}
 }
 
 // Keep the first row compact even for release commits with many tags. The

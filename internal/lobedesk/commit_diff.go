@@ -1,6 +1,9 @@
 package lobedesk
 
 import (
+	"context"
+	"errors"
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -52,12 +55,62 @@ type commitHiddenSel struct {
 // resetCommitDiff drops the loaded patches and their sections together, so no
 // frame draws rows of a commit that is no longer selected.
 func (a *app) resetCommitDiff() {
+	if a.commitFileReadCancel != nil {
+		a.commitFileReadCancel()
+		a.commitFileReadCancel = nil
+	}
+	a.commitDiffByFile, a.commitFileTooLarge = false, false
 	a.commitDiff = gitrepo.Diff{}
 	a.commitSections = nil
 	a.detailContexts.History.patchWidths = historyPatchWidthCache{}
 	// Row indexes only mean anything against the patch they came from, so the
 	// selections a closed section remembers go with it.
 	a.commitCollapsedSel = nil
+}
+
+// The summary of an oversized commit keeps its metadata and file list. File
+// tabs read a single patch and release it when the reader changes tabs.
+func (a *app) loadLargeCommitTab() {
+	a.resetCommitDiff()
+	a.clearCommitSelection()
+	a.commitDiffByFile = true
+	a.commitDiffLoading, a.commitDiffErr = false, ""
+	tab := a.detailTabs().Active
+	if tab.Summary {
+		return
+	}
+	path := tab.File.Path
+	i := slices.IndexFunc(a.commitFiles, func(f gitrepo.ChangedFile) bool { return f.Path == path })
+	if i < 0 {
+		return
+	}
+	a.commitPath = path
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.commitFileReadCancel = cancel
+	a.commitDiffLoading = true
+	repo, sha, seq := a.repo, a.selectedSHA, a.commitSeq
+	file, ignoreWhitespace := a.commitFiles[i], a.ignoreDiffWhitespace
+	go func() {
+		files, err := repo.DisplayCommitFileDiff(ctx, sha, file, ignoreWhitespace)
+		a.hopToMain(func() {
+			defer cancel()
+			if ctx.Err() != nil || seq != a.commitSeq || a.repo != repo || a.selectedSHA != sha || a.worktreeSelected || a.selectedStash != "" || a.detailTabs().Active != tab {
+				return
+			}
+			a.commitFileReadCancel = nil
+			a.commitDiffLoading = false
+			switch {
+			case errors.Is(err, gitrepo.ErrDiffPreviewLimit):
+				a.commitFileTooLarge = true
+			case err != nil:
+				a.commitDiffErr = err.Error()
+			default:
+				a.commitDiff, a.commitSections = buildCommitDiff(files)
+				addSubmoduleNoBlame(a.commitNoBlame, a.commitSections)
+			}
+			a.invalidate()
+		})
+	}()
 }
 
 // buildCommitDiff joins the files' patches into one diff and records where each

@@ -121,6 +121,10 @@ func (a *app) previewWorkspaceSelection(ref fileRef) {
 	a.diffLoading = false
 	a.diffErr = ""
 	a.clearLineSelection()
+	if a.worktreeSelected {
+		a.activateDetailTab(detailTabKey{Summary: true})
+		return
+	}
 	a.invalidate()
 }
 
@@ -172,11 +176,22 @@ func (a *app) reconcileWorkspaceSelection() {
 			}
 		}
 	}
+	previous := s.Files
 	s.Files = retained
 	if !retained[s.Anchor] {
 		s.Anchor = first
 	}
 	a.workspaceSelection = s
+	var active fileRef
+	if a.worktreeSelected {
+		file := a.detailTabs().Active.File
+		active = fileRef{file.Path, file.Staged}
+		if active.path != "" && !previous[active] {
+			// The reader opened this tab independently of the Files selection.
+			// reconcileWorktreeTabs checks its version against the full status.
+			return
+		}
+	}
 	if !retained[fileRef{a.selectedPath, a.selectedStaged}] {
 		// Refresh is background reconciliation, not a request to activate a
 		// file tab. The normal tab reconciliation preserves Summary/focus.
@@ -187,11 +202,10 @@ func (a *app) reconcileWorkspaceSelection() {
 		a.diffErr = ""
 		a.clearLineSelection()
 	}
-	if a.worktreeSelected && a.detailTabShown() == detailTabFile {
-		active := a.detailTabs().Active.File
+	if active.path != "" {
 		if len(retained) == 0 {
 			a.activateDetailTab(detailTabKey{Summary: true})
-		} else if !retained[fileRef{active.Path, active.Staged}] {
+		} else if !retained[active] {
 			// Keep an already visible file preview inside the surviving set;
 			// Summary is never activated as a file by background reconciliation.
 			a.previewWorkspaceFile(a.selectedPath, a.selectedStaged)

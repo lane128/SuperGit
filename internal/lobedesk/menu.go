@@ -15,6 +15,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/field"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
+	"github.com/lobehub/lobe-mygo/pkg/motion"
 	"github.com/lobehub/lobe-mygo/pkg/overlay"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 	"supergit/internal/gitrepo"
@@ -551,7 +552,7 @@ func historyFilterFor(key string, commit gitrepo.Commit, now time.Time) (query s
 }
 
 func (a *app) commitMenu(c *ui.Context, row ui.Element, commit gitrepo.Commit) {
-	action := overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: a.commitMenuItems(commit)})
+	action := a.commitMenuChoice(c, row, commit)
 	if name, ok := strings.CutPrefix(action, commitBranchCheckoutPrefix); ok {
 		a.switchBranchAt(name, commit.SHA)
 		return
@@ -604,6 +605,68 @@ func (a *app) commitMenu(c *ui.Context, row ui.Element, commit gitrepo.Commit) {
 			})
 		})
 	}
+}
+
+func (a *app) commitMenuChoice(c *ui.Context, row ui.Element, commit gitrepo.Commit) string {
+	open := ui.Local(row, "contextMenu", func() bool { return false })
+	menu := ui.ContextMenuBase(c, row, open)
+	chosen := ""
+	menu.Popup(func(panel ui.Element) {
+		tk := theme.TokensOf(c)
+		items := a.commitMenuItems(commit)
+		const padding, dividerGap = 4, 4
+		const windowMargin = 4 // MyGo keeps attached panels this far from each window edge.
+		dividers := 0
+		for _, item := range items {
+			if item.Divider {
+				dividers++
+			}
+		}
+		_, height := c.Size()
+		// Keep the usual 32 pt rows when they fit. Below 28 pt, let the
+		// native menu scroll instead of shrinking its pointer targets further.
+		rowSpace := height - 2*(windowMargin+padding) - float32(dividers*(1+2*dividerGap))
+		rowHeight := max(28, min(32, rowSpace/float32(len(items)-dividers)))
+		panel.Padding(padding).Radius(tk.BorderRadius).MinWidth(220).
+			Background(tk.BgElevated).Transition(motion.Popup()).AttachedOrigin()
+		tk.Elevate(panel, theme.BoxShadowSecondary)
+		panel.Children(func() {
+			for i, item := range items {
+				if item.Divider {
+					ui.Box(c.Key(i)).Height(1).Margin(dividerGap, 0).AlignSelf(ui.Stretch).Background(tk.Border)
+					continue
+				}
+				button := menu.Item().Disabled(item.Disabled).MinHeight(rowHeight).
+					Padding(4, 12).AlignSelf(ui.Stretch).Radius(tk.BorderRadiusSM).FontSize(14)
+				fg, icon := tk.Text, tk.TextSecondary
+				if item.Danger {
+					fg, icon = tk.Error, tk.Error
+				}
+				switch {
+				case item.Disabled:
+					fg, icon = tk.TextDisabled, tk.TextDisabled
+					button.Opacity(0.5)
+				case button.Pressed():
+					button.Background(tk.FillSecondary)
+				case button.Highlighted() && item.Danger:
+					button.Background(tk.ErrorBg)
+				case button.Highlighted():
+					button.Background(tk.FillTertiary)
+				}
+				button.TextColor(fg).AlignItems(ui.Center).Children(func() {
+					ui.Icon(c, item.Icon).FontSize(14).TextColor(icon).Margin(0, 12, 0, 0)
+					ui.Text(c, item.Label).Grow(1).SingleLine()
+					if item.Extra != "" {
+						ui.Text(c, item.Extra).Font("monospace").FontSize(12).TextColor(tk.TextTertiary).Padding(0, 0, 0, 16).SingleLine()
+					}
+				})
+				if button.Clicked() && !item.Disabled {
+					chosen = item.Key
+				}
+			}
+		})
+	})
+	return chosen
 }
 
 // commitBranchCheckoutPrefix marks a commit-menu item that checks out a branch
@@ -667,11 +730,8 @@ func (a *app) commitMenuItems(commit gitrepo.Commit) []overlay.MenuItem {
 		}
 		items = append(items, item)
 	default:
-		// A commit can sit on a dozen branches, and a menu that lists every one
-		// of them grows past a small window, where the rows after it -- tags,
-		// cherry-pick, reset -- become unreachable: the menu neither scrolls nor
-		// shrinks. So the list stays one row and the branches are picked in a
-		// searchable dialog instead.
+		// Keep branch count out of the menu height. The searchable picker
+		// lists all branches pointing at this commit.
 		items = append(items, overlay.MenuItem{
 			Key:      commitBranchPickerKey,
 			Label:    a.t("checkoutBranches"),

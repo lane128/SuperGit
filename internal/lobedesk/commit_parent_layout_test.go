@@ -25,7 +25,7 @@ func TestCommitParentsRemainReachableInNarrowSummary(t *testing.T) {
 					ui.Column(c).Fill().Children(func() { a.commitInfoContent(c, commit, theme.TokensOf(c)) })
 				}, 292, 640)
 				for _, sha := range commit.Parents {
-					link, ok := tt.AccessByRole(ui.RoleButton, shortSHA(sha))
+					link, ok := tt.AccessByRole(ui.RoleLink, shortSHA(sha))
 					if !ok || link.Offscreen || link.Bounds.X < 14 || link.Bounds.X+link.Bounds.W > 279 || link.Bounds.Y+link.Bounds.H > 640 {
 						t.Errorf("parent %s is outside the summary content: %+v", sha, link)
 					}

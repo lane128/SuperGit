@@ -84,7 +84,7 @@ func (a *app) loadMoreHistory() {
 			a.historyMore = page.HasMore
 			if !a.historyMore {
 				previous := a.selectedSHA
-				a.reconcileSelection()
+				a.reconcileHistorySelection()
 				a.refreshSelectedCommit = gitrepo.Commit{}
 				if a.selectedSHA != previous && a.selectedSHA != "" {
 					a.loadCommitDetail(true)
@@ -1431,6 +1431,18 @@ func changedFileCode(status string) string {
 
 func (a *app) commitDiffView(c *ui.Context) {
 	switch {
+	case a.commitDiffByFile && (a.detailTabs().Active.Summary || a.commitFileTooLarge):
+		title, hint := "largeCommitDiff", "largeCommitChooseFile"
+		if a.commitFileTooLarge {
+			title, hint = "largeCommitFileDiff", "largeCommitExportFile"
+		} else if a.detailsChangesHidden {
+			hint = "largeCommitShowFiles"
+		}
+		ui.Column(c).FillWidth().Padding(8, 12).Gap(4).Children(func() {
+			display.Text(c, a.t(title), display.TextProps{FontSize: scaledFont(12)}).FillWidth()
+			display.Text(c, a.t(hint), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).FillWidth()
+		})
+		return
 	case a.commitDiffLoading:
 		a.diffPlaceholder(c, lucide.LoaderCircle(), a.t("diffLoading"))
 		return
@@ -1450,7 +1462,12 @@ func (a *app) commitDiffView(c *ui.Context) {
 			// A failed patch used to be a dead end: tapping the same commit
 			// again returned because its files were already loaded.
 			if workbenchButton(c, a.t("retry"), buttonNormal, false).Clicked() {
-				a.loadCommitDetail(true)
+				if a.commitDiffByFile {
+					a.loadLargeCommitTab()
+					a.invalidate()
+				} else {
+					a.loadCommitDetail(true)
+				}
 			}
 		})
 		return

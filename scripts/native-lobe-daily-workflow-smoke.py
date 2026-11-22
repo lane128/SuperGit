@@ -263,14 +263,29 @@ try:
     same(git('rev-parse', 'HEAD'), initial_head, 'Refresh changed HEAD')
     same(git('ls-files', '--stage'), initial_index, 'Refresh changed Index')
     same(file.read_bytes(), working_bytes, 'Refresh changed worktree')
-    text = snapshot()
-    assert 'value=' + json.dumps(summary) in text and 'value=' + json.dumps(body) in text, 'Refresh lost draft'
+    message = control('textField', 'Commit message')
+    assert 'value=' + json.dumps(summary + '\n\n' + body) in message[3], 'Refresh lost draft'
     evidence(step)
     note('open by fixture path, external save/watch and Refresh update Diff without Git writes or draft/focus loss')
 
     step = '02-stage-alpha'
     select_and_apply('2 Added line', False, alpha_bytes)
     note('UI partial stage ALPHA only; exact Index blob and unselected BETA/working bytes verified')
+    step = '02b-inspect-both-versions'
+    select_version(False)
+    index_before_browsing = git('ls-files', '--stage')
+    for version, baseline, addition in [('Staged', 'HEAD → Index', '+ALPHA'),
+                                        ('Unstaged', 'Index → Working tree', '+BETA')]:
+        press('toggleButton', version)
+        wait(baseline)
+        wait(addition)
+        assert 'checked' in control('toggleButton', version)[3], 'Wrong file version selected'
+        evidence(step + '-' + version.lower())
+    same(git('ls-files', '--stage'), index_before_browsing, 'Browsing changed Index')
+    same(git('rev-parse', 'HEAD'), initial_head, 'Browsing changed HEAD')
+    same(file.read_bytes(), working_bytes, 'Browsing changed worktree')
+    note('file header reads staged ALPHA and unstaged BETA without Git writes')
+
     step = '03-stage-beta'
     select_and_apply('4 Added line', False, working_bytes)
     note('UI partial stage BETA; exact Index now contains both additions')

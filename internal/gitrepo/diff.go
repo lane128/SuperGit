@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -183,6 +184,27 @@ func (r *Repository) ShowAll(ctx context.Context, sha string) ([]FileDiff, error
 }
 
 func (r *Repository) DisplayCommitDiff(ctx context.Context, sha string, ignoreWhitespace bool) ([]FileDiff, error) {
+	return r.readCommitDiff(ctx, sha, ignoreWhitespace, nil)
+}
+
+// ErrDiffPreviewLimit means a successful Git read exceeded the preview budget.
+var ErrDiffPreviewLimit = errors.New("差异超过 4 MiB 预览上限")
+
+// DisplayCommitFileDiff uses the same baseline and display options as the
+// combined patch, but applies the preview budget to just the selected file.
+func (r *Repository) DisplayCommitFileDiff(ctx context.Context, sha string, file ChangedFile, ignoreWhitespace bool) ([]FileDiff, error) {
+	if err := r.path(file.Path); err != nil {
+		return nil, err
+	}
+	if file.OriginalPath != "" {
+		if err := r.path(file.OriginalPath); err != nil {
+			return nil, err
+		}
+	}
+	return r.readCommitDiff(ctx, sha, ignoreWhitespace, &file)
+}
+
+func (r *Repository) readCommitDiff(ctx context.Context, sha string, ignoreWhitespace bool, file *ChangedFile) ([]FileDiff, error) {
 	if !oidRE.MatchString(sha) {
 		return nil, fmt.Errorf("无效的提交 SHA")
 	}
@@ -199,11 +221,35 @@ func (r *Repository) DisplayCommitDiff(ctx context.Context, sha string, ignoreWh
 	if ignoreWhitespace {
 		args = append(args, "--ignore-all-space")
 	}
+	args = append(args, "--src-prefix=a/", "--dst-prefix=b/")
+	if file != nil {
+		// Literal pathspecs still match descendants. For a file/directory
+		// replacement keep the other side's children out of the byte budget.
+		switch {
+		case file.Status == "A", file.Status == "D":
+			args = append(args, "--diff-filter="+file.Status)
+		case strings.HasPrefix(file.Status, "R"):
+			args = append(args, "-M", "--diff-filter=R")
+		case strings.HasPrefix(file.Status, "C"):
+			args = append(args, "-C", "--find-copies-harder", "--diff-filter=C")
+		}
+		args = append(args, "--", file.Path)
+		if file.OriginalPath != "" && file.OriginalPath != file.Path {
+			args = append(args, file.OriginalPath)
+		}
+	}
 	out, err := run(ctx, r.Root, "", args...)
+	if errors.Is(err, errOutputTruncated) {
+		return nil, ErrDiffPreviewLimit
+	}
 	if err != nil {
 		return nil, err
 	}
-	return splitFileDiffs(out), nil
+	diffs := splitFileDiffs(out)
+	if file != nil {
+		diffs = slices.DeleteFunc(diffs, func(d FileDiff) bool { return d.Path != file.Path })
+	}
+	return diffs, nil
 }
 
 // splitFileDiffs cuts a multi-file patch into one Diff per file. Each section

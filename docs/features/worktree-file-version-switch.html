@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>文件差异版本</title>
+<style>
+/* A local detail-pane study showing the same file before and after partial staging. */
+:root{--bg:#f6f8fa;--panel:#fff;--ink:#24292f;--muted:#59636e;--rule:#d1d9e0;--active:#0969da;--wash:#ddf4ff;--addition:#dafbe1;--ui:system-ui,sans-serif;--code:'JetBrains Mono',Menlo,monospace;color-scheme:light}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161b22;--panel:#0d1117;--ink:#e6edf3;--muted:#a7b0bb;--rule:#3d444d;--active:#79c0ff;--wash:#132e49;--addition:#173621;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#161b22;--panel:#0d1117;--ink:#e6edf3;--muted:#a7b0bb;--rule:#3d444d;--active:#79c0ff;--wash:#132e49;--addition:#173621;color-scheme:dark}
+*{box-sizing:border-box}body{margin:auto;max-width:840px;padding-block:32px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:var(--bg);color:var(--ink);font:15px/1.5 var(--ui)}h1{font-size:22px}h2{font-size:15px;margin:24px 0 6px}p{color:var(--muted)}article{background:var(--panel);border:1px solid var(--rule);border-radius:6px;overflow:hidden}.head,.versions{padding:6px 12px;display:flex;align-items:center;gap:6px}.identity{min-width:0;flex:1}.identity strong{font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.identity small{display:block;color:var(--muted)}.versions{padding-top:0}.control,.version{font-size:12px;border:1px solid var(--rule);border-radius:5px;padding:2px 8px;background:var(--bg);white-space:nowrap}.chosen{background:var(--wash);color:var(--active);border-color:var(--active)}pre{margin:0;border-top:1px solid var(--rule);overflow:auto;background:var(--addition);font:13px/1.8 var(--code);padding:7px 12px}.narrow{max-width:300px}
+</style></head><body><h1>文件差异版本</h1><p>本地 UI 设计记录 · 工作树文件详情。示例文件有一处解析修复和一条调试日志。</p>
+<h2>选中修复片段</h2><article><div class="head"><div class="identity"><strong>src/parser.go</strong><small>暂存区 → 工作树</small></div><span class="control">暂存文件</span></div><pre>+ input = strings.TrimSpace(input)
+⋯
++ log.Print(input)</pre></article>
+<h2>只暂存修复后，继续看未暂存的日志</h2><article><div class="head"><div class="identity"><strong>src/parser.go</strong><small>暂存区 → 工作树</small></div><span class="control">暂存文件</span></div><div class="versions"><span class="version chosen">未暂存</span><span class="version">已暂存</span></div><pre>+ log.Print(input)</pre></article>
+<h2>在窄栏查看已暂存的修复</h2><article class="narrow"><div class="head"><div class="identity"><strong>src/parser.go</strong><small>HEAD → 暂存区</small></div><span class="control">取消暂存</span></div><div class="versions"><span class="version">未暂存</span><span class="version chosen">已暂存</span></div><pre>+ input = strings.TrimSpace(input)</pre></article>
+<p>双版本时在原文件头下增加一行原生版本按钮。两项始终按「未暂存、已暂存」排列，选中项有选中态，键盘可聚焦并激活。独立行给窄栏和大字号预留空间。单版本、冲突和历史提交沿用原布局。示意仅绘出与本次交互相关的控件。</p></body></html>

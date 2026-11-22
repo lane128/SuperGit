@@ -34,7 +34,7 @@ func TestCommitAuthorIdentityMenuCopiesCapturedAuthor(t *testing.T) {
 				theme.Apply(c)
 				ui.Column(c).Fill().Children(func() { a.commitInfoContent(c, commit, theme.TokensOf(c)) })
 			}, 480, 360)
-			author, ok := tt.Find(commit.Author)
+			author, ok := tt.Find(commit.Author + "<" + email + ">")
 			if !ok {
 				t.Fatal("author missing")
 			}

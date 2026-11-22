@@ -104,8 +104,8 @@ func TestHistorySummaryKeepsCommitReadableWithManyRefsOnResize(t *testing.T) {
 		if !found || bodyBounds.W <= 0 || bodyBounds.H <= 0 || bodyBounds.Y+bodyBounds.H > height {
 			t.Errorf("at %d × %d the short message is outside the initial Summary viewport: %+v", width, height, bodyBounds)
 		}
-		for _, label := range []string{a.t("copySHA"), parent} {
-			node, ok := view.AccessByRole(ui.RoleButton, label)
+		for label, role := range map[string]ui.Role{a.t("copySHA"): ui.RoleButton, parent: ui.RoleLink} {
+			node, ok := view.AccessByRole(role, label)
 			if !ok || node.Offscreen || node.Disabled || node.Bounds.Y+node.Bounds.H > height {
 				t.Errorf("at %d × %d Summary action %q is outside the initial viewport: %+v", width, height, label, node)
 			}

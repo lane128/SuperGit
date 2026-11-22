@@ -98,8 +98,6 @@ with tempfile.TemporaryDirectory(prefix="supergit-menu-access.") as directory:
                     raise RuntimeError("native automation unavailable")
                 time.sleep(0.05)
             auto("open", "--socket", str(socket))
-            auto("wait", "--text", "Commit message", "--timeout", "30s", "--settle")
-            auto("key", "cmd+1", "--settle")
             auto("wait", "--text", "Menu access fixture", "--timeout", "20s", "--settle")
             auto("press", history_row(), "--settle")
             auto("wait", "--text", "Complete menu source body", "--timeout", "20s", "--settle")
@@ -108,14 +106,18 @@ with tempfile.TemporaryDirectory(prefix="supergit-menu-access.") as directory:
             (artifacts / "menu.snapshot.txt").write_text(text)
             auto("screenshot", str(artifacts / "menu.png"))
             items = entries(text, "menuItem")
+            bounds_pattern = r"bounds=([-0-9.]+),([-0-9.]+),([0-9.]+)x([0-9.]+)"
+            panel = next(line for line in text.splitlines() if "[menu] " in line)
+            left, top, width, height = map(float, re.search(bounds_pattern, panel).groups())
+            assert 0 <= left < left + width <= 980.1 and 0 <= top < top + height <= 640.1, panel
             outside = []
             for _, label, details in items:
-                match = re.search(r"bounds=([-0-9.]+),([-0-9.]+),([0-9.]+)x([0-9.]+)", details)
+                match = re.search(bounds_pattern, details)
                 assert match, (label, details)
                 x, y, w, h = map(float, match.groups())
-                if "offscreen" in details or x < 0 or y < 0 or x + w > 980.1 or y + h > 640.1:
+                if "offscreen" in details or x < left or y < top or x + w > left + width + 0.1 or y + h > top + height + 0.1:
                     outside.append({"label": label, "bounds": [x, y, w, h]})
-            assert not outside, f"Menu items outside 980x640: {outside}"
+            assert not outside, f"Items clipped by menu panel {panel}: {outside}"
             enabled = {e[1] for e in items if "disabled" not in e[2]}
             reached = set()
             for _ in range(len(enabled) + 1):
@@ -233,12 +235,12 @@ with tempfile.TemporaryDirectory(prefix="supergit-menu-access.") as directory:
                     time.sleep(0.05)
 
             parent_sha = git("rev-parse", "HEAD^").decode().strip()
-            parent_control = wait_control("button", parent_sha[:8], ready=True)
+            parent_control = wait_control("link", parent_sha[:8], ready=True)
             auto("act", parent_control[0], "scrollIntoView", "--settle")
-            parent_control = wait_control("button", parent_sha[:8], ready=True)
+            parent_control = wait_control("link", parent_sha[:8], ready=True)
             assert "offscreen" not in parent_control[2], parent_control
             auto("screenshot", str(artifacts / "parent-navigation.png"))
-            coordinate_click("button", parent_sha[:8])
+            coordinate_click("link", parent_sha[:8])
             deadline = time.monotonic() + 25
             while not any(e[1] == "Earlier filter exclusion" and "checked" in e[2]
                           for e in entries(snapshot(), "listItem")):

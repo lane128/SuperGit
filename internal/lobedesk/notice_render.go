@@ -86,17 +86,24 @@ func (a *app) noticeCard(c *ui.Context, tk *theme.Tokens, toast ui.Toast, height
 		body = ui.Column(c).Shrink(0).Opacity(root.AnimateTo("content", shown, noticeFadeAnimation))
 		body.Children(func() {
 			ui.Row(c).Padding(12, 16).Gap(10).AlignItems(ui.Start).Children(func() {
+				// Align the title and status glyph to the close control, not to
+				// the middle of the whole card when a description or action follows.
+				headerHeight := scaledFont(workbenchButtonBaseHeight)
 				icon, ink := noticeIcon(tk, toast.Type)
-				ui.Icon(c, icon).FontSize(scaledFont(16)).TextColor(ink).Shrink(0).Margin(5, 0, 0, 0).AccessHidden(true)
+				ui.Column(c).Height(headerHeight).Shrink(0).Justify(ui.Center).Children(func() {
+					ui.Icon(c, icon).FontSize(scaledFont(16)).TextColor(ink).AccessHidden(true)
+				})
 				ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(6).Children(func() {
 					ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
 						text := toast.Title
 						if text == "" {
 							text = toast.Description
 						}
-						ui.Text(c, text).FontWeight(500).Grow(1).Basis(0).MinWidth(0)
+						ui.Column(c).MinHeight(headerHeight).Grow(1).Basis(0).MinWidth(0).Justify(ui.Center).Children(func() {
+							ui.Text(c, text).FontWeight(500)
+						})
 						close := styleWorkbenchButton(c, parts.CloseButton(), buttonNormal, false, false).
-							Width(scaledFont(29)).PaddingX(0).Label(a.t("close")).Shrink(0)
+							Width(headerHeight).PaddingX(0).Label(a.t("close")).Shrink(0)
 						close.Children(func() { ui.Icon(c, lucide.X()).FontSize(scaledFont(14)) })
 					})
 					if toast.Title != "" && toast.Description != "" {

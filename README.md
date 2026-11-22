@@ -2,9 +2,9 @@
 
 使用 Go + MyGo 原生 GPU UI 的 Git 桌面客户端。当前面向 macOS Apple Silicon，直接调用真实仓库与系统 Git，支持中英文界面，无 WebView。
 
-核心能力包括：同窗口多仓库标签、历史提交 DAG 与分支筛选、工作区与历史四列标签式详情、统一 / 左右分栏补丁视图、文件 / 片段 / 单行暂存与丢弃、图片变更对比、提交与 Amend、分支 / 远端 / 标签 / Stash / Worktree / Submodule 管理、Merge / Rebase / Cherry-pick / Revert / Reset、内置文本冲突编辑器与残留冲突标记保护、文件 Blame、命令面板，以及浅色 / 深色主题与独立界面 / 代码字体设置。`design/` 保留产品设计原型。
+核心能力包括：同窗口多仓库标签、历史提交 DAG 与分支筛选、工作区与历史四列标签式详情、统一 / 左右分栏补丁视图、文件 / 片段 / 单行暂存与丢弃、图片变更对比、提交与 Amend、分支 / 远端 / 标签 / Stash / Worktree / Submodule 管理、Merge / Rebase / Cherry-pick / Revert / Reset、内置文本冲突编辑器与残留冲突标记保护、文件 Blame、命令面板，以及浅色 / 深色主题与独立界面 / 代码字体设置。
 
-新版工作台设计见 [布局对比 PDF](design/workbench-redesign/SuperGit-Design-Variants.pdf)、[UI 开发规范](design/workbench-redesign/UI-Spec.md) 和 [设计交接目录](design/workbench-redesign/README.md)。
+设计原型保存在本机 `design/` 目录。工作台功能和操作见[命令映射](docs/workbench-command-map.md)。
 
 ## 运行
 

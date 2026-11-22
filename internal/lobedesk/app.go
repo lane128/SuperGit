@@ -363,10 +363,13 @@ type app struct {
 	// commitSig is Git's verdict on the selected commit's signature, fetched
 	// apart from the files and the message because verifying a signature can
 	// take a moment and must not hold up the rest of the details.
-	commitSig         gitrepo.Signature
-	commitDiff        gitrepo.Diff
-	commitDiffLoading bool
-	commitDiffErr     string
+	commitSig            gitrepo.Signature
+	commitDiff           gitrepo.Diff
+	commitDiffLoading    bool
+	commitDiffErr        string
+	commitDiffByFile     bool // The combined patch exceeds the preview budget.
+	commitFileTooLarge   bool
+	commitFileReadCancel context.CancelFunc
 	// commitSections split the commit's stacked diff into one section per
 	// file; commitCollapsed records the sections the reader closed. The diff
 	// holds every file's lines, so the selection and copy work across the
@@ -1193,7 +1196,10 @@ func (a *app) reconcileSelection() {
 	}
 
 	a.reconcileWorkspaceSelection()
+	a.reconcileHistorySelection()
+}
 
+func (a *app) reconcileHistorySelection() {
 	if a.selectedStash != "" {
 		found := false
 		for _, stash := range a.stashes {
@@ -1481,6 +1487,9 @@ func (a *app) loadCommitDetail(force bool) {
 		keepPath = ""
 	}
 	filterPath := a.fileFilter
+	if a.commitDiffByFile {
+		a.resetCommitDiff()
+	}
 	a.commitFilesLoading = true
 	a.commitFilesErr = ""
 	a.commitDiffErr = ""
@@ -1540,7 +1549,9 @@ func (a *app) loadCommitDetail(force bool) {
 				a.commitNoBlameSHA = sha
 				a.commitFilesLoaded = true
 				a.commitPath = path
-				if diffErr != nil {
+				if errors.Is(diffErr, gitrepo.ErrDiffPreviewLimit) {
+					a.loadLargeCommitTab()
+				} else if diffErr != nil {
 					a.commitDiffErr = diffErr.Error()
 				} else {
 					a.commitDiff, a.commitSections = buildCommitDiff(diffs)
@@ -1557,8 +1568,7 @@ func (a *app) loadCommitDetail(force bool) {
 	}()
 }
 
-// selectCommitFile opens or activates a file tab. The commit's patches are
-// already loaded, so opening the tab costs no additional Git command.
+// selectCommitFile opens or activates a file tab.
 func (a *app) selectCommitFile(path string) {
 	if a.repo == nil || a.currentDetailContext().CommitSHA == "" || path == "" {
 		return

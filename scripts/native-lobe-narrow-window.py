@@ -11,6 +11,7 @@ Asserts the narrow window's three open points:
 Uses disposable Git data and an isolated HOME; the user's settings,
 repositories and installed application are untouched.
 """
+import argparse
 import hashlib
 import json
 import os
@@ -21,6 +22,9 @@ import subprocess
 import tempfile
 import time
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--summary-only', action='store_true', help='Check the commit Summary layout without changing the clipboard or applying a stash.')
+args = parser.parse_args()
 project = pathlib.Path(__file__).resolve().parents[1]
 build = project / "build"
 automation = build / "mygo-automation"
@@ -153,6 +157,52 @@ with tempfile.TemporaryDirectory(prefix="supergit-narrow-window.") as directory:
             stash = [e for e in found if e[1] == "listItem" and "Fixture stash" in e[2] and "offscreen" not in e[3]]
             merge = shown(found, "Merge feature", "listItem")
             future = shown(found, "Future side tip", "listItem")
+            if args.summary_only:
+                assert merge, "the fixture's merge commit must be visible to open its Summary"
+                auto("click", merge[0][0], "--settle")
+                auto("wait", "--text", "Fixture<fixture@example.invalid>", "--timeout", "10s", "--settle")
+                fields = entries()
+
+                def field_bounds(name, role="text"):
+                    matches = shown(fields, name, role)
+                    assert len(matches) == 1, f"expected one visible {role} {name!r}, got {matches}"
+                    return bounds(matches[0][3])
+
+                sha = field_bounds(head)
+                author = field_bounds("Fixture<fixture@example.invalid>")
+                date = field_bounds(git("show", "-s", "--date=format-local:%Y-%m-%d %H:%M:%S", "--format=%ad", "HEAD").decode().strip())
+                copy = field_bounds("Copy SHA", "button")
+                assert max(sha[0], author[0], date[0]) - min(sha[0], author[0], date[0]) < 1, (sha, author, date)
+                assert sha[1]+sha[3] <= author[1] and author[1]+author[3] <= date[1], (sha, author, date)
+                assert 0 <= copy[0]-sha[0]-sha[2] <= 6 and copy[0]+copy[2] <= WINDOW[0], (sha, copy)
+                auto("screenshot", str(artifacts / "07-summary-metadata.png"))
+                labels = [field_bounds(name) for name in ("Hash", "Author", "Date", "Parent")]
+                centers = [y + h / 2 for _, y, _, h in labels]
+                steps = [b - a for a, b in zip(centers, centers[1:])]
+                results["summary_metadata"] = {"hash": sha, "author": author, "date": date, "copy": copy,
+                                               "row_center_steps": steps}
+                assert all(abs(step - 26) <= 0.5 for step in steps), f"Expected 26 pt metadata spacing: {steps}"
+                assert all(abs(size - 24) <= 0.5 for size in copy[2:]), f"Expected a 24 × 24 pt copy button: {copy}"
+                parents = git("show", "-s", "--format=%P", "HEAD").decode().split()
+                assert len(parents) == 2, parents
+                for i, parent in enumerate(parents):
+                    if i:
+                        auto("click", shown(entries(), "Merge feature", "listItem")[0][0], "--settle")
+                    auto("wait", "--text", head, "--timeout", "10s", "--settle")
+                    links = shown(entries(), parent[:8], "link")
+                    assert len(links) == 1, (parent, links)
+                    if i == 0:
+                        auto("click", links[0][0], "--settle")
+                    else:
+                        auto("focus", links[0][0], "--settle")
+                        auto("key", "Enter", "--settle")
+                    auto("wait", "--text", parent, "--timeout", "10s", "--settle")
+                    assert shown(entries(), parent, "text"), f"Parent link did not open {parent}"
+                results["parent_link_targets"] = parents
+                assert fingerprint() == before, "Browsing Summary changed fixture state"
+                results["passed"] = True
+                raise SystemExit(0)
+
             assert worktree and stash and merge and future, "narrow history is missing one of its rows"
             order = [found.index(e) for e in (worktree[0], stash[0], future[0], merge[0])]
             assert order == sorted(order), f"row order broke: {order}"

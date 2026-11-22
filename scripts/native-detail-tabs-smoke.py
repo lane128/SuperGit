@@ -3,7 +3,9 @@
 
 Requires make lobe-e2e-build and an unlocked macOS graphical session. Only the
 new fixture is modified. Logs/screenshots remain in build/detail-tabs-smoke.
+Use --refresh-only to verify staged and unstaged previews and capture their screenshots.
 """
+import argparse
 import json
 import os
 import pathlib
@@ -22,7 +24,7 @@ artifacts = build / "detail-tabs-smoke"
 artifacts.mkdir(parents=True, exist_ok=True)
 
 
-def run():
+def run(refresh_only=False):
     with tempfile.TemporaryDirectory(prefix="supergit-detail-tabs.") as directory:
         root = pathlib.Path(directory)
         repo = root / "workspace"
@@ -120,8 +122,6 @@ def run():
                         raise TimeoutError("native automation socket unavailable; see app.log")
                     time.sleep(0.05)
                 auto("open", "--socket", str(socket))
-                auto("wait", "--text", "Commit message", "--timeout", "30s", "--settle")
-                auto("key", "cmd+1", "--settle")
                 wait("Tab fixture changes")
                 press("listItem", "2 changes")
                 wait("+working version")
@@ -140,23 +140,40 @@ def run():
                 assert {"a.go · Staged", "a.go · Unstaged"}.issubset({e[2] for e in tabs()}), "stage versions were merged"
                 staged_row = [e for e in controls() if e[1] == "listItem" and e[2] == paths[0]][1]
                 check_file_group_tab(staged_row)
-                press("button", "Modified Files")
-                press("tab", "a.go · Unstaged")
-                auto("key", "cmd+r", "--settle")
-                wait("+working version")
-                auto("wait", "--text", "Loading diff…", "--gone", "--timeout", "20s", "--settle")
-                assert any(e[2] == "a.go · Unstaged" and "checked" in e[3] for e in tabs()), "folded-group refresh redirected active tab"
-                stage_actions = [e for e in controls() if e[1] == "button" and e[2] == "Stage file"]
-                assert len(stage_actions) == 1, "folded active unstaged tab lost its own stage header"
-                assert fingerprint() == before, "folded-group refresh changed repository bytes"
-                press("button", "Modified Files")
+                versions = (
+                    ("Unstaged", "Modified Files", "+working version", "Stage file"),
+                    ("Staged", "Staged Files", "+index version", "Unstage file"),
+                )
+                for version, group, patch, action in versions:
+                    # Keep the opposite version selected in Files while viewing this tab.
+                    if version == "Staged":
+                        press("listItem", paths[0], occurrence=0)
+                    press("button", group)
+                    title = "a.go · " + version
+                    press("tab", title)
+                    for attempt in (1, 2):
+                        wait(patch)
+                        auto("key", "cmd+r", "--settle")
+                        wait(patch)
+                        auto("wait", "--text", "Loading diff…", "--gone", "--timeout", "20s", "--settle")
+                        wait(patch)
+                        assert any(e[2] == title and "checked" in e[3] for e in tabs()), "refresh redirected active tab"
+                        assert len([e for e in controls() if e[1] == "button" and e[2] == action and "disabled" not in e[3]]) == 1, "incorrect file header action"
+                        assert fingerprint() == before, "refresh changed repository bytes"
+                        stem = f"refresh-{version.lower()}-{attempt}"
+                        (artifacts / (stem + ".txt")).write_text(auto("snapshot", "--full"))
+                        auto("screenshot", str(artifacts / (stem + ".png")))
+                        print(f"PASS refresh {attempt}: {title}, {patch}, {action}", flush=True)
+                    press("button", group)
+                if refresh_only:
+                    return
                 press("listItem", paths[1])
                 wait("+other working version")
-                assert len([e for e in tabs() if e[2] == "a.go · Unstaged"]) == 2, "same basenames were merged"
+                assert {f"{path} · Unstaged" for path in paths[:2]}.issubset({e[2] for e in tabs()}), "same basenames were merged"
                 press("listItem", paths[1])
                 assert len(tabs()) == 4, "reopening duplicated a tab"
                 press("button", "Close " + paths[0], occurrence=0)
-                assert any(e[2] == "a.go · Unstaged" and "checked" in e[3] for e in tabs()), "closing a background tab changed active target"
+                assert any(e[2] == f"{paths[1]} · Unstaged" and "checked" in e[3] for e in tabs()), "closing a background tab changed active target"
                 press("button", "Close " + paths[1])
                 press("button", "Close " + paths[0])
                 assert len(tabs()) == 1 and "checked" in tabs()[0][3]
@@ -214,7 +231,7 @@ def run():
                 print("PASS native legacy detail settings hide/restore patches and file column without repository writes", flush=True)
 
                 press("listItem", "2 changes")
-                press("tab", "Changes")
+                press("tab", "Commit")
                 assert any(e[1] == "textField" and e[2] == "Commit message" for e in controls()), "Changes lost commit editor"
                 press("listItem", paths[0], occurrence=0)
                 wait("+working version")
@@ -237,7 +254,7 @@ def run():
                 assert "Draft survives tabs" in auto("snapshot", "--full"), "refresh lost draft"
                 print("PASS native Changes exact-file stage and refresh preserve HEAD, working bytes, unrelated Index entries and draft", flush=True)
                 auto("screenshot", str(artifacts / "changes-staged.png"))
-                press("tab", "History")
+                press("button", "History")
                 press("listItem", "2 changes")
 
                 # A tracked patch exceeds the existing 4 MiB Git output cap.
@@ -255,6 +272,7 @@ def run():
 
                 press("listItem", paths[1])
                 assert len(tabs()) > 1
+                original_tabs = [(e[2], "checked" in e[3]) for e in tabs()]
                 before_switch = fingerprint()
                 other_index = subprocess.check_output(["git", "-C", str(other_repo), "ls-files", "--stage"], env=git_env, text=True)
 
@@ -263,11 +281,8 @@ def run():
                     if "expanded" not in group[3]:
                         auto("press", group[0], "--settle")
                     press("button", name)
-                    row = next(e for e in controls() if e[1] == "listItem" and e[2] == name)
-                    auto("focus", row[0], "--settle")
-                    auto("key", "Enter", "--settle")
                     deadline = time.monotonic() + 20
-                    while not any(e[1] == "text" and e[2] == name and "description=" in e[3] for e in controls()):
+                    while not any(e[1] == "tab" and e[2] == name and "checked" in e[3] for e in controls()):
                         if time.monotonic() > deadline:
                             raise AssertionError("repository title did not switch to " + name)
                         time.sleep(0.05)
@@ -281,7 +296,7 @@ def run():
                 press("listItem", paths[0])
                 assert len(tabs()) == 2
                 switch_worktree("workspace")
-                assert len(tabs()) == 1, "returning root revived discarded file tabs"
+                assert [(e[2], "checked" in e[3]) for e in tabs()] == original_tabs, "returning to the original repository lost its detail tabs"
                 assert fingerprint() == before_switch, "repository navigation wrote original checkout data"
                 assert subprocess.check_output(["git", "-C", str(other_repo), "ls-files", "--stage"], env=git_env, text=True) == other_index
                 assert all((other_repo / path).read_text() == "historical version\n" for path in paths)
@@ -290,7 +305,7 @@ def run():
                 # All writes below remain in the disposable fixture. Verify the
                 # actual UI submit path, hook failure, full message and Amend.
                 press("listItem", "3 changes")
-                press("tab", "Changes")
+                press("tab", "Commit")
 
                 def fill_commit(summary, body):
                     fields = controls()
@@ -445,7 +460,7 @@ def run():
                 auto("screenshot", str(artifacts / "file-actions-final.png"))
                 print("PASS native Stage All / Unstage All scopes, Discard All cancellation and Index preservation, explicit untracked file deletion", flush=True)
 
-                press("tab", "History")
+                press("button", "History")
                 history_before = fingerprint()
                 imported = []
                 for i in range(2401):
@@ -529,4 +544,6 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--refresh-only", action="store_true")
+    run(refresh_only=parser.parse_args().refresh_only)

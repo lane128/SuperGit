@@ -229,6 +229,9 @@ func (a *app) applyDetailTab(previous detailTabKey) {
 		a.commitPath = tab.File.Path
 		a.commitDiffScroll = ui.ScrollState{X: pos.X, Y: pos.Y}
 	}
+	if a.commitDiffByFile && !a.worktreeSelected && a.selectedStash == "" {
+		a.loadLargeCommitTab()
+	}
 	a.invalidate()
 }
 
@@ -565,22 +568,26 @@ func (a *app) detailPlaceholder(c *ui.Context) {
 
 // The header names the original path and the actual comparison alongside its
 // guarded file actions, independently of a truncated or scrolled file tab.
-func (a *app) worktreeDiffHeader(c *ui.Context, tk *theme.Tokens) {
-	header := ui.Row(c).Height(scaledFont(48)).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center).
-		BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
+func (a *app) worktreeDiffHeader(c *ui.Context, tk *theme.Tokens) bool {
+	entry, ok := a.selectedEntry()
+	file := detailFileKey{Path: a.selectedPath, Staged: a.selectedStaged}
+	dualVersion := ok && !entry.Conflict && entry.Unstaged() && entry.Staged()
+	header := ui.Row(c.Key(file)).Height(scaledFont(48)).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center)
+	if !dualVersion {
+		header.BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
+	}
 	header.Children(func() {
 		baseline := a.t("indexToWorktree")
 		if a.selectedStaged {
 			baseline = a.t("headToIndex")
 		}
-		if entry, ok := a.selectedEntry(); ok && entry.Conflict {
+		if ok && entry.Conflict {
 			baseline = a.t("conflict")
 		}
 		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(2).Children(func() {
 			display.Text(c, a.selectedPath, display.TextProps{FontSize: scaledFont(11)}).FillWidth().SingleLine().Tooltip(a.selectedPath)
 			display.Text(c, baseline, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).FillWidth().SingleLine().Tooltip(baseline)
 		})
-		entry, ok := a.selectedEntry()
 		if !a.diffLoading && a.diffErr == "" && len(a.diff.Lines) > 0 && (!ok || !entry.Conflict) {
 			a.patchLayoutButton(c.Key("patch-layout"), func() {
 				lines := a.diff.Lines
@@ -607,6 +614,28 @@ func (a *app) worktreeDiffHeader(c *ui.Context, tk *theme.Tokens) {
 		a.fileActionButtons(c.Key("file-actions"), target)
 	})
 	a.diffHeaderMenu(c, header)
+	if !dualVersion {
+		return false
+	}
+	disabled := !a.canNavigateFileTabs() || a.diffLoading
+	switched := false
+	ui.Row(c.Key("file-versions:"+file.Path)).FillWidth().Shrink(0).Padding(0, 12, 6, 12).Gap(6).
+		BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary).Children(func() {
+		for _, key := range [...]string{"unstaged", "staged"} {
+			selected := file.Staged == (key == "staged")
+			label := a.t(key)
+			button := styleWorkbenchButton(c, ui.ButtonBase(c.Key(key)), buttonNormal, disabled, selected).
+				Role(ui.RoleToggleButton).Label(label).Checked(selected).Shrink(0)
+			button.Children(func() { ui.Text(c, label).SingleLine() })
+			if button.Clicked() && !selected && !disabled {
+				switched = true
+			}
+		}
+	})
+	if switched {
+		a.openDetailFile(detailFileKey{Path: file.Path, Staged: !file.Staged})
+	}
+	return switched
 }
 
 func (a *app) historyDiffFile(c *ui.Context, tk *theme.Tokens) {
@@ -615,7 +644,10 @@ func (a *app) historyDiffFile(c *ui.Context, tk *theme.Tokens) {
 			a.diffPlaceholder(c, lucide.GitCommitHorizontal(), a.t("selectFile"))
 			return
 		}
-		a.worktreeDiffHeader(c, tk)
+		if a.worktreeDiffHeader(c, tk) {
+			// Input for this frame belongs to the patch that was visible before the switch.
+			return
+		}
 		if entry, ok := a.selectedEntry(); ok && !entry.Conflict && a.worktreePreview(c, entry) {
 			return
 		}

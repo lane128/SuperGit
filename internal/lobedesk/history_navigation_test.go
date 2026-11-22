@@ -175,18 +175,18 @@ func TestHistoryNavigationActualShortcutAndEditors(t *testing.T) {
 	}
 }
 
-func TestHistoryNavigationParentButtonAndFrameCache(t *testing.T) {
+func TestHistoryNavigationParentLinkAndFrameCache(t *testing.T) {
 	a := browsingApp(t)
 	a.historyQuery = "original"
 	tt := ui.NewTester(func(c *ui.Context) { theme.Apply(c); a.commitInfoContent(c, a.commits[0], theme.TokensOf(c)) }, 600, 500)
-	button, ok := tt.AccessByRole(ui.RoleButton, "p")
+	link, ok := tt.AccessByRole(ui.RoleLink, "p")
 	if !ok {
-		t.Fatal("missing actual parent button")
+		t.Fatal("missing parent link")
 	}
-	tt.ClickAt(button.Bounds.X+button.Bounds.W/2, button.Bounds.Y+button.Bounds.H/2)
+	tt.ClickAt(link.Bounds.X+link.Bounds.W/2, link.Bounds.Y+link.Bounds.H/2)
 	tt.Frame()
 	if a.selectedSHA != "p" {
-		t.Fatal("button did not jump")
+		t.Fatal("link did not jump")
 	}
 	a.historyRowsCache = a.commits
 	a.historyRowsSet = true

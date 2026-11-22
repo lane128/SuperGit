@@ -16,6 +16,8 @@ import (
 
 const outputLimit = 4 << 20
 
+var errOutputTruncated = errors.New("Git 输出超过 4 MiB 显示上限；操作可能已经完成，请刷新状态确认")
+
 type Repository struct {
 	Root    string
 	writeMu sync.Mutex
@@ -45,7 +47,7 @@ func run(ctx context.Context, root string, input string, args ...string) (string
 	stdout := limitedBuffer{limit: outputLimit}
 	err := runOutput(ctx, root, input, &stdout, args...)
 	if err == nil && stdout.truncated {
-		err = errors.New("Git 输出超过 4 MiB 显示上限；操作可能已经完成，请刷新状态确认")
+		err = errOutputTruncated
 	}
 	return stdout.String(), err
 }
