@@ -74,6 +74,7 @@ func (a *app) settingsRoot(c *ui.Context) {
 		a.checkoutBranchDialogFor(c, toastSettings)
 		a.worktreeFormDialogFor(c, toastSettings)
 		a.blameDialogFor(c, toastSettings)
+		a.updateDialog(c, toastSettings)
 		a.toastHost(c, toastSettings)
 		if focused {
 			a.flushNotice(c, toastSettings)

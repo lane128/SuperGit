@@ -76,6 +76,7 @@ func (a *app) renderWorkbench(c *ui.Context, repositoryStrip func()) {
 		a.comparisonDialog(c)
 		a.blameDialog(c)
 		a.snapshotFileDialog(c)
+		a.updateDialog(c, toastMain)
 		a.toastHost(c, toastMain)
 		if !settingsFocused {
 			// A settings notice whose panel closed is not lost: the main
@@ -193,6 +194,9 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 			if a.repo != nil {
 				a.stashSaveMenu(c)
 				a.syncMenu(c)
+			}
+			if nativeChrome {
+				a.updateTitleBarBadge(c)
 			}
 		})
 	})

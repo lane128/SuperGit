@@ -51,6 +51,11 @@ type persistedSettings struct {
 	// to stay aside after a restart; the recency list keeps the file from
 	// growing with every repository ever opened.
 	WorkspaceFolded []foldedRepo `json:"workspaceFolded,omitempty"`
+	// Software update preferences and check bookkeeping.
+	AutoCheckUpdates     *bool  `json:"autoCheckUpdates,omitempty"`
+	AutoDownloadUpdates  *bool  `json:"autoDownloadUpdates,omitempty"`
+	SkippedUpdateVersion string `json:"skippedUpdateVersion,omitempty"`
+	LastUpdateCheckAt    string `json:"lastUpdateCheckAt,omitempty"`
 }
 
 // foldedRepo is one repository's folded workspace sections. The file keeps a
@@ -73,12 +78,14 @@ func defaultSettings() persistedSettings {
 	every := 0
 	info, changes, diff := true, true, true
 	hide := false
+	autoCheckUpdates, autoDownloadUpdates := true, false
 	return persistedSettings{
 		Theme: "system", Palette: themePaletteSuperGit, Language: string(localeChinese), CodeFontSize: new(float32),
 		ShowGraph: &showGraph, AutoFetch: &autoFetch, AutoFetchPrune: &prune, AutoFetchEvery: &every,
 		DetailsInfo: &info, DetailsChanges: &changes, DetailsDiff: &diff,
 		HistoryLine: "standard", HistoryNode: "standard",
 		HideAuthor: &hide, HideTime: &hide,
+		AutoCheckUpdates: &autoCheckUpdates, AutoDownloadUpdates: &autoDownloadUpdates,
 	}
 }
 
@@ -292,6 +299,20 @@ func (a *app) applySettings(settings persistedSettings) {
 	if settings.CodeFontSize != nil && validCodeFontSize(*settings.CodeFontSize) {
 		a.codeFontSize = *settings.CodeFontSize
 	}
+	if settings.AutoCheckUpdates != nil {
+		a.autoCheckUpdates = *settings.AutoCheckUpdates
+	}
+	if settings.AutoDownloadUpdates != nil {
+		a.autoDownloadUpdates = *settings.AutoDownloadUpdates
+	}
+	a.skippedUpdateVersion = strings.TrimSpace(settings.SkippedUpdateVersion)
+	a.lastUpdateCheckAt = time.Time{}
+	if ts := strings.TrimSpace(settings.LastUpdateCheckAt); ts != "" {
+		if parsed, err := time.Parse(time.RFC3339, ts); err == nil {
+			a.lastUpdateCheckAt = parsed
+		}
+	}
+	a.syncUpdaterPreferences()
 }
 
 // writeSettings replaces the file atomically, so a half-written settings file
@@ -505,29 +526,39 @@ func (a *app) saveSettingsFor(owner toastOwner) bool {
 		showGraph := a.showGraph
 		autoFetch := a.autoFetch
 		autoFetchPrune := a.autoFetchPrune
+		autoCheckUpdates := a.autoCheckUpdates
+		autoDownloadUpdates := a.autoDownloadUpdates
+		lastUpdateCheck := ""
+		if !a.lastUpdateCheckAt.IsZero() {
+			lastUpdateCheck = a.lastUpdateCheckAt.UTC().Format(time.RFC3339)
+		}
 		settings = persistedSettings{
 			SidebarHidden: a.sidebarHidden, IgnoreDiffWhitespace: a.ignoreDiffWhitespace, ExpandMerges: a.expandMerges, HiddenBranches: a.hiddenBranches,
 			Theme: a.themeMode, Palette: a.palette, Language: string(a.locale),
 			ShowGraph: &showGraph, AutoFetch: &autoFetch, AutoFetchPrune: &autoFetchPrune,
-			AutoFetchEvery:     fetchIntervalSetting(a.autoFetchEvery),
-			SidebarSplit:       splitSetting(a.sidebarSplit.share),
-			FilesSplit:         splitSetting(a.filesSplit.share),
-			HistorySplit:       splitSetting(a.historySplit.share),
-			StashSplit:         splitSetting(a.stashSplit.share),
-			BranchDetailsSplit: splitSetting(a.branchSplit.share),
-			HideDetails:        hideSetting(a.historyDetailsHidden),
-			FontScale:          fontScaleSetting(uiFontScaleValue()),
-			UIFont:             uiFontSetting(a.uiFontKey()),
-			CodeFont:           codeFontSetting(a.codeFontKey()),
-			CodeFontSize:       new(a.codeFontSize),
-			DetailsInfo:        showSetting(!a.detailsInfoHidden),
-			DetailsChanges:     showSetting(!a.detailsChangesHidden),
-			DetailsDiff:        showSetting(!a.detailsDiffHidden),
-			HistoryLine:        graphLineKey(a.historyLine),
-			HistoryNode:        graphNodeKey(a.historyNode),
-			HideAuthor:         hideSetting(a.hideAuthor),
-			HideTime:           hideSetting(a.hideTime),
-			WorkspaceFolded:    a.filesFolded,
+			AutoFetchEvery:       fetchIntervalSetting(a.autoFetchEvery),
+			SidebarSplit:         splitSetting(a.sidebarSplit.share),
+			FilesSplit:           splitSetting(a.filesSplit.share),
+			HistorySplit:         splitSetting(a.historySplit.share),
+			StashSplit:           splitSetting(a.stashSplit.share),
+			BranchDetailsSplit:   splitSetting(a.branchSplit.share),
+			HideDetails:          hideSetting(a.historyDetailsHidden),
+			FontScale:            fontScaleSetting(uiFontScaleValue()),
+			UIFont:               uiFontSetting(a.uiFontKey()),
+			CodeFont:             codeFontSetting(a.codeFontKey()),
+			CodeFontSize:         new(a.codeFontSize),
+			DetailsInfo:          showSetting(!a.detailsInfoHidden),
+			DetailsChanges:       showSetting(!a.detailsChangesHidden),
+			DetailsDiff:          showSetting(!a.detailsDiffHidden),
+			HistoryLine:          graphLineKey(a.historyLine),
+			HistoryNode:          graphNodeKey(a.historyNode),
+			HideAuthor:           hideSetting(a.hideAuthor),
+			HideTime:             hideSetting(a.hideTime),
+			WorkspaceFolded:      a.filesFolded,
+			AutoCheckUpdates:     &autoCheckUpdates,
+			AutoDownloadUpdates:  &autoDownloadUpdates,
+			SkippedUpdateVersion: a.skippedUpdateVersion,
+			LastUpdateCheckAt:    lastUpdateCheck,
 		}
 		err = writeSettings(path, settings)
 	}

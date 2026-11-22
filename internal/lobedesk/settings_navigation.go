@@ -52,7 +52,18 @@ func (a *app) settingsNavigation(c *ui.Context) {
 				current := section.key == a.activeSettingsSection()
 				button := styleWorkbenchButton(c.Key(section.key), ui.ButtonBase(c.Key(section.key)), buttonNormal, false, current).
 					FillWidth().Role(ui.RoleTab).Label(a.t(section.label)).AccessSelected(current).Justify(ui.Start)
-				button.Children(func() { ui.Text(c, a.t(section.label)).SingleLine() })
+				button.Children(func() {
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+						ui.Text(c, a.t(section.label)).SingleLine().Grow(1).Basis(0).MinWidth(0)
+						if section.key == "about" && a.hasVisibleUpdate() {
+							dotColor := tk.Blue
+							if a.updateSnapshot().State == "readyToRestart" {
+								dotColor = tk.Success
+							}
+							ui.Box(c).Width(7).Height(7).Radius(4).Background(dotColor).Shrink(0)
+						}
+					})
+				})
 				if button.Clicked() {
 					a.selectSettingsSection(section.key)
 				}

@@ -468,6 +468,11 @@ type app struct {
 	// the periodic check does not fetch again before the interval has passed
 	// and a manual fetch restarts the clock.
 	lastAutoFetch                   time.Time
+	autoCheckUpdates                bool
+	autoDownloadUpdates             bool
+	skippedUpdateVersion            string
+	lastUpdateCheckAt               time.Time
+	updateState                     *updateController
 	stashSaveOpen                   bool
 	syncOpen                        bool
 	syncCommits                     *syncCommitPage
@@ -518,17 +523,20 @@ func Run(initialPath string) error {
 		commitCursor:     -1,
 		commitPressIndex: -1,
 		showGraph:        defaults.ShowGraph != nil && *defaults.ShowGraph,
+		autoCheckUpdates: defaults.AutoCheckUpdates != nil && *defaults.AutoCheckUpdates,
 	}
 	a.applySettings(loadSettings())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	a.ctx, a.cancel = context.WithCancel(ctx)
 	tabs := newRepositoryTabs(ctx, a)
+	a.initUpdater()
 	offOpen := mygo.App.OnOpenFile(tabs.queueRepositoryFolder)
 	defer offOpen()
 
 	mygo.App.WhenReady(func() {
 		go a.watchAutoFetch()
+		go a.watchUpdates()
 		// MyGo only accepts a locale the app declares among its languages;
 		// without this, SetLocale("zh-Hans") falls back to English.
 		mygo.App.SetLanguages("zh-Hans", "en")

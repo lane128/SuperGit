@@ -163,26 +163,30 @@ var actionCopyGroups = []actionCopies{
 	{"reset settings", "恢复", "", []string{
 		"resetSettings", "resetSettingsAction", "resetSettingsTitle", "resetSettingsDone",
 	}},
+	{"install update", "更新", "update", []string{
+		"updateRestartAndInstall", "updateApplyFailed",
+	}},
 }
 
 // Failures that have no action copies to agree with. Keep the reason next to
 // the key: a failure that gains a busy label later should leave this list.
 var actionCopyExempt = map[string]string{
-	"commitIdentityFailed":  "a background identity read failure, not a commit action failure",
-	"chooseParentDirFailed": "the native folder picker has no busy label or menu item",
-	"diffFailed":            "a read failure, not a user action",
-	"historyLoadFailed":     "a read failure, not a user action",
-	"localWatchFailed":      "background local-change detection has no user action or busy label",
-	"openFailed":            "a read failure, not a user action",
-	"reloadFailed":          "a read failure, not a user action",
-	"resetUpstreamFailed":   "a read failure, not a user action",
-	"switchRepoFailed":      "a read failure, not a user action",
-	"stashesReadFailed":     "a read failure, not a user action",
-	"commitsReadFailed":     "a read failure, not a user action",
-	"settingsSaveFailed":    "settings save on close has no menu, title or button copy",
-	"copyFailed":            "the system clipboard has no busy label",
-	"resolveFailed":         "conflict resolution has no one verb: resolve vs take a side",
-	"takeSideFailed":        "conflict resolution has no one verb: resolve vs take a side",
+	"commitIdentityFailed":        "a background identity read failure, not a commit action failure",
+	"chooseParentDirFailed":       "the native folder picker has no busy label or menu item",
+	"diffFailed":                  "a read failure, not a user action",
+	"historyLoadFailed":           "a read failure, not a user action",
+	"localWatchFailed":            "background local-change detection has no user action or busy label",
+	"openFailed":                  "a read failure, not a user action",
+	"reloadFailed":                "a read failure, not a user action",
+	"resetUpstreamFailed":         "a read failure, not a user action",
+	"switchRepoFailed":            "a read failure, not a user action",
+	"stashesReadFailed":           "a read failure, not a user action",
+	"commitsReadFailed":           "a read failure, not a user action",
+	"settingsSaveFailed":          "settings save on close has no menu, title or button copy",
+	"copyFailed":                  "the system clipboard has no busy label",
+	"resolveFailed":               "conflict resolution has no one verb: resolve vs take a side",
+	"takeSideFailed":              "conflict resolution has no one verb: resolve vs take a side",
+	"updateOpenReleasePageFailed": "external browser URL launch has no busy label",
 }
 
 func TestEveryCopyOfAnActionUsesOneVerb(t *testing.T) {

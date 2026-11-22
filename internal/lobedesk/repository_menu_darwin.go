@@ -50,8 +50,30 @@ func (tabs *repositoryTabs) installRepositoryMenu() {
 		entry.Disabled = root == tabs.menuRecentRoot
 		recent.Submenu = append(recent.Submenu, entry)
 	}
+	checkUpdates := &mygo.MenuItem{Label: a.t("checkForUpdatesAction"), Click: func(_ *mygo.MenuItem, win *mygo.Window) {
+		current := tabs.active
+		if current.window == nil || current.window.IsDestroyed() {
+			return
+		}
+		owner := toastMain
+		if settings := tabs.settings.Load(); settings != nil && !settings.IsDestroyed() && (win == settings || settings.IsFocused()) {
+			owner = toastSettings
+		}
+		current.checkForUpdates(owner)
+	}}
 	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-		{Role: mygo.RoleAppMenu},
+		{Role: mygo.RoleAppMenu, Submenu: []*mygo.MenuItem{
+			{Role: mygo.RoleAbout},
+			checkUpdates,
+			mygo.Separator(),
+			{Role: mygo.RoleServices},
+			mygo.Separator(),
+			{Role: mygo.RoleHide},
+			{Role: mygo.RoleHideOthers},
+			{Role: mygo.RoleUnhide},
+			mygo.Separator(),
+			{Role: mygo.RoleQuit},
+		}},
 		{Role: mygo.RoleFileMenu, Submenu: []*mygo.MenuItem{
 			item("newRepositoryTab", func(*app) { tabs.newTab() }),
 			item("newRepo", (*app).showNewRepository),

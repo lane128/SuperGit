@@ -109,3 +109,28 @@ open build/SuperGit.app
 5. **e2e 冒烟**。运行 `make native-check` 验证标准包和 `make desktop-native-check` 验证旧桌面回退入口。系统目录选择框的选择和取消，以及重启后的系统「最近打开」菜单需在 macOS 图形会话中人工核对。
 6. **版本号**：`make app` 调用 `tools/appversion`，只改写 bundle 内的 plist 副本。`CFBundleShortVersionString` 取最近标签，去掉前缀 `v` 后仅接受 1–3 段数字；`CFBundleVersion` 取 `git rev-list --count HEAD`。标签 / 提交数不可用或格式非法时，对应字段沿用 `packaging/Info.plist` 的值；源码 plist 不会被自动修改。相同 HEAD 的未提交构建可能拥有同样的包版本，试用记录还需标明源码日期和未提交状态。
 7. **已知边界复核**：读一遍 `README.md` 的「当前边界与后续」，确认这次改动没有让其中任何一条过期（例如签名状态、预览版能力表）。
+
+## 自动更新签名与发布清单
+
+应用内检查更新默认读取 `https://github.com/lane128/SuperGit/releases/latest/download/update.json`，并通过内置的 Ed25519 公钥校验安装包 SHA-256 摘要签名，再结合 `codesign --verify --deep --strict` 完成 macOS 包校验与原地原子替换。
+
+1. **一次性生成签名密钥对**（私钥保存在本机安全位置，**切勿提交到仓库**）：
+   ```sh
+   go run ./tools/releasepack -genkey -priv ~/.config/supergit-release/update.key -pub ~/.config/supergit-release/update.pub
+   ```
+2. **构建内置公钥的应用并生成 `update.json` 与 `.zip`**：
+   ```sh
+   PUBKEY=$(cat ~/.config/supergit-release/update.pub)
+   make release-pack \
+     UPDATE_PUBKEY="$PUBKEY" \
+     UPDATE_PRIVKEY=~/.config/supergit-release/update.key \
+     RELEASE_NOTES_ZH="本次更新内容" \
+     RELEASE_NOTES_EN="Release notes"
+   ```
+   产物会输出到 `build/release/`（包含 `SuperGit-<version>-darwin-arm64.zip` 与 `update.json`），发布 GitHub Release 时一并上传即可。
+3. **本地端到端验证**：可用环境变量临时指向本地 HTTP 目录进行实机验收（仅显式指定回环地址时允许本地 HTTP）：
+   ```sh
+   SUPERGIT_UPDATE_URL="http://127.0.0.1:8765/update.json" \
+   SUPERGIT_UPDATE_PUBKEY="$PUBKEY" \
+   open -n /path/to/test/SuperGit.app
+   ```
