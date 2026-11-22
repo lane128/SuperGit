@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make test:*)",
+      "Bash(make check:*)",
+      "Bash(make build:*)",
+      "Bash(make app:*)",
+      "Bash(make demo:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(gofmt:*)",
+      "Bash(git:*)"
+    ],
+    "ask": [
+      "Bash(rm -rf:*)",
+      "Bash(make release-pack:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.key)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/gofmt.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
