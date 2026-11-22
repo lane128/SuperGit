@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"supergit/internal/gitrepo"
@@ -36,13 +37,13 @@ func TestTitleBarKeepsRepositoryActionsWithoutPageTabs(t *testing.T) {
 				t.Fatal("missing branch selector")
 			}
 			assertCommandControlBounds(t, tt, a, 900)
-			status := "↑ 12  ↓ 34"
 			if branch.Description != a.status.Branch+" ("+a.tf("aheadBehind", 12, 34)+")" {
 				t.Fatal("missing localized tracking description")
 			}
-			statusBounds, visible := tt.Find(status)
-			if !visible || statusBounds.X < branch.Bounds.X || statusBounds.X+statusBounds.W > branch.Bounds.X+branch.Bounds.W {
-				t.Errorf("%s/%v: tracking text must fit inside the branch button: %q %+v; branch %+v", language, scale, status, statusBounds, branch.Bounds)
+			ahead, hasAhead := tt.Find("12")
+			behind, hasBehind := tt.Find("34")
+			if !hasAhead || !hasBehind || ahead.X < branch.Bounds.X || ahead.X+ahead.W >= behind.X || behind.X+behind.W > branch.Bounds.X+branch.Bounds.W {
+				t.Errorf("%s/%v: tracking counts must fit in order inside the branch button: %+v %+v; branch %+v", language, scale, ahead, behind, branch.Bounds)
 			}
 			for _, page := range []string{"changes", "history", "stash"} {
 				if tab, ok := tt.AccessByRole(ui.RoleTab, a.t(page)); ok {
@@ -71,6 +72,64 @@ func TestTitleBarKeepsRepositoryActionsWithoutPageTabs(t *testing.T) {
 		}
 	}
 	setUIFontScale(fontScaleStandard)
+}
+
+func TestBranchSelectorTracking(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		status   gitrepo.Status
+		showUp   bool
+		showDown bool
+	}{
+		{"ahead", gitrepo.Status{Branch: "main", Upstream: "origin/main", Ahead: 2}, true, false},
+		{"behind", gitrepo.Status{Branch: "main", Upstream: "origin/main", Behind: 3}, false, true},
+		{"diverged", gitrepo.Status{Branch: "main", Upstream: "origin/main", Ahead: 2, Behind: 3}, true, true},
+		{"synced", gitrepo.Status{Branch: "main", Upstream: "origin/main"}, false, false},
+		{"no upstream", gitrepo.Status{Branch: "main"}, false, false},
+		{"upstream gone", gitrepo.Status{Branch: "main", Upstream: "origin/main", UpstreamGone: true}, false, false},
+		{"detached", gitrepo.Status{}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &app{locale: localeEnglish, status: tc.status, repo: &gitrepo.Repository{Root: t.TempDir()}}
+			tt := ui.NewTester(func(c *ui.Context) {
+				a.applyTheme(c)
+				a.toolbarCommandControl(c, true)
+			}, 360, 44)
+			ahead, up := tt.Find("2")
+			behind, down := tt.Find("3")
+			_, zero := tt.Find("0")
+			_, gone := tt.Find("(" + a.t("upstreamGone") + ")")
+			if up != tc.showUp || down != tc.showDown || zero || gone != tc.status.UpstreamGone {
+				t.Fatalf("unexpected tracking indicators: %v", tt.Texts())
+			}
+			label := tc.status.Branch
+			if label == "" {
+				label = a.t("detached")
+			}
+			name, found := tt.Find(label)
+			selector, ok := tt.AccessByRole(ui.RoleButton, a.t("branches"))
+			if !found || !ok || name.X-selector.Bounds.X < 8 || name.X-selector.Bounds.X > 12 {
+				t.Fatalf("branch name lost its leading inset: %+v in %+v", name, selector.Bounds)
+			}
+			if up || down {
+				tk := supergitTokens(false)
+				items, _ := a.branchTrackingStatus(&tk)
+				if up && (items[0].icon != lucide.ArrowUp() || items[0].ink != tk.SuccessText) {
+					t.Fatal("outgoing commits lost their green up arrow")
+				}
+				if item := items[len(items)-1]; down && (item.icon != lucide.ArrowDown() || item.ink != tk.Blue) {
+					t.Fatal("incoming commits lost their blue down arrow")
+				}
+				last := ahead
+				if down {
+					last = behind
+				}
+				if inset := selector.Bounds.X + selector.Bounds.W - last.X - last.W; inset < 8 || inset > 12 {
+					t.Fatalf("counts lost their trailing inset: %+v in %+v", last, selector.Bounds)
+				}
+			}
+		})
+	}
 }
 
 func assertCommandControlBounds(t *testing.T, tt *ui.Tester, a *app, windowWidth float32) {

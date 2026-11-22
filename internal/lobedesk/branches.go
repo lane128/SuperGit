@@ -602,12 +602,16 @@ func (a *app) branchRow(c *ui.Context, branch gitrepo.Branch, pos, size int) {
 	// Selection comes first so the row under the keyboard always reads as
 	// selected: the checked-out branch keeps its own tint only while the
 	// selection is elsewhere, and its "当前" chip marks it either way.
+	rowBg := tk.BgContainer
 	switch {
 	case selected:
-		row.Background(selectionBg(tk, tk.BgContainer))
+		rowBg = selectionBg(tk, tk.BgContainer)
+		row.Background(rowBg)
 	case branch.Current:
+		rowBg = tk.FillSecondary.Over(tk.BgContainer)
 		row.Background(tk.FillSecondary)
 	case row.Hovered():
+		rowBg = tk.FillTertiary.Over(tk.BgContainer)
 		row.Background(tk.FillTertiary)
 	}
 	row.Children(func() {
@@ -628,6 +632,7 @@ func (a *app) branchRow(c *ui.Context, branch gitrepo.Branch, pos, size int) {
 				}
 			})
 			upstream := branch.Upstream
+			counts := false
 			switch {
 			case upstream == "":
 				upstream = a.t("upstream") + " —"
@@ -636,19 +641,16 @@ func (a *app) branchRow(c *ui.Context, branch gitrepo.Branch, pos, size int) {
 			default:
 				// Ahead/behind counts match Sublime Merge's branch list, so a
 				// branch that needs a pull or push is visible without opening
-				// the menu.
-				var counts []string
-				if branch.Ahead > 0 {
-					counts = append(counts, fmt.Sprintf("↑%d", branch.Ahead))
-				}
-				if branch.Behind > 0 {
-					counts = append(counts, fmt.Sprintf("↓%d", branch.Behind))
-				}
-				if len(counts) > 0 {
-					upstream += " · " + strings.Join(counts, " ")
-				}
+				// the menu. They use the same arrows and code-font numbers as
+				// the title bar and the sync menu.
+				counts = branch.Ahead > 0 || branch.Behind > 0
 			}
-			display.Text(c, upstream, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).SingleLine()
+			ui.Row(c).Gap(6).AlignItems(ui.Center).MinWidth(0).Children(func() {
+				display.Text(c, upstream, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).SingleLine().MinWidth(0).Shrink(1)
+				if counts {
+					a.trackingCounts(c, tk, branch.Ahead, branch.Behind, scaledFont(10), rowBg, a.tf("aheadBehind", branch.Ahead, branch.Behind))
+				}
+			})
 		})
 		display.Text(c, shortSHA(branch.SHA), display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Font(a.patchFontFamily()).Shrink(0)
 		if !branch.Current {

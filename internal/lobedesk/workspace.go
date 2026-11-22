@@ -31,30 +31,54 @@ func (a *app) branchSelector(c *ui.Context, iconWidth float32) {
 		branch = a.t("detached")
 	}
 	caption := branch
-	status, spoken := a.branchTrackingStatus()
+	items, spoken := a.branchTrackingStatus(tk)
 	fontSize := scaledFont(12)
-	// Match the leading icon with trailing inset, so a short name is centered
-	// and a long name elides before the complete tracking status.
-	const padding = 4
-	available := toolbarCommandWidth - 2*(iconWidth+padding)
-	if status != "" {
+	const padding, groupGap, iconGap = 10, 8, 2
+	available := toolbarCommandWidth - iconWidth - 2*(padding+1)
+	if spoken != "" {
 		caption += " (" + spoken + ")"
-		statusWidth, _ := c.MeasureText(0, ui.Span{Text: status, Font: a.patchFontFamily(), Size: fontSize, Weight: 500})
-		available -= statusWidth + 6
 	}
-	name := fitToolbarBranchName(c, branch, fontSize, available-2)
+	// Counts follow a hairline divider so they belong to the branch instead
+	// of floating at the end of the field; numbers use the code font.
+	counts := len(items) > 0 && items[0].icon != nil
+	if counts {
+		available -= 1 + groupGap
+	}
+	for _, item := range items {
+		font := ""
+		if item.icon != nil {
+			font = a.patchFontFamily()
+		}
+		width, _ := c.MeasureText(0, ui.Span{Text: item.text, Font: font, Size: fontSize, Weight: 500})
+		available -= width + groupGap
+		if item.icon != nil {
+			available -= fontSize + iconGap
+		}
+	}
+	name := fitToolbarBranchName(c, branch, fontSize, available)
 	disabled := !a.canOpenQuickCheckout() || a.repositoryOpenPending() || a.historyRefPalette.active
 	button := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, disabled, false).
 		Label(a.t("branches")).Description(caption).
 		Tooltip(caption+"\n"+a.t("quickCheckout")+" ("+shortcutKeys("branch.quickCheckout")+")").
-		Grow(1).Basis(0).MinWidth(0).Padding(0, iconWidth+padding, 0, padding).Radius(0, 6, 6, 0)
+		Grow(1).Basis(0).MinWidth(0).PaddingX(padding).Gap(groupGap).Radius(0, 6, 6, 0)
 	button.Children(func() {
-		label := ui.Text(c.Key("branch-name"), name).FontSize(fontSize).SingleLine().MinWidth(0).Shrink(1)
+		label := ui.Text(c.Key("branch-name"), name).FontSize(fontSize).SingleLine().MinWidth(0).Grow(1).Basis(0)
 		if a.status.Branch == "" && !disabled {
 			label.TextColor(tk.Warning)
 		}
-		if status != "" {
-			ui.Text(c.Key("branch-tracking"), status).Font(a.patchFontFamily()).FontSize(fontSize).TextColor(tk.TextSecondary).SingleLine().Shrink(0)
+		bg, _ := workbenchButtonColors(tk, buttonNormal, button.Hovered(), button.Pressed(), button.IsDisabled(), false)
+		if counts {
+			ui.Box(c).Width(1).Height(fontSize + 2).Shrink(0).Background(tk.Border).AccessHidden(true)
+		}
+		for _, item := range items {
+			ui.Row(c).Shrink(0).AlignItems(ui.Center).Gap(iconGap).TextColor(capsuleInk(item.ink, bg, 4.5)).AccessHidden(true).Children(func() {
+				if item.icon == nil {
+					ui.Text(c, item.text).FontSize(fontSize).SingleLine()
+					return
+				}
+				ui.Icon(c, item.icon).Size(fontSize, fontSize)
+				ui.Text(c, item.text).Font(a.patchFontFamily()).FontSize(fontSize).SingleLine()
+			})
 		}
 	})
 	if button.Clicked() {

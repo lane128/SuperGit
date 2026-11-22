@@ -2,7 +2,6 @@ package lobedesk
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -212,8 +211,18 @@ func (a *app) localBranchDetails(c *ui.Context, sel branchDetailSelection) {
 	case branch.Upstream != "":
 		// The counts sit on the upstream line, as in the list, so the reader
 		// sees whether a pull or a push is waiting without doing the sum.
-		value := fmt.Sprintf("%s · ↑%d ↓%d", branch.Upstream, branch.Ahead, branch.Behind)
-		a.branchDetailField(c, a.t("upstream"), value)
+		tk := theme.TokensOf(c)
+		ui.Column(c).FillWidth().Gap(1).Children(func() {
+			display.Text(c, a.t("upstream"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(10)}).SingleLine()
+			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+				display.Text(c, branch.Upstream, display.TextProps{FontSize: scaledFont(11)}).SingleLine().MinWidth(0).Shrink(1).Tooltip(branch.Upstream)
+				if branch.Ahead == 0 && branch.Behind == 0 {
+					display.Text(c, a.t("upToDate"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).SingleLine().Shrink(0)
+					return
+				}
+				a.trackingCounts(c, tk, branch.Ahead, branch.Behind, scaledFont(11), tk.BgContainer, a.tf("aheadBehind", branch.Ahead, branch.Behind))
+			})
+		})
 	}
 	a.commitMetadata(c, branch.Commit, branch.SHA, a.t("latestCommit"))
 	if sha := branch.Commit.SHA; sha != "" {

@@ -1,30 +1,41 @@
 package lobedesk
 
 import (
-	"fmt"
+	"strconv"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
-// Tracking text reserves its own space beside the elided name. Its spoken
-// description uses localized words so the arrows do not have to be inferred.
-func (a *app) branchTrackingStatus() (visible, spoken string) {
+type branchTrackingItem struct {
+	text string
+	icon *ui.SVG
+	ink  ui.Color
+}
+
+func (a *app) branchTrackingStatus(tk *theme.Tokens) ([]branchTrackingItem, string) {
 	s := a.status
 	switch {
-	case s.Branch == "":
-		return "", ""
-	case s.Upstream == "":
-		return "", ""
+	case s.Branch == "" || s.Upstream == "":
+		return nil, ""
 	case s.UpstreamGone:
-		visible = a.t("upstreamGone")
+		label := a.t("upstreamGone")
+		return []branchTrackingItem{{text: "(" + label + ")", ink: tk.TextSecondary}}, label
 	case s.Ahead == 0 && s.Behind == 0:
-		return "", ""
-	default:
-		return fmt.Sprintf("↑ %d  ↓ %d", s.Ahead, s.Behind), a.tf("aheadBehind", s.Ahead, s.Behind)
+		return nil, ""
 	}
-	return "(" + visible + ")", visible
+	var items []branchTrackingItem
+	for _, side := range []struct {
+		n        int
+		incoming bool
+	}{{s.Ahead, false}, {s.Behind, true}} {
+		if side.n > 0 {
+			icon, ink := trackingInk(tk, side.incoming)
+			items = append(items, branchTrackingItem{strconv.Itoa(side.n), icon, ink})
+		}
+	}
+	return items, a.tf("aheadBehind", s.Ahead, s.Behind)
 }
 
 func (a *app) syncMenu(c *ui.Context) {
@@ -123,24 +134,36 @@ func (a *app) syncMenuHeader(c *ui.Context, menu ui.MenuParts) {
 	}
 	ui.Text(c, header).Padding(8, 10).FontSize(scaledFont(12)).FontWeight(600).SingleLine().Tooltip(header)
 	if a.status.Branch != "" && a.status.Upstream != "" && !a.status.UpstreamGone {
-		menu.Group(func(row ui.Element) {
-			row.Gap(4).Padding(0, 6).Label(a.t("syncMenu"))
-			for _, incoming := range []bool{false, true} {
-				count, arrow := a.status.Ahead, "↑"
-				name, detail := a.tf("branchAhead", count), a.t("syncOutgoing")
-				if incoming {
-					count, arrow = a.status.Behind, "↓"
-					name, detail = a.tf("branchBehind", count), a.t("syncIncoming")
-				}
-				item := syncListItem(c, menu, name, count == 0).Description(detail).Tooltip(name + " · " + detail).KeepOpen()
-				item.Children(func() {
-					ui.Textf(c, "%s %d", arrow, count).SingleLine()
-				})
-				if item.Clicked() && count > 0 {
-					a.readSyncCommits(incoming, "", 0)
-				}
+		// Two ordinary menu rows share the command rows' height and rhythm;
+		// a zero side stays in place, greyed, so the layout never jumps.
+		for _, incoming := range []bool{false, true} {
+			count, title := a.status.Ahead, a.t("syncToPush")
+			name, detail := a.tf("branchAhead", count), a.t("syncOutgoing")
+			if incoming {
+				count, title = a.status.Behind, a.t("syncToPull")
+				name, detail = a.tf("branchBehind", count), a.t("syncIncoming")
 			}
-		})
+			item := syncListItem(c, menu, name, count == 0).AlignSelf(ui.Stretch).MinHeight(30).Gap(8).
+				Description(detail).Tooltip(name + " · " + detail).KeepOpen()
+			icon, ink := trackingInk(tk, incoming)
+			if count == 0 {
+				ink = tk.TextDisabled
+			} else {
+				ink = capsuleInk(ink, tk.BgElevated, 4.5)
+			}
+			item.Children(func() {
+				ui.Icon(c, icon).Size(scaledFont(13), scaledFont(13)).TextColor(ink).Shrink(0)
+				ui.Text(c, title).FontSize(scaledFont(13)).SingleLine().Grow(1).Basis(0).MinWidth(0)
+				pill := ui.Box(c).Shrink(0).MinWidth(scaledFont(20)).Height(scaledFont(18)).Padding(0, 6).
+					Radius(scaledFont(9)).Center().Background(tk.FillSecondary)
+				pill.Children(func() {
+					ui.Text(c, strconv.Itoa(count)).Font(a.patchFontFamily()).FontSize(scaledFont(11)).SingleLine()
+				})
+			})
+			if item.Clicked() && count > 0 {
+				a.readSyncCommits(incoming, "", 0)
+			}
+		}
 	}
 	ui.Box(c).Height(1).Margin(2, 0).AlignSelf(ui.Stretch).Background(tk.Border)
 }

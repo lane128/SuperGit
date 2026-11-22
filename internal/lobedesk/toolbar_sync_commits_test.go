@@ -47,8 +47,9 @@ func TestSyncMenuBrowsesBothSidesOfRealDivergence(t *testing.T) {
 		}
 	}
 	click(ui.RoleMenuButton, "Sync")
-	if !view.HasText(fmt.Sprintf("↑ %d", a.status.Ahead)) || !view.HasText("↓ 1") {
-		t.Fatal("Sync menu does not draw both arrow counts")
+	if !view.HasText(a.t("syncToPush")) || !view.HasText(a.t("syncToPull")) ||
+		!view.HasText(fmt.Sprint(a.status.Ahead)) || !view.HasText("1") {
+		t.Fatal("Sync menu does not draw both pending rows with their counts")
 	}
 	click(ui.RoleMenuItem, a.tf("branchAhead", syncCommitPageSize+1))
 	wait()

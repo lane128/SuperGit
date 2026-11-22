@@ -139,7 +139,7 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 	toolbar.Children(func() {
 		showBranch := a.repo != nil && !a.restoredCheckout
 		progress := a.progressText()
-		// Equal space on each side keeps the branch centered as status changes.
+		// Equal space on each side keeps the command control centered as status changes.
 		ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Children(func() {
 			if inset > 0 {
 				ui.Box(c).Width(inset).Shrink(0)
@@ -198,8 +198,7 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 	})
 }
 
-// Keep one silhouette and two keyboard-accessible targets. The branch and its
-// tracking status stay centered in the whole control, including the icon.
+// The two keyboard-accessible targets share one fixed-width, centered control.
 const toolbarCommandWidth float32 = 360
 
 func (a *app) toolbarCommandControl(c *ui.Context, showBranch bool) {
