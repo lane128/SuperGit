@@ -1,5 +1,41 @@
+# Local Go builds, native test runs, and packaging output
 /build/
+/supergit
+/supergit-lobe
+/*.app/
+/*.dmg
+*.test
+/coverage.out
+
+# Local review material
+/output/pdf/
+/docs/**/*.pdf
+/docs/**/问题清单.md
+/docs/acceptance/**/*.png
+/docs/acceptance/**/*.jpg
+/docs/acceptance/**/*.jpeg
+/docs/acceptance/**/*.webp
+/docs/acceptance/**/SuperGit-验收证据-*.zip
+
+# Local design workspace
+/design/
+
+# Python tooling and macOS metadata
+__pycache__/
+*.py[co]
+.pytest_cache/
 .DS_Store
 
-# Claude Code runtime state, not project content.
-.claude/scheduled_tasks.lock
+# Local agent state. Shared skills and project configuration stay visible.
+/.superpowers/
+/.claude/worktrees/
+/.claude/settings.local.json
+/.claude/scheduled_tasks.lock
+/.claude/scheduled_tasks.json
+/.claude/routines/.state/
+/.claude/checkpoints/
+/.claude/mailbox/
+/.claude/agent-registry.json
+/.claude/agent-memory-local
+/.claude/first-run
+/.claude/assistant-daemon-state.json
