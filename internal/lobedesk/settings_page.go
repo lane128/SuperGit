@@ -55,6 +55,7 @@ func (a *app) settingsPage(c *ui.Context) {
 						a.shortcutsCard(section)
 					case "about":
 						a.aboutCard(section)
+						a.updatesCard(section)
 						ui.Row(section).FillWidth().Justify(ui.End).Children(func() {
 							if workbenchButton(section, a.t("resetSettingsAction"), buttonNormal, false).Clicked() {
 								a.confirmResetSettings()

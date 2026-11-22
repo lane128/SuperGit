@@ -49,6 +49,7 @@ type repositoryTabs struct {
 	sessionState       repositorySessionState
 	sessionStarted     bool
 	repositoryFolders  []string
+	updater            *updateController
 }
 
 func newRepositoryTabs(ctx context.Context, first *app) *repositoryTabs {
@@ -98,6 +99,8 @@ func (a *app) copyWindowPreferences(source *app) {
 	a.showGraph, a.historyLine, a.historyNode = source.showGraph, source.historyLine, source.historyNode
 	a.hideAuthor, a.hideTime = source.hideAuthor, source.hideTime
 	a.autoFetch, a.autoFetchPrune, a.autoFetchEvery = source.autoFetch, source.autoFetchPrune, source.autoFetchEvery
+	a.autoCheckUpdates, a.autoDownloadUpdates = source.autoCheckUpdates, source.autoDownloadUpdates
+	a.skippedUpdateVersion, a.lastUpdateCheckAt = source.skippedUpdateVersion, source.lastUpdateCheckAt
 	a.detailsInfoHidden, a.detailsChangesHidden, a.detailsDiffHidden = source.detailsInfoHidden, source.detailsChangesHidden, source.detailsDiffHidden
 	a.historyDetailsHidden = source.historyDetailsHidden
 	a.sidebarSplit.share, a.historySplit.share, a.filesSplit.share = source.sidebarSplit.share, source.historySplit.share, source.filesSplit.share
@@ -492,6 +495,7 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 			tabs.newTab()
 			c.After(0)
 		}
+		a.updateTitleBarBadge(c)
 		if tabs.opening != nil {
 			display.Text(c, a.t("repoOpening"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)}).SingleLine().Shrink(0)
 		}

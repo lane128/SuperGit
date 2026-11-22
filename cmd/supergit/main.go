@@ -3,9 +3,18 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"supergit/internal/updater"
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "--apply-update" {
+		if err := updater.RunApplyHelper(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "supergit apply-update: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	path := ""
 	if len(os.Args) > 2 {
 		fmt.Fprintln(os.Stderr, "用法: supergit [仓库路径]")

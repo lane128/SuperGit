@@ -45,9 +45,9 @@ func formatVersionLabel(short, build string) string {
 	return "v" + short
 }
 
-func currentAppVersionLabel() string {
-	short := strings.TrimSpace(appVersion)
-	build := strings.TrimSpace(appBuild)
+func currentAppVersionParts() (short, build string) {
+	short = strings.TrimSpace(appVersion)
+	build = strings.TrimSpace(appBuild)
 	if short == "" || build == "" {
 		if exe, err := os.Executable(); err == nil {
 			plistPath := filepath.Join(filepath.Dir(exe), "..", "Info.plist")
@@ -62,5 +62,14 @@ func currentAppVersionLabel() string {
 			}
 		}
 	}
+	short = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(short), "v"))
+	if short == "" {
+		short = defaultAppVersion
+	}
+	return short, build
+}
+
+func currentAppVersionLabel() string {
+	short, build := currentAppVersionParts()
 	return formatVersionLabel(short, build)
 }

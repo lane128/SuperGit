@@ -38,6 +38,9 @@ func workspacePaletteActions() []paletteAction {
 			a.selectSettingsSection("about")
 			a.openSettingsWindow()
 		}},
+		{ID: "app.checkForUpdates", English: "Check for Updates", Chinese: "检查更新", Global: true, Run: func(a *app) {
+			a.checkForUpdates(toastMain)
+		}},
 		{ID: "stash.save", English: "Stash…", Chinese: "保存改动…", Unavailable: func(a *app) string {
 			switch {
 			case a.status.Head == "":

@@ -5,11 +5,14 @@ DESKTOP_APP := build/SuperGit Desktop.app
 LOBE_APP := build/SuperGit Lobe Preview.app
 FOLDER_DOCUMENT_TYPES := [{"CFBundleTypeName":"Repository Folder","CFBundleTypeRole":"Editor","LSHandlerRank":"Alternate","LSItemContentTypes":["public.folder"]}]
 
-.PHONY: build app run demo test check e2e-build native-check desktop-app desktop-e2e-build desktop-native-check lobe-build lobe-app lobe-run lobe-e2e-build icns icons
+.PHONY: build app release-pack run demo test check e2e-build native-check desktop-app desktop-e2e-build desktop-native-check lobe-build lobe-app lobe-run lobe-e2e-build icns icons
+
+UPDATE_PUBKEY ?=
+BUILD_LDFLAGS := $(if $(UPDATE_PUBKEY),-X supergit/internal/updater.DefaultPublicKeyBase64=$(UPDATE_PUBKEY),)
 
 build:
 	@mkdir -p "$(dir $(APP_BINARY))"
-	$(GO) build -o "$(APP_BINARY)" ./cmd/supergit
+	$(GO) build $(if $(BUILD_LDFLAGS),-ldflags "$(BUILD_LDFLAGS)",) -o "$(APP_BINARY)" ./cmd/supergit
 
 # The drawings ship as full-bleed squares; the macOS icon needs them inside the
 # system's rounded-square grid. Re-run "make icons" (and then "make icns") after
@@ -36,6 +39,19 @@ app: build
 	cp packaging/SuperGit.icns "$(APP)/Contents/Resources/SuperGit.icns"
 	codesign --force --sign - "$(APP)"
 	codesign --verify --verbose=2 "$(APP)"
+
+# Package a signed update archive and update.json manifest. Pass UPDATE_PRIVKEY
+# pointing to the local Ed25519 private key file (never commit private keys).
+RELEASE_OUT ?= build/release
+RELEASE_BASE_URL ?=
+RELEASE_NOTES_ZH ?=
+RELEASE_NOTES_EN ?=
+release-pack: app
+	@test -n "$(UPDATE_PRIVKEY)" || (echo "UPDATE_PRIVKEY is required (generate with: go run ./tools/releasepack -genkey -priv path/to/update.key -pub path/to/update.pub)" >&2; exit 2)
+	$(GO) run ./tools/releasepack -app "$(APP)" -out "$(RELEASE_OUT)" -priv "$(UPDATE_PRIVKEY)" \
+		$(if $(RELEASE_BASE_URL),-base-url "$(RELEASE_BASE_URL)",) \
+		$(if $(RELEASE_NOTES_ZH),-notes-zh "$(RELEASE_NOTES_ZH)",) \
+		$(if $(RELEASE_NOTES_EN),-notes-en "$(RELEASE_NOTES_EN)",)
 
 desktop-app:
 	@mkdir -p "$(DESKTOP_APP)/Contents/MacOS" "$(DESKTOP_APP)/Contents/Resources"
