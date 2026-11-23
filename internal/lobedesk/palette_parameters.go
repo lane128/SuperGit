@@ -13,6 +13,7 @@ type paletteStage uint8
 
 const (
 	paletteCommands paletteStage = iota
+	paletteFetchOptions
 	paletteFetchRemote
 	paletteMergeRef
 	paletteWorkflow
@@ -35,6 +36,8 @@ func (a *app) paletteInputLabels() (title, chip, placeholder string) {
 	case paletteWorkflow:
 		step := a.commandPalette.step
 		return step.title, step.title, step.placeholder
+	case paletteFetchOptions:
+		return a.t("paletteFetchOptions"), a.t("fetch"), a.t("paletteFetchFilter")
 	case paletteFetchRemote:
 		return a.t("fetch"), "", a.t("remoteName")
 	case paletteMergeRef:
@@ -68,6 +71,16 @@ func (a *app) paletteMergeUnavailable() string {
 	return ""
 }
 
+func (a *app) paletteCommandChoice(s appShortcut) paletteChoice {
+	detail := s.Keys
+	if meta, ok := fetchPaletteMetadata[s.ID]; ok {
+		detail = a.t(meta.detail)
+	} else if detail == "" {
+		detail = paletteGitHints[s.ID]
+	}
+	return paletteChoice{id: s.ID, label: a.t(s.Label), detail: detail, reason: a.commandPaletteUnavailable(s.ID)}
+}
+
 func (a *app) paletteChoices() []paletteChoice {
 	var rows []paletteChoice
 	switch a.commandPalette.stage {
@@ -75,11 +88,21 @@ func (a *app) paletteChoices() []paletteChoice {
 		return a.stepChoices()
 	case paletteCommands:
 		for _, s := range a.commandPaletteEntries() {
-			detail := s.Keys
-			if detail == "" {
-				detail = paletteGitHints[s.ID]
+			rows = append(rows, a.paletteCommandChoice(s))
+		}
+		return rows
+	case paletteFetchOptions:
+		for _, s := range fetchPaletteCommands() {
+			row := a.paletteCommandChoice(s)
+			if s.ID == "repo.fetch" {
+				s.Label = "fetch"
+				row.label, row.detail = a.t(s.Label), a.t("paletteFetchDetail")
 			}
-			rows = append(rows, paletteChoice{id: s.ID, label: a.t(s.Label), detail: detail, reason: a.commandPaletteUnavailable(s.ID)})
+			meta := fetchPaletteMetadata[s.ID]
+			names := append([]string{row.label, row.id, row.detail, messages[localeEnglish][s.Label], messages[localeChinese][s.Label]}, meta.aliases...)
+			if commandMatchScore(a.commandPalette.query, names...) >= 0 {
+				rows = append(rows, row)
+			}
 		}
 		return rows
 	case paletteFetchRemote:
@@ -127,11 +150,15 @@ func (a *app) acceptPaletteChoice(row paletteChoice, generation uint64) {
 
 	// Confirm the exact ref and SHA (or fetch option) shown by the last frame.
 	index := slices.Index(a.paletteChoices(), row)
-	if index < 0 {
+	if index < 0 || row.reason != "" {
+		return
+	}
+	if s.stage == paletteFetchOptions {
+		a.dispatchPaletteCommand(row.id)
 		return
 	}
 	if s.stage == paletteWorkflow {
-		if s.step.choose != nil && row.reason == "" {
+		if s.step.choose != nil {
 			a.commandPalette.cursor = index
 			a.finishPaletteStep(generation, func() { s.step.choose(row) })
 		}

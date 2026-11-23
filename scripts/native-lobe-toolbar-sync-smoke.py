@@ -31,7 +31,8 @@ size_label = "narrow" if window_width == 900 else "wide"
 profile = artifacts / "profile"
 settings = profile / "supergit" / "settings.json"
 settings.parent.mkdir(parents=True)
-settings.write_text(json.dumps({"language": "en", "theme": "light", "autoFetch": False, "fontScale": 1.15}))
+settings.write_text(json.dumps({"language": "en", "theme": os.environ.get("SUPERGIT_NATIVE_THEME", "light"),
+                                "autoFetch": False, "autoCheckUpdates": False, "fontScale": 1.15}))
 
 
 def git(*args, directory=repo):
@@ -147,9 +148,6 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
             press("button", "Command palette")
             catalog = snapshot()
             expected = (project / "internal/lobedesk/testdata/sublime-merge-2125-palette.txt").read_text().splitlines()
-            # Fetch is a one-step command now; the reference caption remains
-            # a search alias rather than a displayed row.
-            expected = ["Fetch all remotes" if label == "Fetch…" else label for label in expected]
             missing = [label for label in [*expected, "About"] if len(control(catalog, "listItem", label)) != 1]
             assert len(expected) == 75 and not missing, missing
             (artifacts / "command-catalog.txt").write_text(catalog)
@@ -157,7 +155,7 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
             auto("key", "Escape", "--settle")
             press("button", "Command palette")
             auto("type", "Fetch...", "--settle")
-            assert control(snapshot(), "listItem", "Fetch all remotes")
+            assert control(snapshot(), "listItem", "Fetch…")
             auto("key", "Escape", "--settle")
             press("button", "Command palette")
             auto("type", "crbr", "--settle")
@@ -232,23 +230,41 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
                 until(lambda: control(snapshot(), "textField", field), f"{query}: {field}")
 
             press("button", "Command palette")
-            auto("type", "repo.fetch", "--settle")
-            assert control(snapshot(), "listItem", "Fetch all remotes")
-            auto("screenshot", artifacts / "fetch-one-step.png")
+            auto("type", "fetch", "--settle")
+            search = snapshot()
+            primary, = control(search, "listItem", "Fetch…")
+            assert "checked" in primary, search
+            for label in ("Fetch", "Fetch Options…", "Fetch --prune", "Fetch --tags", "Fetch from Remote…", "Git Flow: Start Feature Branch"):
+                assert not control(search, "listItem", label), label
+            auto("screenshot", artifacts / "fetch-search.png")
             auto("key", "Enter", "--settle")
-            assert not control(snapshot(), "textField", "Fetch Options")
-            assert not control(snapshot(), "listItem", "fetch --all")
+            choices = snapshot()
+            assert control(choices, "textField", "Filter fetch options…"), choices
+            default, = control(choices, "listItem", "Fetch")
+            assert "checked" in default, choices
+            for label in ("Fetch --prune", "Fetch --tags", "Fetch from Remote…"):
+                option, = control(choices, "listItem", label)
+                assert bounds(default)[1] < bounds(option)[1], option
+            auto("screenshot", artifacts / "fetch-options.png")
+            press("listItem", "Fetch from Remote…")
+            assert control(snapshot(), "textField", "Remote name")
+            auto("key", "Backspace", "--settle")
+            assert control(snapshot(), "textField", "Filter fetch options…")
+            auto("key", "Backspace", "--settle")
+            restored = snapshot()
+            assert control(restored, "listItem", "Fetch…"), restored
+            auto("key", "Escape", "--settle")
 
             def has_ref(ref):
                 return subprocess.run(["git", "-C", str(repo), "show-ref", "--verify", "--quiet", ref], env=env).returncode == 0
 
             variants = (
-                ("Fetch all remotes", "repo.fetch", False, False, ("origin", "upstream"), None),
-                ("Fetch all remotes with prune", "repo.fetchPrune", True, False, ("origin", "upstream"), None),
-                ("Fetch all remotes with tags", "repo.fetchTags", False, True, ("origin", "upstream"), None),
-                ("Fetch from Remote…", "repo.fetchRemote", False, False, ("upstream",), "upstream"),
+                ("Fetch", False, False, ("origin", "upstream"), None),
+                ("Fetch --prune", True, False, ("origin", "upstream"), None),
+                ("Fetch --tags", False, True, ("origin", "upstream"), None),
+                ("Fetch from Remote…", False, False, ("upstream",), "upstream"),
             )
-            for index, (label, command, prune, tags, touched, remote) in enumerate(variants):
+            for index, (label, prune, tags, touched, remote) in enumerate(variants):
                 # Tags point at unreachable commits to rule out Git's automatic tag following.
                 for name, server in (("origin", bare), ("upstream", other)):
                     new_ref = f"refs/heads/trial-{index}"
@@ -256,9 +272,15 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
                     git("update-ref", f"refs/remotes/{name}/obsolete-{index}", base)
                     orphan = git("commit-tree", tree, "-m", f"{name} tag {index}", directory=server)
                     git("tag", f"{name}-tag-{index}", orphan, directory=server)
-                press("button", "Command palette")
-                auto("type", command, "--settle")
-                press("listItem", label)
+                choose_command("fetch", "Filter fetch options…")
+                for name in ("origin", "upstream"):
+                    assert not has_ref(f"refs/remotes/{name}/trial-{index}"), (label, name)
+                if label == "Fetch":
+                    selected, = control(snapshot(), "listItem", label)
+                    assert "checked" in selected, selected
+                    auto("key", "Enter", "--settle")
+                else:
+                    press("listItem", label)
                 if remote:
                     press("listItem", remote)
                 for name in touched:

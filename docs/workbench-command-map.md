@@ -16,7 +16,7 @@
 | 分支选择 | 顶栏居中命令栏的分支名 | `branch.quickCheckout` | 结合当前仓库、分支列表及现有切换守卫 | 已有选择入口；系统菜单未接入 |
 | ahead / behind | 分支选择旁 | `status.Ahead` / `Behind` | 至少一项非零时显示数量和说明 | 已有只读状态 |
 | 未完成 Git 操作 | 顶栏状态按钮、Commit 操作卡 | `selectWorktree` / Continue / Skip / Abort | 按 merge / rebase / cherry-pick / revert 的现有状态提供动作 | 顶栏跳转到实际操作卡，危险操作保留确认 |
-| Fetch | 顶栏右侧，右键有 prune；命令面板另有 prune／tags／指定远端 | `fetchAll` / `fetchPruneAll` / `fetchTagsAll` / `repo.fetch*` | 有仓库、有 remote，且不在 loading / busy | 后台运行：只读浏览保持可用，写操作禁用；使用已有凭据机制；缺少 remote 有禁用说明 |
+| Fetch | 顶栏 Sync 菜单直接获取全部远端；命令面板的 Fetch… 打开参数选择，含普通获取、prune／tags／指定远端 | `fetchAll` / `fetchPruneAll` / `fetchTagsAll` / `repo.fetch*` | 有仓库、有 remote，且不在 loading / busy | 后台运行：只读浏览保持可用，写操作禁用；使用已有凭据机制；缺少 remote 有禁用说明 |
 | Pull | 顶栏右侧 | `pullFF`；无统一 ID | 有仓库、有 upstream，且不在 loading / busy | 仅 fast-forward；不隐式合并 |
 | Push | 顶栏右侧，右键有 force-with-lease | `confirmPush` / `confirmForcePush`；无统一 ID | 有仓库、remote、已检出分支，且不在 loading / busy | 复用已有确认，不能由新增入口绕过 |
 | 刷新 | 顶栏右侧、快捷键 | `repo.reload` / `reload` | 有仓库，非 loading / busy | 快捷键与按钮均经过状态守卫 |
