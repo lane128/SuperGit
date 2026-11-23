@@ -113,7 +113,7 @@ func TestMovedGitlinkWholeFileStageAndUnstage(t *testing.T) {
 		if reason != "" || len(targets) != 1 {
 			t.Fatalf("pointer excluded from %s: %q", kind, reason)
 		}
-		if err := validateFileActionTargets(a.ctx, a.repo, targets, true); err != nil {
+		if err := validateFileActionTargets(a.ctx, a.repo, targets, fileTargetsBatch); err != nil {
 			t.Fatal(err)
 		}
 		action := a.prepareFileStage(target)
@@ -198,7 +198,7 @@ func TestDirtyOnlySubmoduleDoesNotBlockUnstageOfOtherFiles(t *testing.T) {
 	if reason != "" || len(targets) != 1 || targets[0].Entry.Path != "other.txt" {
 		t.Fatalf("dirty child blocks unrelated unstage: %v %q", targets, reason)
 	}
-	if err := validateFileActionTargets(a.ctx, a.repo, targets, true); err != nil {
+	if err := validateFileActionTargets(a.ctx, a.repo, targets, fileTargetsBatch); err != nil {
 		t.Fatal(err)
 	}
 	for _, e := range status.Entries {

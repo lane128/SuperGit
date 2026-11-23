@@ -134,7 +134,7 @@ func TestLocalWatchSchedulingAndStaleWrites(t *testing.T) {
 	if _, ok := a.beginLocalProbe(now.Add(time.Minute)); ok {
 		t.Fatal("overlapping probe started")
 	}
-	if a.acceptLocalProbe(req, "before", nil, now) {
+	if a.acceptLocalProbe(req, "before", nil, now, nil) {
 		t.Fatal("unchanged repository refreshed")
 	}
 	if _, ok := a.beginLocalProbe(now.Add(time.Second)); ok {
@@ -144,7 +144,7 @@ func TestLocalWatchSchedulingAndStaleWrites(t *testing.T) {
 	if !ok {
 		t.Fatal("active interval did not expire")
 	}
-	if !a.acceptLocalProbe(req, "after", nil, now) {
+	if !a.acceptLocalProbe(req, "after", nil, now, nil) {
 		t.Fatal("external state change did not request refresh")
 	}
 	if a.commitText != "draft survives" {
@@ -160,7 +160,7 @@ func TestLocalWatchSchedulingAndStaleWrites(t *testing.T) {
 		t.Fatal("probe did not recover after write")
 	}
 	a.cancelLocalProbe()
-	if a.acceptLocalProbe(req, "late", nil, now) {
+	if a.acceptLocalProbe(req, "late", nil, now, nil) {
 		t.Fatal("canceled probe was accepted")
 	}
 	req, ok = a.beginLocalProbe(now.Add(2 * time.Minute))
@@ -168,7 +168,7 @@ func TestLocalWatchSchedulingAndStaleWrites(t *testing.T) {
 		t.Fatal("new probe unavailable")
 	}
 	a.loadSeq++
-	if a.acceptLocalProbe(req, "old epoch", nil, now) {
+	if a.acceptLocalProbe(req, "old epoch", nil, now, nil) {
 		t.Fatal("old refresh epoch was accepted")
 	}
 }
@@ -182,7 +182,7 @@ func TestLocalWatchDefersInFlightRefreshUntilFolderChooserCloses(t *testing.T) {
 		t.Fatal("probe unavailable before chooser")
 	}
 	a.repositoryChooserOpen = true
-	if a.acceptLocalProbe(req, "after", nil, now) {
+	if a.acceptLocalProbe(req, "after", nil, now, nil) {
 		t.Fatal("in-flight probe can refresh while the chooser owns the window")
 	}
 	if _, ok := a.beginLocalProbe(now.Add(time.Minute)); ok {
@@ -190,7 +190,7 @@ func TestLocalWatchDefersInFlightRefreshUntilFolderChooserCloses(t *testing.T) {
 	}
 	a.repositoryChooserOpen = false
 	retry, ok := a.beginLocalProbe(now)
-	if !ok || !a.acceptLocalProbe(retry, "after", nil, now) {
+	if !ok || !a.acceptLocalProbe(retry, "after", nil, now, nil) {
 		t.Fatal("closing the chooser did not make the deferred refresh eligible again")
 	}
 }
@@ -203,7 +203,7 @@ func TestLocalWatchBackgroundErrorsAndClose(t *testing.T) {
 	if !ok {
 		t.Fatal("background probe unavailable")
 	}
-	a.acceptLocalProbe(req, "", errors.New("offline"), now)
+	a.acceptLocalProbe(req, "", errors.New("offline"), now, nil)
 	if _, ok := a.beginLocalProbe(now.Add(4 * time.Second)); ok {
 		t.Fatal("failed/background probe did not back off")
 	}
@@ -214,7 +214,7 @@ func TestLocalWatchBackgroundErrorsAndClose(t *testing.T) {
 	if !ok {
 		t.Fatal("background retry unavailable")
 	}
-	a.acceptLocalProbe(req, "", errors.New("offline"), now.Add(15*time.Second))
+	a.acceptLocalProbe(req, "", errors.New("offline"), now.Add(15*time.Second), nil)
 	if len(a.notices[toastMain]) != 1 {
 		t.Fatal("repeated probe failure spammed notifications")
 	}

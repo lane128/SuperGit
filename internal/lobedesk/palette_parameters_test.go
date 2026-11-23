@@ -90,7 +90,7 @@ func TestPaletteFetchRemoteSurvivesBackgroundRefresh(t *testing.T) {
 	if a.commandPalette.stage != paletteFetchRemote {
 		t.Fatal("remote command did not open the picker")
 	}
-	if a.acceptLocalProbe(probe, "changed", nil, now) {
+	if a.acceptLocalProbe(probe, "changed", nil, now, nil) {
 		t.Fatal("in-flight probe would close the remote picker")
 	}
 	a.tickAutoFetch()
@@ -99,7 +99,7 @@ func TestPaletteFetchRemoteSurvivesBackgroundRefresh(t *testing.T) {
 	}
 	a.commandPalette = commandPaletteState{}
 	retry, ok := a.beginLocalProbe(now)
-	if !ok || !a.acceptLocalProbe(retry, "changed", nil, now) {
+	if !ok || !a.acceptLocalProbe(retry, "changed", nil, now, nil) {
 		t.Fatal("deferred repository change lost after dismissal")
 	}
 }

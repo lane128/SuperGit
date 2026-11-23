@@ -188,7 +188,7 @@ func (a *app) workingFileSections(c *ui.Context) {
 	for _, group := range a.workingFileGroups() {
 		a.fileSection(c.Key(group.Key), group.Key, group.Title, group.Entries, group.Staged)
 	}
-	if len(a.status.Entries) == 0 {
+	if !a.status.HasWorkspaceChanges() {
 		a.cleanFiles(c)
 	}
 }
@@ -447,7 +447,7 @@ func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Elemen
 			icon, state := lucide.Square(), "unstaged"
 			if entry.Staged() {
 				icon, state = lucide.SquareCheck(), "staged"
-				if entry.Unstaged() {
+				if entry.WorkspaceUnstaged() {
 					icon, state = lucide.SquareMinus(), "partiallyStaged"
 				}
 			}

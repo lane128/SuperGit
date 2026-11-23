@@ -328,7 +328,7 @@ func (a *app) filesPaneBody(c *ui.Context) {
 			ui.Row(c.Key("files-heading")).Gap(8).AlignItems(ui.Center).Children(func() {
 				display.Text(c, a.t("filesTab"), display.TextProps{Strong: true, FontSize: scaledFont(12)})
 				if a.worktreeSelected {
-					display.Tag(c, fmt.Sprint(len(a.status.Entries)), display.TagProps{Variant: display.TagFilled, Size: theme.Small, Round: true})
+					display.Tag(c, fmt.Sprint(a.status.WorkspaceFileCount()), display.TagProps{Variant: display.TagFilled, Size: theme.Small, Round: true})
 				}
 			})
 			if a.worktreeSelected {
@@ -443,10 +443,8 @@ func (a *app) historyDiffPane(c *ui.Context) {
 
 func (a *app) detailTabStatus(file detailFileKey) string {
 	if a.worktreeSelected {
-		for _, entry := range a.status.Entries {
-			if entry.Path == file.Path {
-				return statusCode(entry, file.Staged)
-			}
+		if entry, ok := a.workspaceEntry(file); ok {
+			return statusCode(entry, file.Staged)
 		}
 	} else {
 		for _, entry := range a.commitFiles {
@@ -571,7 +569,7 @@ func (a *app) detailPlaceholder(c *ui.Context) {
 func (a *app) worktreeDiffHeader(c *ui.Context, tk *theme.Tokens) bool {
 	entry, ok := a.selectedEntry()
 	file := detailFileKey{Path: a.selectedPath, Staged: a.selectedStaged}
-	dualVersion := ok && !entry.Conflict && entry.Unstaged() && entry.Staged()
+	dualVersion := ok && !entry.Conflict && entry.WorkspaceUnstaged() && entry.Staged()
 	header := ui.Row(c.Key(file)).Height(scaledFont(48)).Shrink(0).Padding(0, 12).Gap(8).AlignItems(ui.Center)
 	if !dualVersion {
 		header.BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)

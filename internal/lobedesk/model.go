@@ -89,7 +89,7 @@ func (a *app) stagedEntries() []gitrepo.Entry {
 func (a *app) unstagedEntries() []gitrepo.Entry {
 	var result []gitrepo.Entry
 	for _, entry := range a.status.Entries {
-		if entry.Unstaged() && !isUntracked(entry) {
+		if entry.WorkspaceUnstaged() && !isUntracked(entry) {
 			result = append(result, entry)
 		}
 	}
@@ -510,8 +510,12 @@ func commitBody(message string) string {
 }
 
 func (a *app) selectedEntry() (gitrepo.Entry, bool) {
+	return a.workspaceEntry(detailFileKey{Path: a.selectedPath, Staged: a.selectedStaged})
+}
+
+func (a *app) workspaceEntry(file detailFileKey) (gitrepo.Entry, bool) {
 	for _, entry := range a.status.Entries {
-		if entry.Path == a.selectedPath {
+		if entry.Path == file.Path && (file.Staged && entry.Staged() && !entry.Conflict || !file.Staged && entry.WorkspaceUnstaged()) {
 			return entry, true
 		}
 	}

@@ -12,7 +12,7 @@ func (a *app) worktreeOverview(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	if len(a.overviewEntries) == 0 {
 		key := "noChangesShort"
-		if len(a.status.Entries) > 0 {
+		if a.status.HasWorkspaceChanges() {
 			key = "diffLoading"
 		}
 		display.Text(c, a.t(key), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(12)}).Padding(14)

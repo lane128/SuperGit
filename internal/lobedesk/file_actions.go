@@ -44,13 +44,21 @@ func (a *app) fileActionTargetCurrent(target fileActionTarget) bool {
 	}
 	for _, entry := range a.status.Entries {
 		if entry == target.Entry {
-			return (target.Staged && entry.Staged()) || (!target.Staged && entry.Unstaged())
+			return (target.Staged && entry.Staged()) || (!target.Staged && entry.WorkspaceUnstaged())
 		}
 	}
 	return false
 }
 
-func validateFileActionTargets(ctx context.Context, repo *gitrepo.Repository, targets []fileActionTarget, all bool) error {
+type fileValidationScope int
+
+const (
+	fileTargetsOnly fileValidationScope = iota
+	fileTargetsBatch
+	fileTargetsDiscardAll
+)
+
+func validateFileActionTargets(ctx context.Context, repo *gitrepo.Repository, targets []fileActionTarget, scope fileValidationScope) error {
 	if len(targets) == 0 || repo.Root != targets[0].Root {
 		return errors.New("文件操作目标已改变，请刷新后重试")
 	}
@@ -58,15 +66,15 @@ func validateFileActionTargets(ctx context.Context, repo *gitrepo.Repository, ta
 	if err != nil {
 		return err
 	}
-	entries := make(map[string]gitrepo.Entry, len(status.Entries))
+	entries := make(map[gitrepo.Entry]struct{}, len(status.Entries))
 	for _, entry := range status.Entries {
-		if all && entry.Conflict {
-			return errors.New("存在冲突，请逐个处理")
+		if scope != fileTargetsOnly && batchFileBlocked(entry, scope == fileTargetsDiscardAll) {
+			return errors.New("存在冲突或受保护的子模块，请逐个处理")
 		}
-		entries[entry.Path] = entry
+		entries[entry] = struct{}{}
 	}
 	for _, target := range targets {
-		if target.Root != repo.Root || entries[target.Entry.Path] != target.Entry || !fileStageSupported(target.Entry, target.Staged) {
+		if _, ok := entries[target.Entry]; target.Root != repo.Root || !ok || !fileStageSupported(target.Entry, target.Staged) {
 			return errors.New("文件操作目标已改变，请刷新后重试")
 		}
 	}
@@ -78,7 +86,7 @@ func (a *app) prepareFileStage(target fileActionTarget) func(context.Context, *g
 		return nil
 	}
 	return func(ctx context.Context, repo *gitrepo.Repository) error {
-		if err := validateFileActionTargets(ctx, repo, []fileActionTarget{target}, false); err != nil {
+		if err := validateFileActionTargets(ctx, repo, []fileActionTarget{target}, fileTargetsOnly); err != nil {
 			return err
 		}
 		entry := target.Entry
@@ -168,7 +176,11 @@ func (a *app) prepareScopedDiscardTargets(targets []fileActionTarget, batch, sel
 						return errors.New(stale)
 					}
 					if batch || selected {
-						if err := validateFileActionTargets(ctx, current, targets, batch); err != nil {
+						scope := fileTargetsOnly
+						if batch {
+							scope = fileTargetsDiscardAll
+						}
+						if err := validateFileActionTargets(ctx, current, targets, scope); err != nil {
 							return err
 						}
 					}

@@ -192,7 +192,7 @@ func TestSidebarRefTooltipTracksClippingOnResize(t *testing.T) {
 			theme.Apply(c)
 			width, _ := c.Size()
 			ui.Column(c).Width(width).Children(func() {
-				a.sidebarRefRowWithState(c, lucide.GitBranch(), item.name, item.state, "", false, true, func() {})
+				a.sidebarRefRowWithState(c, lucide.GitBranch(), item.name, item.state, "", 0, false, true, func() {})
 			})
 		}, 85, 100)
 		for _, width := range []int{85, 320, 85} {

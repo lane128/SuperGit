@@ -1159,32 +1159,14 @@ func (a *app) applyOperationMessage(message string) {
 }
 
 func (a *app) reconcileSelection() {
-	entries := a.status.Entries
-	if len(entries) == 0 {
-		a.selectedPath = ""
-		a.selectedStaged = false
+	if !a.worktreeHasSelectedFile() {
+		a.selectedStaged = !a.selectedStaged
+		if !a.worktreeHasSelectedFile() {
+			a.selectedPath, a.selectedStaged = firstWorkspaceEntry(a.status.Entries)
+		}
 		a.diff = gitrepo.Diff{}
-	} else {
-		found := false
-		for _, entry := range entries {
-			if entry.Path != a.selectedPath {
-				continue
-			}
-			found = true
-			staged := entry.Staged() && !entry.Conflict
-			unstaged := entry.Unstaged()
-			if a.selectedStaged && !staged {
-				a.selectedStaged = false
-			}
-			if !a.selectedStaged && !unstaged {
-				a.selectedStaged = true
-			}
-			break
-		}
-		if !found {
-			a.selectedPath, a.selectedStaged = firstWorkspaceEntry(entries)
-			a.diff = gitrepo.Diff{}
-		}
+	}
+	if a.selectedPath != "" {
 		// A folded section takes its rows out of the list and out of the
 		// keyboard order. A selection left inside one would keep the details
 		// showing a file the reader cannot find, so it moves to the first row
@@ -1381,15 +1363,8 @@ func (a *app) setSelectedCommit(sha string) {
 // worktreeHasSelectedFile reports whether the selected path is still one of
 // the working tree's files, so the working-tree row can keep it open.
 func (a *app) worktreeHasSelectedFile() bool {
-	if a.selectedPath == "" {
-		return false
-	}
-	for _, entry := range a.status.Entries {
-		if entry.Path == a.selectedPath {
-			return true
-		}
-	}
-	return false
+	_, ok := a.selectedEntry()
+	return ok
 }
 
 // selectWorktree makes the working tree the page's selection. The files

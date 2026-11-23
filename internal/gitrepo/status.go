@@ -34,6 +34,27 @@ func (r *Repository) StatusWithText(ctx context.Context) (Status, string, error)
 	return s, out, err
 }
 
+func (s Status) HasWorkspaceChanges() bool {
+	for _, entry := range s.Entries {
+		if entry.WorkspaceChanged() {
+			return true
+		}
+	}
+	return false
+}
+
+// WorkspaceFileCount counts paths once, even when Git reports separate
+// records for a staged deletion and a new untracked file at the same path.
+func (s Status) WorkspaceFileCount() int {
+	paths := make(map[string]struct{})
+	for _, entry := range s.Entries {
+		if entry.WorkspaceChanged() {
+			paths[entry.Path] = struct{}{}
+		}
+	}
+	return len(paths)
+}
+
 func parseStatus(out string) (Status, error) {
 	s := Status{}
 	hasTrackingCounts := false

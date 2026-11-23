@@ -6,6 +6,10 @@ import (
 	"supergit/internal/gitrepo"
 )
 
+func batchFileBlocked(entry gitrepo.Entry, discard bool) bool {
+	return entry.Conflict || discard && entry.IsSubmodule() && entry.WorkspaceUnstaged()
+}
+
 // Every batch reports one explicit scope. A protected entry blocks the batch
 // instead of being silently skipped while the UI claims 'all' succeeded.
 func (a *app) batchFileTargets(kind string) ([]fileActionTarget, string) {
@@ -17,19 +21,19 @@ func (a *app) batchFileTargets(kind string) ([]fileActionTarget, string) {
 	}
 	targets := make([]fileActionTarget, 0, len(a.status.Entries))
 	for _, entry := range a.status.Entries {
-		if entry.Conflict || kind == "discard" && entry.IsSubmodule() {
+		if batchFileBlocked(entry, kind == "discard") {
 			return nil, a.t("fileActionsProtected")
 		}
 		include := false
 		switch kind {
 		case "stage":
-			include = entry.Unstaged()
+			include = entry.WorkspaceUnstaged()
 		case "stageTracked":
-			include = entry.Unstaged() && !isUntracked(entry)
+			include = entry.WorkspaceUnstaged() && !isUntracked(entry)
 		case "unstage":
 			include = entry.Staged()
 		case "discard":
-			include = entry.Unstaged() && !isUntracked(entry)
+			include = entry.WorkspaceUnstaged() && !isUntracked(entry)
 		}
 		if include {
 			if !fileStageSupported(entry, kind == "unstage") {
@@ -83,7 +87,7 @@ func (a *app) runBatchStageKind(kind string) {
 		paths = append(paths, target.Entry.Path)
 	}
 	a.performAs(busy, label, "", func(ctx context.Context, repo *gitrepo.Repository) error {
-		if err := validateFileActionTargets(ctx, repo, targets, true); err != nil {
+		if err := validateFileActionTargets(ctx, repo, targets, fileTargetsBatch); err != nil {
 			return err
 		}
 		if staged {

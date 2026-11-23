@@ -302,6 +302,7 @@ func (tabs *repositoryTabs) activate(next *app, fresh bool) {
 func (a *app) revalidateActivatedRepository() {
 	repo, seq, baseline := a.repo, a.loadSeq, a.localWatch.stamp
 	entries := slices.Clone(a.status.Entries)
+	submodules := a.nextSubmoduleProbes()
 	forceReload := a.loadErr != "" || baseline == ""
 	a.activationRefresh = true
 	a.loading, a.loadSince = true, time.Now()
@@ -309,18 +310,22 @@ func (a *app) revalidateActivatedRepository() {
 		ctx, cancel := context.WithTimeout(a.ctx, localBackgroundInterval)
 		defer cancel()
 		unchanged := false
+		var updates []gitrepo.Submodule
 		if !forceReload {
 			current, err := gitrepo.Open(ctx, repo.Root)
 			if err == nil && current.Root == repo.Root {
 				stamp, err := readLocalWatchStamp(ctx, current, entries)
 				unchanged = err == nil && stamp == baseline
+				if unchanged {
+					updates = readSubmoduleUpdates(a.ctx, current, submodules)
+				}
 			}
 		}
 		a.hopToMain(func() {
 			if a.localWatch.closed || a.loadSeq != seq || a.repo != repo || a.activeRepositorySession() != a {
 				return
 			}
-			if unchanged {
+			if unchanged && !a.applySubmoduleUpdates(updates) {
 				a.activationRefresh, a.loading = false, false
 				a.localWatch.next = time.Now().Add(localProbeInterval)
 				a.invalidate()
@@ -766,7 +771,7 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 		close := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, !canClose || clipped, false).
 			Width(scaledFont(workbenchButtonBaseHeight)).PaddingX(0).Label(closeLabel).Tooltip(closeLabel)
 		styleTabClose(close, tk, ink)
-		dirty := session.repo != nil && len(session.status.Entries) > 0
+		dirty := session.repo != nil && session.status.HasWorkspaceChanges()
 		if dirty {
 			close.Description(a.t("repositoryTabUncommitted"))
 		}

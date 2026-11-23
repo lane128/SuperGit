@@ -24,12 +24,15 @@ type localRepositoryWatch struct {
 	next                     time.Time
 	lastError                string
 	cancel                   context.CancelFunc
+	submoduleRound           int
 }
 
 type localWatchRequest struct {
 	repo       *gitrepo.Repository
 	epoch, seq uint64
 	entries    []gitrepo.Entry
+	submodules []gitrepo.Submodule
+	baseline   string
 }
 
 // ChangeStamp observes Git metadata, but deliberately excludes working bytes.
@@ -77,6 +80,11 @@ func readLocalWatchStampWithStatus(parent context.Context, repo *gitrepo.Reposit
 		if err != nil {
 			return "", err
 		}
+		// The directory's mtime describes files inside the child, not a parent
+		// diff. Keep the hash shape stable across child-only edits.
+		if entry.IsSubmodule() && info.IsDir() {
+			continue
+		}
 		observation := struct {
 			Path           string
 			Size, Modified int64
@@ -94,6 +102,113 @@ func readLocalWatchStampWithStatus(parent context.Context, repo *gitrepo.Reposit
 		}
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+const submoduleProbeBatch = 4
+const submoduleProbeTimeout = 2 * time.Second
+
+// The parent porcelain carries flags for child edits, not a count. Prioritize
+// those children and any displayed badge (the parent and child snapshots can
+// straddle an edit). Rotate through clean children too because nested ignore
+// configuration can hide a child's gitlink changes from the parent's flags.
+func (a *app) nextSubmoduleProbes() []gitrepo.Submodule {
+	if len(a.submodules) == 0 {
+		return nil
+	}
+	dirty := make(map[string]bool)
+	for _, entry := range a.status.Entries {
+		if entry.SubmoduleHasLocalEdits() {
+			dirty[entry.Path] = true
+		}
+	}
+	var priority, clean []gitrepo.Submodule
+	seen := make(map[string]bool)
+	for _, module := range a.submodules {
+		if (!module.Initialized && module.Error == "") || seen[module.Path] {
+			continue
+		}
+		seen[module.Path] = true
+		if dirty[module.Path] || module.ChangedFiles > 0 || module.Error != "" {
+			priority = append(priority, module)
+		} else {
+			clean = append(clean, module)
+		}
+	}
+	round := a.localWatch.submoduleRound
+	a.localWatch.submoduleRound++
+	var probes []gitrepo.Submodule
+	for _, group := range [][]gitrepo.Submodule{priority, clean} {
+		for i := range min(len(group), submoduleProbeBatch) {
+			probes = append(probes, group[(round*submoduleProbeBatch+i)%len(group)])
+		}
+	}
+	return probes
+}
+
+func readSubmoduleUpdates(ctx context.Context, repo *gitrepo.Repository, modules []gitrepo.Submodule) []gitrepo.Submodule {
+	if len(modules) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, submoduleProbeTimeout)
+	defer cancel()
+	results := make(chan gitrepo.Submodule, len(modules))
+	for _, module := range modules {
+		go func() {
+			after := repo.SubmoduleCheckout(ctx, module.Path)
+			if ctx.Err() != nil {
+				after = gitrepo.Submodule{}
+			}
+			results <- after
+		}()
+	}
+	var updates []gitrepo.Submodule
+	for range modules {
+		// Prefer completed observations even if another child timed out.
+		select {
+		case after := <-results:
+			if after.Path != "" {
+				updates = append(updates, after)
+			}
+			continue
+		default:
+		}
+		select {
+		case after := <-results:
+			if after.Path != "" {
+				updates = append(updates, after)
+			}
+		case <-ctx.Done():
+			return updates
+		}
+	}
+	return updates
+}
+
+// A count or branch label can change while the parent snapshot stays valid.
+// Patch those rows in place so parent history and file selections stay live.
+func (a *app) applySubmoduleUpdates(updates []gitrepo.Submodule) (reload bool) {
+	changed := false
+	for _, after := range updates {
+		for i, before := range a.submodules {
+			if before.Path != after.Path {
+				continue
+			}
+			if before.Initialized != after.Initialized || before.Current != after.Current {
+				return true
+			}
+			if before.ChangedFiles == after.ChangedFiles && before.Branch == after.Branch && before.Dirty == after.Dirty &&
+				(before.Error == "") == (after.Error == "") {
+				continue
+			}
+			after.Name, after.Recorded, after.Index = before.Name, before.Recorded, before.Index
+			a.submodules[i] = after
+			changed = true
+		}
+	}
+	if changed {
+		a.invalidate()
+	}
+	return false
 }
 
 func (a *app) cancelLocalProbe() {
@@ -119,10 +234,13 @@ func (a *app) beginLocalProbe(now time.Time) (localWatchRequest, bool) {
 	w.next = now.Add(interval)
 	w.reading = true
 	w.seq++
-	return localWatchRequest{repo: a.repo, epoch: a.loadSeq, seq: w.seq, entries: slices.Clone(a.status.Entries)}, true
+	return localWatchRequest{
+		repo: a.repo, epoch: a.loadSeq, seq: w.seq, entries: slices.Clone(a.status.Entries),
+		submodules: a.nextSubmoduleProbes(), baseline: w.stamp,
+	}, true
 }
 
-func (a *app) acceptLocalProbe(req localWatchRequest, stamp string, err error, now time.Time) bool {
+func (a *app) acceptLocalProbe(req localWatchRequest, stamp string, err error, now time.Time, updates []gitrepo.Submodule) bool {
 	w := &a.localWatch
 	if w.seq != req.seq || a.repo != req.repo || a.loadSeq != req.epoch {
 		return false
@@ -148,7 +266,7 @@ func (a *app) acceptLocalProbe(req localWatchRequest, stamp string, err error, n
 		return false
 	}
 	w.lastError = ""
-	return stamp != "" && stamp != w.stamp
+	return stamp != "" && stamp != w.stamp || a.applySubmoduleUpdates(updates)
 }
 
 func (a *app) pollLocalChanges(now time.Time) {
@@ -161,8 +279,12 @@ func (a *app) pollLocalChanges(now time.Time) {
 	go func() {
 		defer cancel()
 		stamp, err := readLocalWatchStamp(ctx, req.repo, req.entries)
+		var updates []gitrepo.Submodule
+		if err == nil && stamp == req.baseline {
+			updates = readSubmoduleUpdates(ctx, req.repo, req.submodules)
+		}
 		a.hopToMain(func() {
-			if a.acceptLocalProbe(req, stamp, err, time.Now()) {
+			if a.acceptLocalProbe(req, stamp, err, time.Now(), updates) {
 				a.openRepository(req.repo.Root, false)
 			}
 		})

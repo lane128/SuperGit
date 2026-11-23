@@ -454,7 +454,7 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 			default:
 				refLabel, fullRef = shortSHA(module.Current), module.Current
 			}
-			row := a.sidebarRefRowWithState(c, lucide.Boxes(), module.Name, state, refLabel, false, false, func() {
+			row := a.sidebarRefRowWithState(c, lucide.Boxes(), module.Name, state, refLabel, module.ChangedFiles, false, false, func() {
 				a.openSidebarWorkspace(key)
 			})
 			description := module.Path
@@ -463,6 +463,9 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 			}
 			if fullRef != "" {
 				description += "\n" + fullRef
+			}
+			if module.ChangedFiles > 0 {
+				description += "\n" + a.changedFilesLabel(module.ChangedFiles)
 			}
 			description += "\n" + a.t("submoduleMenuHint")
 			row.Description(description).Tooltip(description)
@@ -554,10 +557,10 @@ func (a *app) sidebarGroup(c *ui.Context, key, title string, count int, items fu
 // checked-out branch with its own glyph, so a long name that clips still says
 // which branch is live.
 func (a *app) sidebarRefRow(c *ui.Context, icon *ui.SVG, label string, selected, current bool, onClick func()) ui.Element {
-	return a.sidebarRefRowWithState(c, icon, label, "", "", selected, current, onClick)
+	return a.sidebarRefRowWithState(c, icon, label, "", "", 0, selected, current, onClick)
 }
 
-func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state, trailing string, selected, current bool, onClick func()) ui.Element {
+func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state, trailing string, count int, selected, current bool, onClick func()) ui.Element {
 	tk := a.sidebarTokens(c)
 	height := float32(24)
 	if state != "" {
@@ -581,10 +584,15 @@ func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state, 
 	row.Children(func() {
 		ui.Icon(c, icon).FontSize(scaledFont(10)).TextColor(tk.TextTertiary)
 		dir, base := filepath.Split(label)
+		// Keep room for the name (or path tail) when a badge and ref compete for width.
+		var preferredWidth float32
+		if count > 0 {
+			preferredWidth, _ = c.MeasureText(0, ui.Span{Text: base, Size: scaledFont(11)})
+			preferredWidth = min(preferredWidth, scaledFont(90))
+		}
 		switch {
 		case trailing != "" && dir != "" && base != "":
-			// Give the final path component priority when the ref leaves little room.
-			name = ui.Row(c).Grow(1).Basis(0).MinWidth(0).Children(func() {
+			name = ui.Row(c).Grow(1).Basis(preferredWidth).MinWidth(0).Shrink(0.01).Children(func() {
 				ui.Text(c, dir).FontSize(scaledFont(11)).TextColor(color).
 					SingleLine().MinWidth(0).Shrink(1).Clip().AccessHidden(true)
 				ui.Text(c, base).FontSize(scaledFont(11)).TextColor(color).
@@ -592,7 +600,7 @@ func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state, 
 			})
 		case state == "":
 			name = display.Text(c, label, display.TextProps{FontSize: scaledFont(11), Strong: selected || current}).
-				TextColor(color).SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
+				TextColor(color).SingleLine().Grow(1).Basis(preferredWidth).MinWidth(0).Shrink(0.01).AccessHidden(true)
 		default:
 			// State gets its own line so a narrow sidebar keeps the module name.
 			ui.Column(c).Grow(1).Basis(0).MinWidth(0).Children(func() {
@@ -603,9 +611,17 @@ func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state, 
 			})
 		}
 		if trailing != "" {
-			ui.Text(c, trailing).TextColor(tk.TextSecondary).FontSize(scaledFont(10)).SingleLine().
-				MinWidth(0).MaxWidthPercent(48).Shrink(0).Padding(1, 4).
+			reference := ui.Text(c, trailing).TextColor(tk.TextSecondary).FontSize(scaledFont(10)).SingleLine().
+				MinWidth(0).MaxWidthPercent(48).Shrink(1).Padding(1, 4).
 				Radius(tk.BorderRadiusSM).Background(tk.FillSecondary).AccessHidden(true)
+			if count > 0 {
+				// Leave room for visible ref text when the name is long.
+				reference.MinWidth(scaledFont(28))
+			}
+		}
+		if count > 0 {
+			ui.Text(c, fmt.Sprint(count)).TextColor(tk.WarningText).FontSize(scaledFont(10)).FontWeight(600).
+				SingleLine().Shrink(0).Padding(1, 4).Radius(tk.BorderRadiusSM).Background(tk.WarningBg).AccessHidden(true)
 		}
 		if current {
 			ui.Icon(c, lucide.Check()).FontSize(scaledFont(11)).TextColor(tk.Green).Shrink(0).AccessHidden(true)

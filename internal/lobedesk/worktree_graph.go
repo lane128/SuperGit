@@ -14,7 +14,7 @@ type worktreeGraphLink struct {
 
 func (a *app) worktreeGraphConnection(commits []gitrepo.Commit, graph *commitGraph) (worktreeGraphLink, bool) {
 	link := worktreeGraphLink{HeadRow: -1, HasHead: a.status.Head != ""}
-	if !a.showGraph || len(a.status.Entries) == 0 {
+	if !a.showGraph || !a.status.HasWorkspaceChanges() {
 		return link, false
 	}
 	if graph != nil && link.HasHead {

@@ -271,7 +271,7 @@ func (a *app) runWorkspaceStage(targets []fileActionTarget) {
 		paths = append(paths, target.Entry.Path)
 	}
 	a.perform(label, "", func(ctx context.Context, repo *gitrepo.Repository) error {
-		if err := validateFileActionTargets(ctx, repo, targets, false); err != nil {
+		if err := validateFileActionTargets(ctx, repo, targets, fileTargetsOnly); err != nil {
 			return err
 		}
 		if staged {

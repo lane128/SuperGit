@@ -18,7 +18,7 @@ func TestHistoryReservesLeftLaneForCheckedOutLine(t *testing.T) {
 		{SHA: "root"},
 		{SHA: "unrelated"},
 	}
-	a := &app{showGraph: true, commits: commits, status: gitrepo.Status{Head: "head", Entries: []gitrepo.Entry{{Path: "dirty"}}}}
+	a := &app{showGraph: true, commits: commits, status: gitrepo.Status{Head: "head", Entries: []gitrepo.Entry{{Path: "dirty", Index: '.', Worktree: 'M'}}}}
 	graph := a.cachedCommitGraph(commits, lanePalette, 80)
 	for i, row := range graph.Rows {
 		mainline := i == 3 || i == 5 || i == 6
@@ -105,7 +105,7 @@ func TestStashesJoinHistoryAtTheirBase(t *testing.T) {
 func TestWorkingChangesPaintStraightThroughStashAndSideTip(t *testing.T) {
 	commits := []gitrepo.Commit{{SHA: "child", Subject: "Side", Parents: []string{"actual"}}, {SHA: "actual", Subject: "Main"}}
 	a := &app{showGraph: true, commits: commits, stashes: []gitrepo.Stash{{SHA: "stash", Message: "Saved work"}},
-		status: gitrepo.Status{Head: "actual", Entries: []gitrepo.Entry{{Path: "dirty"}}}}
+		status: gitrepo.Status{Head: "actual", Entries: []gitrepo.Entry{{Path: "dirty", Index: '.', Worktree: 'M'}}}}
 	tt := pageTester(a, func(c *ui.Context) { a.commitList(c) })
 	img := tt.Image()
 	for _, name := range []string{"Saved work", "Side"} {
@@ -171,7 +171,7 @@ func TestHiddenHeadDoesNotConnectToFirstVisibleCommit(t *testing.T) {
 
 func TestLeftLaneContinuesAcrossPageUntilHeadArrives(t *testing.T) {
 	a := &app{showGraph: true, historyMore: true, historyTips: []string{"main", "child"},
-		status: gitrepo.Status{Head: "main", Branch: "main", Entries: []gitrepo.Entry{{Path: "dirty"}}}}
+		status: gitrepo.Status{Head: "main", Branch: "main", Entries: []gitrepo.Entry{{Path: "dirty", Index: '.', Worktree: 'M'}}}}
 	page := []gitrepo.Commit{{SHA: "child", Parents: []string{"main"}}}
 	rect := ui.Rect{Y: 50, H: 44}
 	draw := func() *commitGraph { return a.cachedCommitGraph(page, lanePalette, 80) }

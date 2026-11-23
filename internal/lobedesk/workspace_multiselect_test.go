@@ -390,7 +390,7 @@ func TestWorkspaceSelectedBatchRevalidatesActualStatusBeforeWriting(t *testing.T
 }
 
 func TestWorkspaceSelectedSetRejectsProtectedMember(t *testing.T) {
-	for _, kind := range []string{"conflict", "dirty-submodule"} {
+	for _, kind := range []string{"conflict", "replaced-submodule"} {
 		t.Run(kind, func(t *testing.T) {
 			a, _, tt := workspaceSelectionFixture(t)
 			// Deliberate status fixtures: test set-level protection, independently
@@ -401,7 +401,8 @@ func TestWorkspaceSelectedSetRejectsProtectedMember(t *testing.T) {
 					if kind == "conflict" {
 						a.status.Entries[i].Conflict = true
 					} else {
-						a.status.Entries[i].Submodule = "S.M."
+						a.status.Entries[i].Submodule = "S..."
+						a.status.Entries[i].Worktree = 'T'
 					}
 					protected = a.status.Entries[i]
 				}

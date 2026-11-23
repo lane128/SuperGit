@@ -18,6 +18,21 @@ func (e Entry) Unstaged() bool {
 }
 func (e Entry) IsSubmodule() bool { return len(e.Submodule) > 0 && e.Submodule[0] == 'S' }
 
+// SubmoduleHasLocalEdits reports the porcelain v2 tracked and untracked
+// dirtiness flags, independently of whether the child's HEAD moved.
+func (e Entry) SubmoduleHasLocalEdits() bool {
+	return e.IsSubmodule() && len(e.Submodule) == 4 && (e.Submodule[2] == 'M' || e.Submodule[3] == 'U')
+}
+
+// WorkspaceUnstaged reports changes this repository can record. A child
+// checkout's edits are reported in that checkout, while its gitlink can
+// still change here independently in the index or worktree.
+func (e Entry) WorkspaceUnstaged() bool {
+	return e.Unstaged() && (e.Conflict || e.Worktree != 'M' || !e.SubmoduleHasLocalEdits() || e.Submodule[1] == 'C')
+}
+
+func (e Entry) WorkspaceChanged() bool { return e.Staged() || e.WorkspaceUnstaged() }
+
 type Status struct {
 	Branch, Head, Upstream string
 	UpstreamGone           bool
@@ -64,5 +79,6 @@ type Worktree struct {
 type Submodule struct {
 	Name, Path, Recorded, Index, Current, Branch string
 	Initialized, Dirty                           bool
+	ChangedFiles                                 int
 	Error                                        string
 }

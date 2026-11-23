@@ -25,22 +25,22 @@ func TestStageTrackedScopeUsesIndexTrackingAndExistingProtection(t *testing.T) {
 	}
 	ordinary := a.status.Entries[0]
 	for _, tc := range []struct {
-		name, submodule   string
-		conflict, allowed bool
+		name, submodule string
+		conflict        bool
+		want            int
 	}{
 		{name: "conflict", conflict: true},
-		{name: "dirty-only child", submodule: "S.M."},
-		{name: "changed gitlink", submodule: "SC..", allowed: true},
+		{name: "dirty-only child", submodule: "S.M.", want: 1},
+		{name: "changed gitlink", submodule: "SC..", want: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a.status.Entries = []gitrepo.Entry{ordinary, {Path: "module", Index: '.', Worktree: 'M', Submodule: tc.submodule, Conflict: tc.conflict}}
 			got, reason := a.batchFileTargets("stageTracked")
-			if tc.allowed {
-				if reason != "" || len(got) != 2 {
-					t.Fatalf("supported parent pointer rejected: %s", reason)
-				}
-			} else if reason == "" || len(got) != 0 {
-				t.Fatal("protected entry did not block entire batch")
+			if len(got) != tc.want || (reason != "") != (tc.want == 0) {
+				t.Fatalf("want %d targets: got %+v, %q", tc.want, got, reason)
+			}
+			if tc.want == 1 && got[0].Entry != ordinary {
+				t.Fatalf("dirty-only child displaced ordinary parent target: %+v", got)
 			}
 		})
 	}

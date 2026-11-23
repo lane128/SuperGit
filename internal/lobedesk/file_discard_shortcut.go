@@ -14,7 +14,7 @@ func (a *app) workspaceDiscardSurfaceAllowed() bool {
 // Bind only the tracked worktree version. Capturing the rendered source also
 // prevents a retained row callback from following a refresh or repository switch.
 func (a *app) wireFileDiscardKey(row ui.Element, entry gitrepo.Entry, staged bool) {
-	if staged || isUntracked(entry) || !entry.Unstaged() {
+	if staged || isUntracked(entry) || !entry.WorkspaceUnstaged() {
 		return
 	}
 	repo, generation := a.repo, a.loadSeq

@@ -1194,7 +1194,7 @@ func (a *app) historyWorktreeRow(c *ui.Context, index, total int) {
 	selected := a.worktreeSelected
 	rowHeight := a.historyRowHeight()
 	title := a.t("noChangesShort")
-	if n := len(a.status.Entries); n > 0 {
+	if n := a.status.WorkspaceFileCount(); n > 0 {
 		title = a.changesLabel(n)
 	}
 	row := ui.ButtonBase(c).Label(title).Row().FillWidth().Height(rowHeight).Padding(0, 8).

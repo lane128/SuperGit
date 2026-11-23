@@ -69,7 +69,7 @@ func TestCachedGraphRefreshesWorktreeAndWidth(t *testing.T) {
 	a.status.Head = "head"
 	graph := a.cachedCommitGraph(a.historyRows(), lanePalette, 100)
 	cleanWidth := graph.Width
-	a.status.Entries = []gitrepo.Entry{{Path: "dirty"}}
+	a.status.Entries = []gitrepo.Entry{{Path: "dirty", Index: '.', Worktree: 'M'}}
 	dirty := a.cachedCommitGraph(a.historyRows(), lanePalette, 100)
 	if dirty != graph || dirty.Worktree == nil || dirty.Worktree.HeadRow != 0 {
 		t.Fatal("dirty state did not update cached graph link")

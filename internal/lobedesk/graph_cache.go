@@ -73,7 +73,7 @@ func (a *app) cachedCommitGraph(commits []gitrepo.Commit, palette []ui.Color, wi
 	graph := cache.graph
 	previousWidth, previousGap := graph.Width, graph.LaneGap()
 	previousX := a.historyGraphScroll.X
-	dirty := len(a.status.Entries) > 0
+	dirty := a.status.HasWorkspaceChanges()
 	// An unfiltered walk pins the checked-out tip first. If its row is on
 	// a later page, keep the dashed lane running to the end of this page.
 	headPending := a.historyMore && a.fileFilter == "" && a.historyQuery == "" && a.historyRef.Kind == "" &&

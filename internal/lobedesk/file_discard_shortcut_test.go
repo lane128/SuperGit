@@ -156,7 +156,7 @@ func TestFileDiscardShortcutExcludedScopes(t *testing.T) {
 						if scope == "conflict" {
 							a.status.Entries[i].Conflict = true
 						} else {
-							a.status.Entries[i].Submodule = "S.MU"
+							a.status.Entries[i].Submodule = "SCMU"
 						}
 					}
 				}
