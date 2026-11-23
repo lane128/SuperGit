@@ -71,7 +71,7 @@ func (a *app) focusRequestedDetailTab(tab ui.Element, key detailTabKey) {
 // The focused row, rather than a hidden patch or the commit list, owns file
 // navigation. Opening its neighbor also gives that row focus on the next frame.
 func (a *app) navigateHistoryFile(from detailFileKey, delta int) {
-	if !a.detailNavigationAllowed() || a.detailsChangesHidden && !a.worktreeSelected || a.worktreeSelected && a.busy {
+	if !a.detailNavigationAllowed() || a.detailsChangesHidden && !a.worktreeSelected || a.worktreeSelected && a.exclusiveBusy() {
 		return
 	}
 	var files []detailFileKey

@@ -1,0 +1,7 @@
+SETUP real bundle opened the acceptance checkout
+SETUP two repository tabs are open and idle
+PASS fetch is running on the first tab
+PASS switching to another repository tab works during fetch
+PASS returning to the fetching tab keeps its background fetch visible
+PASS the background tab completed its fetch and reload
+EVIDENCE /Users/adam/SuperGit/docs/acceptance/2026-11-23

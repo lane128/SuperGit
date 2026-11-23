@@ -1,0 +1,7 @@
+@e3409 [dialog] "Command palette" actions=press bounds=160,76,1000x80.087890625 id=3518943857300363651
+  @e3410 [textField] "Search commands…" value="repo.push" placeholder="Search commands…" focused selection=9,9 actions=focus,setValue bounds=171,88.3447265625,978x15.310546875 id=3572765313681405282
+  @e3411 [scroll] bounds=165,114,990x37.087890625 id=9496365661578403328
+    @e3412 [list] actions=scrollIntoView bounds=165,114,990x37.087890625 id=14843590051956450227
+      @e3413 [listItem] "Push…" key=repo.push disabled selectable description="Wait for the current task to finish." item=1/1 actions=focus,scrollIntoView bounds=165,114,990x37.087890625 id=14465733253122689191
+        @e3414 [text] "Push…" disabled description="Push…" actions=scrollIntoView bounds=173,119,974x14.1328125 id=13752262717704153462
+        @e3415 [text] "Wait for the current task to finish." disabled actions=scrollIntoView bounds=173,133.1328125,974x12.955078125 id=801518436864953674

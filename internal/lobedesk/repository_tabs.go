@@ -110,6 +110,15 @@ func (a *app) copyWindowPreferences(source *app) {
 	a.settingsSection, a.settingsPositions, a.settingsScroll = source.settingsSection, source.settingsPositions, source.settingsScroll
 }
 
+// canSwitch covers tab navigation, which stays open while the active tab is
+// only fetching. Structural changes such as opening or replacing a repository
+// use canChange.
+func (tabs *repositoryTabs) canSwitch() bool {
+	a := tabs.active
+	return !a.repositoryOpenPending() && !a.localWatch.closed && !a.loading && !a.exclusiveBusy() && !a.repositoryChooserOpen &&
+		!a.hasPendingDialog(toastMain) && !a.hasPendingDialog(toastSettings)
+}
+
 func (tabs *repositoryTabs) canChange() bool {
 	a := tabs.active
 	return !a.repositoryOpenPending() && !a.localWatch.closed && !a.loading && !a.busy && !a.repositoryChooserOpen &&
@@ -118,7 +127,7 @@ func (tabs *repositoryTabs) canChange() bool {
 
 func (a *app) canCycleRepositoryTabs() bool {
 	tabs := a.repositoryTabs
-	return tabs != nil && tabs.active == a && len(tabs.sessions) > 1 && tabs.canChange()
+	return tabs != nil && tabs.active == a && len(tabs.sessions) > 1 && tabs.canSwitch()
 }
 
 func (a *app) cycleRepositoryTabs(delta int) {
@@ -264,11 +273,18 @@ func (tabs *repositoryTabs) activate(next *app, fresh bool) {
 		title += " · " + filepath.Base(next.repo.Root)
 		next.localWatch.next = time.Time{}
 		if next.restoredCheckout {
-			next.reload()
+			if !next.fetching && !next.loading {
+				next.reload()
+			}
 		} else {
 			tabs.acceptCheckoutSelection(next)
 			next.rememberRepository(next.repo.Root)
-			if !fresh {
+			// A fetch or an in-flight read owns this tab's refresh. Mark the
+			// activation so the eventual read still re-checks HEAD; starting
+			// a second validation now would race the first read's completion.
+			if !fresh && (next.fetching || next.loading) {
+				next.activationRefresh = true
+			} else if !fresh {
 				next.revalidateActivatedRepository()
 			}
 		}
@@ -320,7 +336,8 @@ func (a *app) tabSnapshotUnavailable() bool {
 }
 
 func (tabs *repositoryTabs) canClose(target *app) bool {
-	return slices.Contains(tabs.sessions, target) && (target.repo != nil || len(tabs.sessions) > 1) && tabs.canChange()
+	return slices.Contains(tabs.sessions, target) && (target.repo != nil || len(tabs.sessions) > 1) &&
+		tabs.canChange() && !target.busy && !target.fetching && !target.loading
 }
 
 func (tabs *repositoryTabs) askClose(target *app) {
@@ -333,7 +350,7 @@ func (tabs *repositoryTabs) askClose(target *app) {
 	}
 	a := tabs.active
 	a.askConfirm(a.t("closeRepositoryTab"), a.tf("closeRepositoryDraft", target.repo.Root), a.t("close"), false, func() {
-		if tabs.canChange() {
+		if tabs.canClose(target) {
 			tabs.close(target)
 		}
 	})
@@ -375,6 +392,7 @@ func (a *app) stopRepositorySession() {
 	a.localWatch.closed = true
 	a.loadSeq++
 	a.cancelLocalProbe()
+	a.cancelOperation()
 	a.resetHistoryTraversal()
 	a.resetFileHistory()
 	a.invalidateWorktreeOverview()
@@ -397,6 +415,7 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 	visibleTabs := tabs.sessions
 	tk := theme.TokensOf(c)
 	blocked := !tabs.canChange()
+	tabBlocked := !tabs.canSwitch()
 	const gap = 4
 	width, _ := c.Size()
 	buttonWidth := scaledFont(workbenchButtonBaseHeight)
@@ -432,11 +451,11 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 			layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Horizontal, State: &tabs.scroll}, func() {
 				ui.Row(c).Height(32).Gap(4).AlignItems(ui.Center).Role(ui.RoleTabList).Label(a.t("repositoryTabs")).Children(func() {
 					for _, session := range visibleTabs {
-						row, clicked, closed, editAlias := tabs.tab(c.Key(session), a, session, names[session], blocked, clip)
+						row, clicked, closed, editAlias := tabs.tab(c.Key(session), a, session, names[session], tabBlocked, clip)
 						if editAlias {
 							alias = session
 						}
-						if !blocked && len(visibleTabs) > 1 {
+						if !tabBlocked && len(visibleTabs) > 1 {
 							if source := tabs.tabDropTarget(row, session, tk.Primary); source != nil {
 								dragSource, dragTarget = source, session
 							}
@@ -459,7 +478,7 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 			tabs.pendingClose = close
 		} else if alias != nil {
 			tabs.pendingAlias = alias
-		} else if activate != nil && tabs.canChange() {
+		} else if activate != nil && tabs.canSwitch() {
 			tabs.activate(activate, false)
 			c.After(0)
 		}
@@ -467,8 +486,8 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 			// Keep part of the previous view visible so the next group of tabs
 			// is easy to place. The active session is unchanged by scrolling.
 			step := max(buttonWidth, clip.W*0.8)
-			left := workbenchIconButton(c.Key("repository-tabs-left"), lucide.ChevronLeft(), a.t("scrollRepositoryTabsLeft"), buttonNormal, blocked || tabs.scroll.X <= 0)
-			right := workbenchIconButton(c.Key("repository-tabs-right"), lucide.ChevronRight(), a.t("scrollRepositoryTabsRight"), buttonNormal, blocked || tabs.scroll.X >= tabs.scroll.MaxX)
+			left := workbenchIconButton(c.Key("repository-tabs-left"), lucide.ChevronLeft(), a.t("scrollRepositoryTabsLeft"), buttonNormal, tabBlocked || tabs.scroll.X <= 0)
+			right := workbenchIconButton(c.Key("repository-tabs-right"), lucide.ChevronRight(), a.t("scrollRepositoryTabsRight"), buttonNormal, tabBlocked || tabs.scroll.X >= tabs.scroll.MaxX)
 			if left.Clicked() {
 				tabs.scroll.X = max(0, tabs.scroll.X-step)
 				c.After(0)
@@ -712,7 +731,7 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 			}
 		}
 		activate = tab.Clicked() && !blocked
-		canClose := !blocked && (session.repo != nil || len(tabs.sessions) > 1)
+		canClose := tabs.canClose(session)
 		if canClose {
 			items := []overlay.MenuItem{{Key: "close", Label: a.t("closeTab"), Icon: lucide.X()}}
 			if session.repo != nil {

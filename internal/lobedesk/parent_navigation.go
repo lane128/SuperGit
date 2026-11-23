@@ -7,7 +7,7 @@ func (a *app) parentNavigationTarget() string {
 }
 
 func (a *app) parentNavigationTargetAt(index int) string {
-	if index < 0 || a.repo == nil || a.page != "history" || a.worktreeSelected || a.busy || a.loading || a.historyReloading || a.repositoryChooserOpen || a.historyRefOpen || a.hasPendingDialog(toastMain) {
+	if index < 0 || a.repo == nil || a.page != "history" || a.worktreeSelected || a.exclusiveBusy() || a.loading || a.historyReloading || a.repositoryChooserOpen || a.historyRefOpen || a.hasPendingDialog(toastMain) {
 		return ""
 	}
 	for _, commit := range a.historyRows() {

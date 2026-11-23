@@ -47,7 +47,7 @@ func (a *app) historicalFileSelected(path string) bool {
 func (a *app) historicalFileOriginCurrent(origin historicalFileOrigin) bool {
 	return origin.repo != nil && a.repo == origin.repo && a.repo.Root == origin.root && a.currentDetailContext().CommitSHA == origin.sha &&
 		a.loadSeq == origin.epoch && a.commitSeq == origin.detail && !a.worktreeSelected && a.page == "history" &&
-		!a.busy && !a.loading && !a.historyReloading && !a.repositoryChooserOpen && !a.hasPendingDialog(toastMain) &&
+		!a.exclusiveBusy() && !a.loading && !a.historyReloading && !a.repositoryChooserOpen && !a.hasPendingDialog(toastMain) &&
 		!a.detailsChangesHidden && !a.commitFilesLoading && a.commitFilesErr == "" && a.detailNavigationAllowed() &&
 		origin.selection != nil && a.historicalFileSelectionState() == origin.selection
 }

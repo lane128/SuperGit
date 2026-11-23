@@ -61,7 +61,7 @@ func (a *app) openSelectedFile() {
 // A replaced hunk can lose focus before its queued key arrives; that key must
 // not open the file externally. Focused Diff controls handle their own Enter.
 func (a *app) canOpenSelectedFile() bool {
-	if !a.worktreeFilesShown() || a.worktreeDiffShown() || a.selectedPath == "" || len(a.lineSel) > 0 || a.repo == nil || a.loading || a.busy {
+	if !a.worktreeFilesShown() || a.worktreeDiffShown() || a.selectedPath == "" || len(a.lineSel) > 0 || a.repo == nil || a.loading || a.exclusiveBusy() {
 		return false
 	}
 	return !a.confirm.open && !a.prompt.open && !a.blameOpen && !a.worktreeForm.open && !a.reset.open
@@ -112,7 +112,7 @@ const pageStep = 10
 // moveSelection walks the current page's selectable list with the arrow keys.
 // Pages without a list selection, or with an empty list, do nothing.
 func (a *app) moveSelection(delta int) {
-	if a.repo == nil || a.loading || a.busy {
+	if a.repo == nil || a.loading || a.exclusiveBusy() {
 		return
 	}
 	// The ref picker covers the history list, and its search box holds the

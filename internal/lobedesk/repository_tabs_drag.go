@@ -27,7 +27,7 @@ func (tabs *repositoryTabs) tabDropTarget(row ui.Element, target *app, color ui.
 
 func (tabs *repositoryTabs) moveTab(source, target *app) bool {
 	from, to := slices.Index(tabs.sessions, source), slices.Index(tabs.sessions, target)
-	if from < 0 || to < 0 || from == to || !tabs.canChange() {
+	if from < 0 || to < 0 || from == to || !tabs.canSwitch() {
 		return false
 	}
 	if source.repo != nil && slices.ContainsFunc(tabs.sessions[min(from, to):max(from, to)+1], func(other *app) bool {

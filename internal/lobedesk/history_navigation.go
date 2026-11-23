@@ -42,7 +42,7 @@ type historyNavigationState struct {
 }
 
 func (a *app) historyNavigationBlocked() bool {
-	return a.busy || a.loading || a.historyReloading || a.repositoryChooserOpen || a.historyRefOpen || a.hasPendingDialog(toastMain)
+	return a.exclusiveBusy() || a.loading || a.historyReloading || a.repositoryChooserOpen || a.historyRefOpen || a.hasPendingDialog(toastMain)
 }
 
 func (a *app) cancelPendingHistoryNavigation() {
@@ -178,7 +178,7 @@ func (a *app) resumePendingCommitJump() {
 func (a *app) canNavigateHistory(direction int) bool {
 	a.discardStaleHistoryNavigation()
 	s := &a.historyNavigation
-	if direction != -1 && direction != 1 || a.page != "history" || !a.historyNavigationVisible() || a.busy || a.loading || a.historyReloading || a.repositoryChooserOpen || a.historyRefOpen || a.hasPendingDialog(toastMain) || s.pending != nil || a.pendingJumpSHA != "" {
+	if direction != -1 && direction != 1 || a.page != "history" || !a.historyNavigationVisible() || a.exclusiveBusy() || a.loading || a.historyReloading || a.repositoryChooserOpen || a.historyRefOpen || a.hasPendingDialog(toastMain) || s.pending != nil || a.pendingJumpSHA != "" {
 		return false
 	}
 	target := s.cursor + direction

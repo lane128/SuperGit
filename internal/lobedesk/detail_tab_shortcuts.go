@@ -47,7 +47,7 @@ func (a *app) fileTabTextKey(k ui.TextKey) bool {
 }
 
 func (a *app) canFocusDetailTab() bool {
-	return a.detailNavigationAllowed() && !a.busy && !a.historyReloading &&
+	return a.detailNavigationAllowed() && !a.exclusiveBusy() && !a.historyReloading &&
 		!a.repositoryChooserOpen && !a.hasPendingDialog(toastMain)
 }
 

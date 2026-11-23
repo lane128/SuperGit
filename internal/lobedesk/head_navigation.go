@@ -2,7 +2,7 @@ package lobedesk
 
 // navigateToHead reuses commit navigation without changing the checkout or draft.
 func (a *app) navigateToHead() {
-	if a.repo == nil || a.status.Head == "" || a.busy || a.loading || a.historyReloading || a.repositoryChooserOpen || a.historyRefOpen || a.hasPendingDialog(toastMain) {
+	if a.repo == nil || a.status.Head == "" || a.exclusiveBusy() || a.loading || a.historyReloading || a.repositoryChooserOpen || a.historyRefOpen || a.hasPendingDialog(toastMain) {
 		return
 	}
 	loaded := false

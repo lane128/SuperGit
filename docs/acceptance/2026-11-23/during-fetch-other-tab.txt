@@ -1,0 +1,68 @@
+@e3863 [scroll] bounds=80,1.5,1136.29638671875x34 id=13268153278420904744
+  @e3864 [tabList] "Repositories" actions=scrollIntoView bounds=80,2.5,185.9501953125x32 id=227030903847231024
+    @e3865 [tab] "repo" description="/private/tmp/supergit-acceptance-2026-11-23/repo" actions=press,focus,scrollIntoView bounds=80,4.5,58.7294921875x28 id=10135476855926871604
+    @e3866 [button] "Close /private/tmp/supergit-acceptance-2026-11-23/repo" disabled description="Close /private/tmp/supergit-acceptance-2026-11-23/repo" actions=scrollIntoView bounds=138.7294921875,4,29x29 id=18044915620250860548
+    @e3867 [tab] "other" checked focused description="/private/tmp/supergit-acceptance-2026-11-23/other" actions=press,focus,scrollIntoView bounds=171.7294921875,3.5,65.220703125x28 id=3671228696855138610
+    @e3956 [button] "Close /private/tmp/supergit-acceptance-2026-11-23/other" key=tab-menu description="Close /private/tmp/supergit-acceptance-2026-11-23/other" actions=press,focus,scrollIntoView bounds=236.9501953125,3,29x29 id=338760926626632157
+@e3869 [button] "New Tab" key=new-repository-tab actions=press,focus bounds=1220.29638671875,4,91.70359802246094x29 id=12051491021798168556
+@e3870 [button] "Command palette" description="Command palette (⌘P)" actions=press,focus bounds=480,42.5,32x29 id=16321304697887185961
+@e3871 [button] "Branches" description="main" actions=press,focus bounds=512,42.5,328x29 id=291417575154060147
+@e3873 [menuButton] "Save changes…" haspopup=menu description="Save changes…" actions=press,focus bounds=1100.038330078125,42.5,132.3629913330078x29 id=583723104511302947
+@e3874 [menuButton] "Sync" haspopup=menu actions=press,focus bounds=1238.4013671875,42.5,69.59869384765625x29 id=400376224215186733
+@e3957 [text] "OT" bounds=17.46728515625,89.93359375,17.0654296875x14.1328125 id=10675445956256632918
+@e3958 [button] "other" description="/private/tmp/supergit-acceptance-2026-11-23/other" actions=press,focus bounds=46,84,126x26 id=14332953307217252722
+@e3959 [button] "History" keyshortcuts="⌘1" actions=press,focus bounds=8,112,168x32 id=17046125388333623214
+@e3960 [scroll] bounds=0,150,184x648 id=10129920241955044480
+  @e3961 [disclosure] "Branches" expanded description="Expand or fold Branches" actions=press,focus,scrollIntoView bounds=0,150,184x29 id=3182489085421543486
+  @e3962 [button] "main" description="Current" actions=press,focus,scrollIntoView bounds=6,183,168x24 id=13950750406234931709
+  @e3963 [disclosure] "Remotes" description="Expand or fold Remotes" actions=press,focus,scrollIntoView bounds=0,213,184x29 id=16963244211624317572
+  @e3964 [disclosure] "Tags" description="Expand or fold Tags" actions=press,focus,scrollIntoView bounds=0,242,184x29 id=5904213973814467948
+  @e3965 [disclosure] "Stashes" description="Expand or fold Stashes" actions=press,focus,scrollIntoView bounds=0,271,184x29 id=12799891962106133819
+  @e3966 [disclosure] "Worktrees" description="Expand or fold Worktrees" actions=press,focus,scrollIntoView bounds=0,300,184x29 id=16573647795097120553
+  @e3967 [disclosure] "Submodules" description="Expand or fold Submodules" actions=press,focus,scrollIntoView bounds=0,329,184x29 id=1013088305118052938
+@e3968 [button] "Settings" keyshortcuts="⌘," actions=press,focus bounds=6,802,172x32 id=15022340539589181535
+@e3969 [text] "History" bounds=205,89.75,50.81494140625x17.5 id=15278064140445745529
+@e3970 [text] "1 commit" bounds=265.81494140625,91.43359375,599.756591796875x14.1328125 id=11227264709833478504
+@e3971 [button] "All refs" actions=press,focus bounds=875.571533203125,84,102.42843627929688x29 id=3917438635031278321
+@e3972 [button] "Hide commit details" description="Hide commit details" actions=press,focus bounds=984,86.5,24x24 id=2888821317616853425
+@e3973 [textField] placeholder="Search commits, authors, SHA, refs" keyshortcuts="⌘F" selection=0,0 actions=focus,setValue bounds=1043,91.43359375,209.73281860351562x14.1328125 id=6509487011841314753
+@e3974 [text] "F" key=1 bounds=1282.1328125,91.43359375,6.867186546325684x14.1328125 id=12115180169503154105
+@e3975 [group] actions=focus bounds=191,122,504.8999938964844x718 id=17591275711129532066
+  @e3976 [scroll] bounds=192,123,502.8999938964844x716 id=1550512291020813999
+    @e3977 [list] actions=scrollIntoView bounds=192,123,502.8999938964844x100 id=2881414151726934253
+      @e3978 [listItem] "No changes" selectable item=1/2 actions=press,focus,scrollIntoView bounds=198,129,490.8999938964844x44 id=11475926418236624913
+        @e3979 [scroll] actions=scrollIntoView bounds=206,129,36x44 id=16886086160048233748
+        @e3980 [text] "No changes" actions=scrollIntoView bounds=246,136.4560546875,434.8999938964844x14.1328125 id=1829130732823491716
+        @e3981 [text] "Commit Changes" actions=scrollIntoView bounds=246,152.5888671875,434.8999938964844x12.955078125 id=4438850234433229828
+      @e3982 [listItem] "Other repository base" key=e44c485cc4b27faf9e66231fb132266e581e075c checked selectable item=2/2 actions=press,focus,scrollIntoView bounds=198,173,490.8999938964844x44 id=11981949097619175357
+        @e3983 [text] "1" description="1 file changed" actions=scrollIntoView bounds=668.1441650390625,178.111328125,12.755859375x11.77734375 id=16735385697852914579
+        @e3984 [text] "Acceptance" actions=scrollIntoView bounds=246,196.29443359375,345.79705810546875x13.5439453125 id=14962362852691091177
+        @e3985 [text] "main" actions=scrollIntoView bounds=608.7970581054688,196.5888671875,26.313636779785156x12.955078125 id=11525608630846557439
+        @e3986 [text] "11:50" description="2026-11-23 11:50:35" actions=scrollIntoView bounds=652.1107177734375,196.29443359375,28.789306640625x13.5439453125 id=7685940956455139557
+@e3987 [text] "Files" bounds=714.9000244140625,133.43359375,28.16015625x14.1328125 id=9316376443064230670
+@e3988 [scroll] bounds=702.9000244140625,160,240x680 id=16383175487176637235
+  @e3989 [text] "Changes (1)" actions=scrollIntoView bounds=709.9000244140625,167,226x22.955078125 id=1033845199214268550
+  @e3990 [list] selectable multiselectable actions=scrollIntoView bounds=709.9000244140625,190.955078125,226x30 id=12682769889100906792
+    @e3991 [listItem] "other.txt" selectable description="other.txt" item=1/1 actions=press,focus,scrollIntoView bounds=709.9000244140625,190.955078125,226x29 id=14570455386162472567
+@e3992 [group] actions=focus bounds=949.9000244140625,122,370.10003662109375x718 id=15515210746808787412
+  @e3993 [scroll] bounds=949.9000244140625,122,370.10003662109375x32 id=15903920115544385623
+    @e3994 [tabList] "File details" actions=scrollIntoView bounds=949.9000244140625,122,75.4139404296875x32 id=9912159558634940739
+      @e3995 [tab] "Summary" checked actions=press,focus,scrollIntoView bounds=949.9000244140625,122,75.4139404296875x30 id=13741324444476755387
+  @e3996 [scroll] bounds=949.9000244140625,154,370.10003662109375x686 id=86041735721929173
+    @e3997 [text] "Other repository base" actions=scrollIntoView bounds=963.9000244140625,168,342.10003662109375x17.5 id=6443795890611108875
+    @e3998 [text] "HEAD →" description="Checked out: main" actions=scrollIntoView bounds=963.9000244140625,197.0224609375,45.33203125x12.955078125 id=8483711779582131057
+    @e3999 [group] "main" key=ref:main description="main" actions=focus,scrollIntoView bounds=1013.2320556640625,193.5,54.775230407714844x20 id=14494152400476096941
+      @e4000 [text] "main" actions=scrollIntoView bounds=1035.2320556640625,197.0224609375,25.775230407714844x12.955078125 id=2911123153591333310
+    @e4001 [text] "Hash" actions=scrollIntoView bounds=963.9000244140625,227.611328125,54x11.77734375 id=8694328041068569189
+    @e4002 [text] "e44c485cc4b27faf9e66231fb132266e581e075c" description="e44c485cc4b27faf9e66231fb132266e581e075c" actions=scrollIntoView bounds=1025.9000244140625,226.89996337890625,240x13.2000732421875 id=13391429626957797945
+    @e4003 [button] "Copy SHA" description="Copy SHA" actions=press,focus,scrollIntoView bounds=1269.9000244140625,221.5,24x24 id=8805576472735554410
+    @e4004 [text] "Author" actions=scrollIntoView bounds=963.9000244140625,253.611328125,54x11.77734375 id=10211303469332433279
+    @e4005 [text] "Acceptance<acceptance@example.invalid>" description="Acceptance<acceptance@example.invalid>" actions=scrollIntoView bounds=1025.9000244140625,253.0224609375,227.54638671875x12.955078125 id=9582038824607109347
+    @e4006 [text] "Date" actions=scrollIntoView bounds=963.9000244140625,279.611328125,54x11.77734375 id=10543007416183424325
+    @e4007 [text] "2026-11-23 11:50:35" actions=scrollIntoView bounds=1025.9000244140625,279.0224609375,109.93017578125x12.955078125 id=2665372013107984091
+    @e4008 [button] "Show side-by-side diff" description="Show side-by-side diff" actions=press,focus,scrollIntoView bounds=1283,315.5,29x29 id=11147057662303372093
+    @e4009 [scroll] actions=scrollIntoView bounds=953.9000244140625,348.5,362.10003662109375x73 id=8620949601615723103
+      @e4010 [button] "other.txt" key=0 actions=press,focus,scrollIntoView bounds=953.9000244140625,348.5,362.10003662109375x26 id=14600911551466764249
+      @e4011 [button] "@@ -0,0 +1 @@" key=0 actions=press,focus,scrollIntoView bounds=953.9000244140625,374.5,362.10003662109375x24 id=10774940780297436010
+      @e4012 [button] "1 Added line" actions=press,focus,scrollIntoView bounds=953.9000244140625,398.5,92x23 id=6157936191659920026
+      @e4013 [insertion] "+other repo" actions=scrollIntoView bounds=1045.9000244140625,402.40997314453125,75.90000915527344x15.180084228515625 id=12914841933209629523

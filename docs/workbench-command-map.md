@@ -16,7 +16,7 @@
 | 分支选择 | 顶栏居中命令栏的分支名 | `branch.quickCheckout` | 结合当前仓库、分支列表及现有切换守卫 | 已有选择入口；系统菜单未接入 |
 | ahead / behind | 分支选择旁 | `status.Ahead` / `Behind` | 至少一项非零时显示数量和说明 | 已有只读状态 |
 | 未完成 Git 操作 | 顶栏状态按钮、Commit 操作卡 | `selectWorktree` / Continue / Skip / Abort | 按 merge / rebase / cherry-pick / revert 的现有状态提供动作 | 顶栏跳转到实际操作卡，危险操作保留确认 |
-| Fetch | 顶栏右侧，右键有 prune | `fetchAll` / `fetchPruneAll`；无统一 ID | 有仓库、有 remote，且不在 loading / busy | 使用已有凭据机制；缺少 remote 有禁用说明 |
+| Fetch | 顶栏右侧，右键有 prune；命令面板另有 prune／tags／指定远端 | `fetchAll` / `fetchPruneAll` / `fetchTagsAll` / `repo.fetch*` | 有仓库、有 remote，且不在 loading / busy | 后台运行：只读浏览保持可用，写操作禁用；使用已有凭据机制；缺少 remote 有禁用说明 |
 | Pull | 顶栏右侧 | `pullFF`；无统一 ID | 有仓库、有 upstream，且不在 loading / busy | 仅 fast-forward；不隐式合并 |
 | Push | 顶栏右侧，右键有 force-with-lease | `confirmPush` / `confirmForcePush`；无统一 ID | 有仓库、remote、已检出分支，且不在 loading / busy | 复用已有确认，不能由新增入口绕过 |
 | 刷新 | 顶栏右侧、快捷键 | `repo.reload` / `reload` | 有仓库，非 loading / busy | 快捷键与按钮均经过状态守卫 |
@@ -36,7 +36,7 @@
 
 | 情况 | 当前反馈 | 取消 / 重试范围 | 不应混用的入口 |
 |---|---|---|---|
-| 正在执行 Git 写命令或 Fetch | 顶栏 200ms 延迟后显示 spinner 和具体操作文字 | 顶栏取消调用 `cancelOperation`，取消当前 operation context；命令通常还有三分钟超时 | 不把失败写操作自动重试 |
+| 正在执行 Git 写命令或 Fetch | 顶栏 200ms 延迟后显示 spinner 和具体操作文字 | 顶栏取消调用 `cancelOperation`，取消当前 operation context；命令通常还有三分钟超时 | Fetch 期间只读浏览与命令面板浏览命令保持可用；写命令继续禁用。不把失败写操作自动重试 |
 | 仓库打开 / 刷新失败 | 页面失败提示及 Retry | 重试仓库读取，失败信息保留至当前请求完成 | 不以刷新代替确认一次新的远程写入 |
 | 完整历史遍历 | 历史列表显示已读数量，页脚显示加载、暂停或局部失败 | Cancel 保留已读记录；Retry 沿固定 tips 继续；换 root / ref 取消旧遍历并拒绝旧页 | 历史遍历不占用 Git 写操作的取消入口 |
 | 单文件 patch / 总览 patch 失败 | 文件局部失败与同目标 Retry | 只重读当前不可变文件版本，其他有效 patch 保留 | 不重定向到后来选中的文件 |

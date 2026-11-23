@@ -1,0 +1,12 @@
+@e3477 [dialog] "Merge Branch" actions=press bounds=160,76,1000x102.1328125 id=3518943857300363651
+  @e3478 [text] "Merge Branch" description="Merge Branch" bounds=171,87.93359375,94.13314819335938x16.1328125 id=5961264630220456083
+  @e3479 [textField] "Branch name" value="acceptance-origin" placeholder="Branch name" selection=17,17 actions=focus,setValue bounds=270.1331481933594,88.3447265625,878.8668212890625x15.310546875 id=12211798257115862689
+  @e3480 [scroll] bounds=165,114,990x30 id=9496365661578403328
+    @e3481 [list] actions=scrollIntoView bounds=165,114,990x30 id=14843590051956450227
+      @e3482 [listItem] "origin/acceptance-origin" key=refs/remotes/origin/acceptance-origin checked selectable focused description="refs/remotes/origin/acceptance-origin" item=1/1 actions=press,focus,scrollIntoView bounds=165,114,990x30 id=14001698996582055645
+        @e3483 [text] "R" actions=scrollIntoView bounds=173,121.93359375,18x14.1328125 id=15029079791602922657
+        @e3484 [text] "origin/acceptance-origin" description="origin/acceptance-origin" actions=scrollIntoView bounds=199,121.93359375,948x14.1328125 id=10866651873893376020
+  @e3494 [text] "Merge refs/remotes/origin/acceptance-origin into main" key=preview description="Merge refs/remotes/origin/acceptance-origin into main" bounds=165,147,990x26.1328125 id=9517479763979577526
+@e3466 [status] "Fetched from remotes Close" key=1 bounds=944,771,360x53 id=1225532109396696829
+  @e3467 [text] "Fetched from remotes" bounds=986,790.43359375,265x14.1328125 id=2889336003144195230
+  @e3468 [button] "Close" actions=press,focus bounds=1259,783,29x29 id=3618324090025125317

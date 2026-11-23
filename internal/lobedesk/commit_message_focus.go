@@ -3,7 +3,7 @@ package lobedesk
 import "github.com/egoist/mygo/ui"
 
 func (a *app) canFocusCommitMessage() bool {
-	return a.repo != nil && !a.loading && !a.busy && !a.historyReloading &&
+	return a.repo != nil && !a.loading && !a.exclusiveBusy() && !a.historyReloading &&
 		!a.repositoryChooserOpen && !a.historyRefOpen && !a.hasPendingDialog(toastMain)
 }
 

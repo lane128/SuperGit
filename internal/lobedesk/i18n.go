@@ -14,6 +14,17 @@ func paletteCaptionStem(caption string) string {
 	return strings.ToLower(strings.TrimSuffix(caption, "..."))
 }
 
+// referenceCommandSearchNames adds the ASCII spelling of a reference command
+// name, so typing "Fetch..." finds an alias written with a typographic
+// ellipsis while the displayed label stays unchanged.
+func referenceCommandSearchNames(id string) []string {
+	name := referenceCommandNames[id]
+	if name == "" {
+		return nil
+	}
+	return []string{name, strings.ReplaceAll(name, "…", "...")}
+}
+
 const (
 	localeChinese locale = "zh"
 	localeEnglish locale = "en"
@@ -850,20 +861,15 @@ var messages = map[locale]map[string]string{
 		"conflictPreviewHint":             "文本冲突可在这里比较并编辑。不支持的文件请用外部工具保存，再选择「标记为已解决」暂存内容。进行中的操作仍需单独完成。",
 		"conflictDeletionHint":            "此冲突包含删除。选择不存在文件的一侧，会删除并暂存此路径。",
 		"fetch":                           "获取",
-		"paletteFetchCommand":             "获取…",
+		"paletteFetchCommand":             "获取全部远端",
+		"paletteFetchPruneCommand":        "获取全部远端并清理",
+		"paletteFetchTagsCommand":         "获取全部远端和标签",
+		"paletteFetchRemoteCommand":       "从远端获取…",
 		"paletteMergeCommand":             "合并分支…",
 		"palettePreferences":              "偏好设置…",
-		"paletteFetchOptions":             "抓取选项",
 		"paletteMergeBranch":              "合并分支",
 		"paletteMergePreview":             "将 %s 合并到 %s",
 		"paletteMergeNeedBranch":          "请先检出有提交的本地分支。",
-		"fetchOneHint":                    "从一个远端获取变更",
-		"fetchOnePruneHint":               "获取变更并清理已删除的远端分支引用",
-		"fetchOneTagsHint":                "从一个远端获取变更和所有标签",
-		"fetchAllHint":                    "从所有远端获取变更",
-		"fetchAllPruneHint":               "从所有远端获取变更并清理过期引用",
-		"fetchAllTagsHint":                "从所有远端获取变更和所有标签",
-		"fetchAllCommand":                 "获取全部远端",
 		"fetchingNow":                     "正在获取…",
 		"busyNow":                         "正在处理…",
 		"busyCommit":                      "正在提交…",
@@ -918,6 +924,8 @@ var messages = map[locale]map[string]string{
 		"fetchPrune":                      "获取并清理已删除的远端分支",
 		"fetchPruned":                     "已获取并清理远端分支",
 		"fetchPruneFailed":                "获取并清理失败",
+		"fetchTagsSuccess":                "已获取远端和标签",
+		"fetchTagsFailed":                 "获取远端和标签失败",
 		"forcePush":                       "强制推送",
 		"forcePushAction":                 "强制推送…",
 		"forcePushTitle":                  "强制推送分支",
@@ -1815,20 +1823,15 @@ var messages = map[locale]map[string]string{
 		"conflictPreviewHint":             "Compare and edit text conflicts here. For unsupported files, edit and save with an external tool, then use Mark resolved to stage the contents. Finish the pending operation separately.",
 		"conflictDeletionHint":            "This conflict includes a deletion. Choosing a side with no file deletes and stages this path.",
 		"fetch":                           "Fetch",
-		"paletteFetchCommand":             "Fetch…",
+		"paletteFetchCommand":             "Fetch all remotes",
+		"paletteFetchPruneCommand":        "Fetch all remotes with prune",
+		"paletteFetchTagsCommand":         "Fetch all remotes with tags",
+		"paletteFetchRemoteCommand":       "Fetch from Remote…",
 		"paletteMergeCommand":             "Merge Branch…",
 		"palettePreferences":              "Preferences…",
-		"paletteFetchOptions":             "Fetch Options",
 		"paletteMergeBranch":              "Merge Branch",
 		"paletteMergePreview":             "Merge %s into %s",
 		"paletteMergeNeedBranch":          "Check out a local branch with a commit first.",
-		"fetchOneHint":                    "Retrieve changes from one remote",
-		"fetchOnePruneHint":               "Fetch and prune deleted remote-tracking branches",
-		"fetchOneTagsHint":                "Fetch changes and all tags from one remote",
-		"fetchAllHint":                    "Retrieve changes from all remotes",
-		"fetchAllPruneHint":               "Fetch from all remotes and prune deleted branches",
-		"fetchAllTagsHint":                "Fetch changes and all tags from all remotes",
-		"fetchAllCommand":                 "Fetch all remotes",
 		"fetchingNow":                     "Fetching…",
 		"busyNow":                         "Working…",
 		"busyCommit":                      "Committing…",
@@ -1883,6 +1886,8 @@ var messages = map[locale]map[string]string{
 		"fetchPrune":                      "Fetch and prune deleted remote branches",
 		"fetchPruned":                     "Fetched and pruned remotes",
 		"fetchPruneFailed":                "Fetch with prune failed",
+		"fetchTagsSuccess":                "Fetched remotes and tags",
+		"fetchTagsFailed":                 "Fetch with tags failed",
 		"forcePush":                       "Force push",
 		"forcePushAction":                 "Force push…",
 		"forcePushTitle":                  "Force push branch",

@@ -9,7 +9,6 @@ import (
 type historyRefPaletteState struct {
 	active, searchFocus bool
 	root                string
-	epoch               uint64
 }
 
 func historyRefPaletteCommand() appShortcut {
@@ -28,14 +27,16 @@ func (a *app) chooseHistoryRefFromCommand() {
 		return
 	}
 	a.initializeHistoryRefPicker()
-	a.historyRefPalette = historyRefPaletteState{active: true, searchFocus: true, root: a.paletteRoot(), epoch: a.loadSeq}
+	a.historyRefPalette = historyRefPaletteState{active: true, searchFocus: true, root: a.paletteRoot()}
 	a.historyRefOpen = true
 	a.invalidate()
 }
 
 func (a *app) discardStaleHistoryRefPalette() {
 	s := a.historyRefPalette
-	if s.active && (!a.historyRefOpen || s.root != a.paletteRoot() || s.epoch != a.loadSeq || a.fileFilter != "") {
+	// A background reload in the same repository refreshes the rows; it must
+	// not close the picker and discard the query being typed.
+	if s.active && (!a.historyRefOpen || s.root != a.paletteRoot() || a.fileFilter != "") {
 		a.historyRefPalette = historyRefPaletteState{}
 		a.historyRefOpen = false
 		a.historyRefQuery = ""
@@ -59,7 +60,7 @@ func (a *app) historyRefPaletteDialog(c *ui.Context) {
 			display.Text(c, a.t("historyRefCommand"), display.TextProps{Strong: true, FontSize: scaledFont(14)})
 			display.Text(c, a.t("historyRefScope"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
 			search = a.historyRefPickerContent(c, min(368, max(0, width-64)), min(float32(pickerListMaxHeight), max(0, height-210)), false, func(ref historyRef) {
-				if a.busy || a.loading || a.historyReloading || a.repositoryChooserOpen || a.hasPendingActionDialog(toastMain) {
+				if a.exclusiveBusy() || a.loading || a.historyReloading || a.repositoryChooserOpen || a.hasPendingActionDialog(toastMain) {
 					return
 				}
 				if ref.Kind != "" && a.historyRefTip(ref) == "" {

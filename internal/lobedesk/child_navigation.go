@@ -46,7 +46,7 @@ func (a *app) childNavigationCandidates(source string) []gitrepo.Commit {
 }
 
 func (a *app) childNavigationSource() string {
-	if a.repo == nil || a.page != "history" || a.worktreeSelected || a.busy || a.loading || a.historyReloading || a.repositoryChooserOpen || a.historyRefOpen {
+	if a.repo == nil || a.page != "history" || a.worktreeSelected || a.exclusiveBusy() || a.loading || a.historyReloading || a.repositoryChooserOpen || a.historyRefOpen {
 		return ""
 	}
 	for _, commit := range a.historyRows() {

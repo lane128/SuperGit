@@ -705,12 +705,12 @@ func (a *app) commitMenuItems(commit gitrepo.Commit) []overlay.MenuItem {
 	// so they get their own group after the copies.
 	items = append(items,
 		overlay.MenuItem{Divider: true},
-		overlay.MenuItem{Key: "filter-author", Label: a.t("filterByAuthor"), Icon: lucide.User(), Disabled: a.busy || a.loading || commit.Author == ""},
-		overlay.MenuItem{Key: "filter-day", Label: a.t("filterByDay"), Icon: lucide.Calendar(), Disabled: a.busy || a.loading || commit.Day == ""},
+		overlay.MenuItem{Key: "filter-author", Label: a.t("filterByAuthor"), Icon: lucide.User(), Disabled: a.exclusiveBusy() || a.loading || commit.Author == ""},
+		overlay.MenuItem{Key: "filter-day", Label: a.t("filterByDay"), Icon: lucide.Calendar(), Disabled: a.exclusiveBusy() || a.loading || commit.Day == ""},
 		// The week and the month are the same kind of entry for the reader:
 		// a search they would otherwise have to spell out by hand.
-		overlay.MenuItem{Key: "filter-recent", Label: a.t("filterRecentWeek"), Icon: lucide.CalendarRange(), Disabled: a.busy || a.loading},
-		overlay.MenuItem{Key: "filter-month", Label: a.t("filterThisMonth"), Icon: lucide.CalendarDays(), Disabled: a.busy || a.loading},
+		overlay.MenuItem{Key: "filter-recent", Label: a.t("filterRecentWeek"), Icon: lucide.CalendarRange(), Disabled: a.exclusiveBusy() || a.loading},
+		overlay.MenuItem{Key: "filter-month", Label: a.t("filterThisMonth"), Icon: lucide.CalendarDays(), Disabled: a.exclusiveBusy() || a.loading},
 		overlay.MenuItem{Divider: true},
 	)
 	switch branches := a.branchesAt(commit.SHA); len(branches) {

@@ -149,31 +149,35 @@ func TestPaletteHistoryRefGuards(t *testing.T) {
 			}
 		})
 	}
-	for _, change := range []string{"root", "epoch", "file"} {
+	openPicker := func(t *testing.T) (*app, *ui.Tester, historyRef) {
+		a := historyRefPaletteApp(t)
+		entry := historyRefPaletteEntry(t, a)
+		a.commitText = "title\n\nbody"
+		tt := paletteStashTester(a, "summary", 900, 640)
+		field, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
+		if !ok {
+			t.Fatal("missing original input")
+		}
+		tt.ClickAt(field.Bounds.X+10, field.Bounds.Y+10)
+		tt.Key(ui.Cmd, ui.KeyA)
+		tt.Key(ui.Cmd, ui.KeyP)
+		tt.Frame()
+		tt.Type(entry.ID)
+		tt.Frame()
+		tt.Key(0, ui.KeyEnter)
+		tt.Frame()
+		tt.Frame()
+		if !a.historyRefOpen {
+			t.Fatal("history ref picker did not open")
+		}
+		return a, tt, a.historyRef
+	}
+	for _, change := range []string{"root", "file"} {
 		t.Run("stale/"+change, func(t *testing.T) {
-			a := historyRefPaletteApp(t)
-			entry := historyRefPaletteEntry(t, a)
-			a.commitText = "title\n\nbody"
-			tt := paletteStashTester(a, "summary", 900, 640)
-			field, ok := tt.AccessByRole(ui.RoleTextField, a.t("commitMessage"))
-			if !ok {
-				t.Fatal("missing original input")
-			}
-			tt.ClickAt(field.Bounds.X+10, field.Bounds.Y+10)
-			tt.Key(ui.Cmd, ui.KeyA)
-			tt.Key(ui.Cmd, ui.KeyP)
-			tt.Frame()
-			tt.Type(entry.ID)
-			tt.Frame()
-			tt.Key(0, ui.KeyEnter)
-			tt.Frame()
-			tt.Frame()
-			before := a.historyRef
+			a, tt, before := openPicker(t)
 			switch change {
 			case "root":
 				a.repo = &gitrepo.Repository{Root: t.TempDir()}
-			case "epoch":
-				a.loadSeq++
 			case "file":
 				a.fileFilter = "base.txt"
 			}
@@ -189,6 +193,28 @@ func TestPaletteHistoryRefGuards(t *testing.T) {
 			}
 		})
 	}
+	t.Run("reload keeps picker", func(t *testing.T) {
+		a, tt, before := openPicker(t)
+		// A background reload in the same repository refreshes the rows. It
+		// must not close the picker and discard what is being typed.
+		a.loadSeq++
+		tt.Frame()
+		tt.Frame()
+		if !a.historyRefOpen || a.historyRef != before || a.commitText != "title\n\nbody" || a.historyQuery != "original query" {
+			t.Fatal("background reload dismissed the picker or applied a ref")
+		}
+		tt.Type("X")
+		tt.Frame()
+		if a.historyRefQuery != "X" || a.commitText != "title\n\nbody" {
+			t.Fatal("background reload moved focus off the picker search")
+		}
+		tt.Key(0, ui.KeyEscape)
+		tt.Frame()
+		tt.Frame()
+		if a.historyRefOpen || a.historyRef != before || a.commitText != "title\n\nbody" {
+			t.Fatal("closing the survived picker changed the draft")
+		}
+	})
 }
 
 func TestPaletteHistoryRefOwned(t *testing.T) {

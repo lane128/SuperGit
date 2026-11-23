@@ -21,15 +21,22 @@ func TestCommandPaletteReferenceCatalog(t *testing.T) {
 	}
 	a := &app{locale: localeEnglish}
 	byCaption := map[string]appShortcut{}
+	byReference := map[string]appShortcut{}
 	for _, action := range a.commandPaletteEntries() {
 		caption := a.t(action.Label)
 		if _, exists := byCaption[caption]; exists || action.Run == nil {
 			t.Fatalf("duplicate or unimplemented command %q", caption)
 		}
 		byCaption[caption] = action
+		if reference := referenceCommandNames[action.ID]; reference != "" {
+			byReference[reference] = action
+		}
 	}
 	for _, caption := range append(reference, "About") {
 		action, ok := byCaption[caption]
+		if !ok {
+			action, ok = byReference[caption]
+		}
 		if !ok {
 			t.Errorf("missing reference command %q", caption)
 			continue
@@ -41,6 +48,10 @@ func TestCommandPaletteReferenceCatalog(t *testing.T) {
 		a.commandPalette.query = caption
 		if !slices.ContainsFunc(a.commandPaletteEntries(), func(s appShortcut) bool { return s.ID == action.ID }) {
 			t.Errorf("cannot find %q by its reference name in Chinese", caption)
+		}
+		a.commandPalette.query = strings.ReplaceAll(caption, "…", "...")
+		if !slices.ContainsFunc(a.commandPaletteEntries(), func(s appShortcut) bool { return s.ID == action.ID }) {
+			t.Errorf("cannot find %q by its ASCII spelling", caption)
 		}
 	}
 }

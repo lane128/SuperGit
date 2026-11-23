@@ -85,7 +85,7 @@ var actionCopyGroups = []actionCopies{
 	}},
 	{"add remote", "添加", "Add", []string{"addRemoteEntry", "addRemote", "addRemoteFailed", "remoteAdded"}},
 	{"fetch", "获取", "Fetch", []string{
-		"fetch", "fetchPrune", "fetchFailed", "fetchPruneFailed", "fetchingNow",
+		"fetch", "fetchPrune", "fetchFailed", "fetchPruneFailed", "fetchTagsSuccess", "fetchTagsFailed", "fetchingNow",
 	}},
 	{"merge", "合并", "Merg", []string{
 		"mergeIntoCurrent", "mergeIntoCurrentAction", "mergeCommitInto", "mergeFailed", "busyMerge",

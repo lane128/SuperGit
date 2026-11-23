@@ -1,0 +1,10 @@
+[  0.63s] SETUP workbench loaded with the acceptance checkout
+[  1.98s] PASS Fetch runs from one command row with no options or remote stage
+[  2.00s] PASS Fetch is still in flight with the Sync menu disabled
+[  2.27s] PASS commit selection works while Fetch runs
+[  2.64s] PASS commit file selection and diff render while Fetch runs
+[  3.91s] PASS a read-only palette command executes while Fetch runs
+[  5.23s] PASS write commands stay disabled with a wait reason while Fetch runs
+[ 32.11s] PASS fetch updated both remotes and the workbench returned to idle
+[ 33.63s] PASS the completion reload made the fetched ref selectable in the UI
+[ 33.63s] EVIDENCE /Users/adam/SuperGit/docs/acceptance/2026-11-23

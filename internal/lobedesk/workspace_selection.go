@@ -45,7 +45,7 @@ func (a *app) selectWorkspaceFile(ref fileRef, mods ui.Modifiers, contextMenu bo
 		a.selectFile(ref.path, ref.staged)
 		return
 	}
-	if a.loading || a.busy || !a.detailNavigationAllowed() {
+	if a.loading || a.exclusiveBusy() || !a.detailNavigationAllowed() {
 		return
 	}
 	group, ok := a.workspaceGroup(ref)
@@ -129,7 +129,7 @@ func (a *app) previewWorkspaceSelection(ref fileRef) {
 }
 
 func (a *app) selectWorkspaceGroup(ref fileRef) {
-	if a.repo == nil || a.busy || a.loading || !a.detailNavigationAllowed() {
+	if a.repo == nil || a.exclusiveBusy() || a.loading || !a.detailNavigationAllowed() {
 		return
 	}
 	group, ok := a.workspaceGroup(ref)

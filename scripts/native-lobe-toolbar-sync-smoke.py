@@ -66,6 +66,9 @@ for index in range(102):
 git("update-ref", destination, head, base)
 git("branch", "main", head)
 git("branch", "trial-5", head)
+# The merge preview below uses trial-2: the both-remotes fetch variants
+# publish it on origin and upstream, so all three rows exist at once.
+git("branch", "trial-2", head)
 assert git("rev-list", "--left-right", "--count", "HEAD...@{upstream}") == "102\t0"
 assert Path(git("remote", "get-url", "--push", "origin")).resolve() == bare
 
@@ -144,10 +147,17 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
             press("button", "Command palette")
             catalog = snapshot()
             expected = (project / "internal/lobedesk/testdata/sublime-merge-2125-palette.txt").read_text().splitlines()
+            # Fetch is a one-step command now; the reference caption remains
+            # a search alias rather than a displayed row.
+            expected = ["Fetch all remotes" if label == "Fetch…" else label for label in expected]
             missing = [label for label in [*expected, "About"] if len(control(catalog, "listItem", label)) != 1]
             assert len(expected) == 75 and not missing, missing
             (artifacts / "command-catalog.txt").write_text(catalog)
             auto("screenshot", artifacts / "command-catalog.png")
+            auto("key", "Escape", "--settle")
+            press("button", "Command palette")
+            auto("type", "Fetch...", "--settle")
+            assert control(snapshot(), "listItem", "Fetch all remotes")
             auto("key", "Escape", "--settle")
             press("button", "Command palette")
             auto("type", "crbr", "--settle")
@@ -221,50 +231,51 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
                 auto("key", "Enter", "--settle")
                 until(lambda: control(snapshot(), "textField", field), f"{query}: {field}")
 
-            options = ("fetch", "fetch --prune", "fetch --tags", "fetch --all",
-                       "fetch --all --prune", "fetch --all --tags")
-            choose_command("repo.fetch", "Fetch Options")
-            assert all(control(snapshot(), "listItem", entry) for entry in options)
-            auto("screenshot", artifacts / "fetch-options.png")
-            press("listItem", "fetch --tags")
-            assert control(snapshot(), "textField", "Remote name")
-            auto("key", "Backspace", "--settle")
-            assert control(snapshot(), "textField", "Fetch Options")
-            auto("key", "Backspace", "--settle")
-            assert control(snapshot(), "textField", "Search commands…")
-            auto("key", "Escape", "--settle")
+            press("button", "Command palette")
+            auto("type", "repo.fetch", "--settle")
+            assert control(snapshot(), "listItem", "Fetch all remotes")
+            auto("screenshot", artifacts / "fetch-one-step.png")
+            auto("key", "Enter", "--settle")
+            assert not control(snapshot(), "textField", "Fetch Options")
+            assert not control(snapshot(), "listItem", "fetch --all")
 
             def has_ref(ref):
                 return subprocess.run(["git", "-C", str(repo), "show-ref", "--verify", "--quiet", ref], env=env).returncode == 0
 
-            for index, option in enumerate(options):
+            variants = (
+                ("Fetch all remotes", "repo.fetch", False, False, ("origin", "upstream"), None),
+                ("Fetch all remotes with prune", "repo.fetchPrune", True, False, ("origin", "upstream"), None),
+                ("Fetch all remotes with tags", "repo.fetchTags", False, True, ("origin", "upstream"), None),
+                ("Fetch from Remote…", "repo.fetchRemote", False, False, ("upstream",), "upstream"),
+            )
+            for index, (label, command, prune, tags, touched, remote) in enumerate(variants):
                 # Tags point at unreachable commits to rule out Git's automatic tag following.
-                touched = ("origin", "upstream") if "--all" in option else ("upstream",)
                 for name, server in (("origin", bare), ("upstream", other)):
                     new_ref = f"refs/heads/trial-{index}"
                     git("update-ref", new_ref, base, directory=server)
                     git("update-ref", f"refs/remotes/{name}/obsolete-{index}", base)
                     orphan = git("commit-tree", tree, "-m", f"{name} tag {index}", directory=server)
                     git("tag", f"{name}-tag-{index}", orphan, directory=server)
-                choose_command("repo.fetch", "Fetch Options")
-                press("listItem", option)
-                if "--all" not in option:
-                    press("listItem", "upstream")
+                press("button", "Command palette")
+                auto("type", command, "--settle")
+                press("listItem", label)
+                if remote:
+                    press("listItem", remote)
                 for name in touched:
-                    until(lambda: has_ref(f"refs/remotes/{name}/trial-{index}"), f"{option} missed {name}")
+                    until(lambda: has_ref(f"refs/remotes/{name}/trial-{index}"), f"{label} missed {name}")
                 for name in ("origin", "upstream"):
-                    assert has_ref(f"refs/remotes/{name}/trial-{index}") == (name in touched), (option, name)
-                    assert has_ref(f"refs/remotes/{name}/obsolete-{index}") != (name in touched and "--prune" in option), (option, name)
-                    assert has_ref(f"refs/tags/{name}-tag-{index}") == (name in touched and "--tags" in option), (option, name)
+                    assert has_ref(f"refs/remotes/{name}/trial-{index}") == (name in touched), (label, name)
+                    assert has_ref(f"refs/remotes/{name}/obsolete-{index}") != (name in touched and prune), (label, name)
+                    assert has_ref(f"refs/tags/{name}-tag-{index}") == (name in touched and tags), (label, name)
                 assert git("rev-parse", "HEAD") == new_head and not git("status", "--porcelain")
 
             choose_command("Merge Branch", "Branch name")
-            auto("type", "trial-5", "--settle")
-            assert control(snapshot(), "text", f"Merge refs/heads/trial-5 into {branch}")
+            auto("type", "trial-2", "--settle")
+            assert control(snapshot(), "text", f"Merge refs/heads/trial-2 into {branch}")
             auto("key", "Down", "--settle")
-            assert control(snapshot(), "text", f"Merge refs/remotes/origin/trial-5 into {branch}")
+            assert control(snapshot(), "text", f"Merge refs/remotes/origin/trial-2 into {branch}")
             auto("key", "Down", "--settle")
-            assert control(snapshot(), "text", f"Merge refs/remotes/upstream/trial-5 into {branch}")
+            assert control(snapshot(), "text", f"Merge refs/remotes/upstream/trial-2 into {branch}")
             auto("screenshot", artifacts / "merge-preview.png")
             auto("key", "Enter", "--settle")
             press("button", "Cancel")
@@ -274,10 +285,15 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
             merge_tip = git("commit-tree", git("rev-parse", "HEAD^{tree}", directory=peer), "-p", new_head, "-m", "Palette merge", directory=peer)
             git("update-ref", "refs/heads/merge-target", merge_tip, directory=peer)
             git("push", "origin", "merge-target", directory=peer)
-            choose_command("repo.fetch", "Fetch Options")
-            press("listItem", "fetch")
+            choose_command("repo.fetchRemote", "Remote name")
             press("listItem", "origin")
             until(lambda: has_ref("refs/remotes/origin/merge-target"), "remote target not fetched")
+            # The ref appears before the fetch's completion reload reaches the
+            # snapshot. The Sync menu is disabled for the whole fetch and the
+            # reload after it, so an enabled Sync trigger is the idle signal.
+            # (The palette button is enabled during fetch, so it cannot be used.)
+            until(lambda: any(" disabled" not in row for row in control(snapshot(), "menuButton", "Sync")),
+                  "fetch did not finish refreshing the snapshot")
             choose_command("Merge Branch", "Branch name")
             auto("type", "origin/merge-target", "--settle")
             press("listItem", "origin/merge-target")
@@ -354,7 +370,7 @@ with tempfile.TemporaryDirectory(prefix="sg-sync-", dir="/tmp") as directory:
             print("PASS tree → file → Back, tracked/all staging, unstage and optional-message stash with Git state checks.", flush=True)
             print("PASS all 75 reference command labels and About in the native picker, Push options, Add Remote with Back and Git config readback, theme menu.", flush=True)
             print(f"Evidence: {artifacts}", flush=True)
-            print("PASS six fetch variants across two local remotes, scoped tags and prune, Merge preview, cancel and confirmed SHA.", flush=True)
+            print("PASS four fetch commands across two local remotes, scoped tags and prune, Merge preview, cancel and confirmed SHA.", flush=True)
             print(f"PASS 360 pt centered at {window_width} pt and 115% font, Commands and Checkout, short/long refs, Fetch, Pull and confirmed Push.", flush=True)
         finally:
             if app.poll() is None:

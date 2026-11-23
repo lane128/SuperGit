@@ -1133,7 +1133,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 }
 
 func (a *app) reload() {
-	if a.repo == nil {
+	if a.repo == nil || a.localWatch.closed {
 		return
 	}
 	a.openRepository(a.repo.Root, false)
@@ -1590,6 +1590,12 @@ func (a *app) selectCommitFile(path string) {
 	a.openDetailFile(detailFileKey{Path: path})
 }
 
+// exclusiveBusy reports whether a foreground operation is running. A fetch is
+// background: it keeps busy set so writes stay gated, but reads stay open.
+func (a *app) exclusiveBusy() bool {
+	return a.busy && !a.fetching
+}
+
 // beginOperation starts the deadline for a git command and marks the app
 // busy. The returned cancel is what the title bar's cancel button reaches, so
 // every operation that sets busy itself goes through here rather than building
@@ -1665,6 +1671,13 @@ func (a *app) performDoneAs(busy busyLabel, label, success string, done func(err
 		cancelled := operationCancelled(ctx, err)
 		a.hopToMain(func() {
 			a.finishOperation()
+			if a.localWatch.closed {
+				if done != nil {
+					done(err)
+				}
+				a.invalidate()
+				return
+			}
 			switch {
 			case cancelled:
 				// Stopping through the cancel button is not a failure, and
@@ -1794,7 +1807,11 @@ func (a *app) fetchOnOpen() {
 	if !a.autoFetch || a.repo == nil || len(a.remotes) == 0 {
 		return
 	}
-	a.startFetch(a.t("fetchFailed"), "", a.autoFetchPrune)
+	mode := gitrepo.FetchDefault
+	if a.autoFetchPrune {
+		mode = gitrepo.FetchWithPrune
+	}
+	a.startFetch(a.t("fetchFailed"), "", mode)
 }
 
 // startFetch fetches every remote and lights the title bar's progress label.
@@ -1802,23 +1819,23 @@ func (a *app) fetchOnOpen() {
 // both restart the interval: a manual fetch moments after opening should not
 // be repeated by the timer. The attempt is recorded before it runs, so a
 // failure waits a full interval instead of retrying every tick.
-func (a *app) startFetch(label, success string, prune bool) {
-	mode := gitrepo.FetchDefault
-	if prune {
-		mode = gitrepo.FetchWithPrune
-	}
+func (a *app) startFetch(label, success string, mode gitrepo.FetchMode) {
 	a.fetchRemotes(a.remotes, mode, label, success)
 }
 
 func (a *app) fetchRemotes(targets []gitrepo.Remote, mode gitrepo.FetchMode, label, success string) {
-	if a.repo == nil || a.busy || a.loading || a.tabSnapshotUnavailable() || len(targets) == 0 {
+	if a.repo == nil || a.busy || a.loading || a.tabSnapshotUnavailable() || a.repositoryOpenPending() || len(targets) == 0 {
 		return
 	}
 	remotes := append([]gitrepo.Remote(nil), targets...)
 	a.lastAutoFetch = time.Now()
 	a.fetching = true
-	a.performDone(label, success, func(error) {
+	started := a.performDoneAs("", label, success, func(error) {
 		a.fetching = false
+		// A fetch can finish after HEAD moved in another process or tab.
+		// Treat its reload like a tab activation so Amend is dropped for a
+		// commit the draft no longer belongs to.
+		a.activationRefresh = true
 	}, func(ctx context.Context, repo *gitrepo.Repository) error {
 		for i, remote := range remotes {
 			remoteCtx := ctx
@@ -1831,6 +1848,9 @@ func (a *app) fetchRemotes(targets []gitrepo.Remote, mode gitrepo.FetchMode, lab
 		}
 		return nil
 	})
+	if !started {
+		a.fetching = false
+	}
 }
 
 // watchAutoFetch posts a periodic check to the UI thread. The timer itself
@@ -1883,7 +1903,7 @@ func (a *app) fetchAll() {
 		a.invalidate()
 		return
 	}
-	a.startFetch(a.t("fetchFailed"), a.t("fetchSuccess"), false)
+	a.startFetch(a.t("fetchFailed"), a.t("fetchSuccess"), gitrepo.FetchDefault)
 }
 
 func (a *app) fetchPruneAll() {
@@ -1892,7 +1912,16 @@ func (a *app) fetchPruneAll() {
 		a.invalidate()
 		return
 	}
-	a.startFetch(a.t("fetchPruneFailed"), a.t("fetchPruned"), true)
+	a.startFetch(a.t("fetchPruneFailed"), a.t("fetchPruned"), gitrepo.FetchWithPrune)
+}
+
+func (a *app) fetchTagsAll() {
+	if len(a.remotes) == 0 {
+		a.queue("warning", a.t("noRemote"), "")
+		a.invalidate()
+		return
+	}
+	a.startFetch(a.t("fetchTagsFailed"), a.t("fetchTagsSuccess"), gitrepo.FetchWithTags)
 }
 
 func (a *app) pullFF() {

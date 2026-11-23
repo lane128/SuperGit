@@ -1,0 +1,49 @@
+@e3360 [scroll] bounds=80,1.5,1136.29638671875x34 id=13268153278420904744
+  @e3361 [tabList] "Repositories" actions=scrollIntoView bounds=80,2.5,89.4730224609375x32 id=227030903847231024
+    @e3362 [tab] "repo" checked description="/private/tmp/supergit-acceptance-2026-11-23/repo" actions=press,focus,scrollIntoView bounds=80,3.5,60.4730224609375x28 id=14553202913151411623
+    @e3363 [button] "Close /private/tmp/supergit-acceptance-2026-11-23/repo" disabled description="Close /private/tmp/supergit-acceptance-2026-11-23/repo" actions=scrollIntoView bounds=140.4730224609375,3,29x29 id=934303695243013855
+@e3364 [button] "New Tab" key=new-repository-tab disabled bounds=1220.29638671875,4,91.70359802246094x29 id=11012673363537975167
+@e3365 [button] "Command palette" focused description="Command palette (⌘P)" actions=press,focus bounds=480,42.5,32x29 id=16321304697887185961
+@e3366 [button] "Branches" disabled description="main" bounds=512,42.5,328x29 id=291417575154060147
+@e3367 [progress] "Fetching…" value=0 key=branch-progress range=0..0 bounds=513,68.5,326x2 id=5707730781950135239
+@e3368 [menuButton] "Save changes…" haspopup=menu description="Save changes…" actions=press,focus bounds=1100.038330078125,42.5,132.3629913330078x29 id=583723104511302947
+@e3369 [menuButton] "Sync" disabled haspopup=menu bounds=1238.4013671875,42.5,69.59869384765625x29 id=400376224215186733
+@e3370 [text] "RE" bounds=18.10302734375,89.93359375,15.7939453125x14.1328125 id=16791044032195591632
+@e3371 [button] "repo" description="/private/tmp/supergit-acceptance-2026-11-23/repo" actions=press,focus bounds=46,84,126x26 id=12995446693494302817
+@e3372 [button] "History" keyshortcuts="⌘1" actions=press,focus bounds=8,112,168x32 id=1176431582296465469
+@e3373 [scroll] bounds=0,150,184x648 id=13062004961692748848
+  @e3374 [disclosure] "Branches" expanded description="Expand or fold Branches" actions=press,focus,scrollIntoView bounds=0,150,184x29 id=6623682812212228664
+  @e3375 [button] "main" description="Current" actions=press,focus,scrollIntoView bounds=6,183,168x24 id=17733593843230248477
+  @e3376 [disclosure] "Remotes" description="Expand or fold Remotes" actions=press,focus,scrollIntoView bounds=0,213,184x29 id=5655241691253022475
+  @e3377 [disclosure] "Tags" description="Expand or fold Tags" actions=press,focus,scrollIntoView bounds=0,242,184x29 id=4964825716752964927
+  @e3378 [disclosure] "Stashes" description="Expand or fold Stashes" actions=press,focus,scrollIntoView bounds=0,271,184x29 id=9978143783471011978
+  @e3379 [disclosure] "Worktrees" description="Expand or fold Worktrees" actions=press,focus,scrollIntoView bounds=0,300,184x29 id=16917973159803377458
+  @e3380 [disclosure] "Submodules" description="Expand or fold Submodules" actions=press,focus,scrollIntoView bounds=0,329,184x29 id=4581099424560170325
+@e3381 [button] "Settings" keyshortcuts="⌘," actions=press,focus bounds=6,802,172x32 id=1958394466511521867
+@e3382 [text] "Branches" bounds=205,89.75,64.9072265625x17.5 id=2294120884645730355
+@e3383 [text] "1 local branch · 2 remote branches · 0 tags" bounds=279.9072265625,91.43359375,599.5299072265625x14.1328125 id=6196754217881543514
+@e3384 [textField] placeholder="Search branches and tags" keyshortcuts="⌘F" selection=0,0 actions=focus,setValue bounds=918.4371337890625,91.43359375,177.73281860351562x14.1328125 id=13886125880649939587
+@e3385 [text] "F" key=1 bounds=1125.5699462890625,91.43359375,6.867186546325684x14.1328125 id=14563557274543425472
+@e3386 [button] "New branch…" disabled bounds=1155.4371337890625,84,101.53358459472656x29 id=14445171425283299011
+@e3387 [text] "main" bounds=1270.970703125,91.43359375,27.029281616210938x14.1328125 id=7344015728407374432
+@e3388 [group] actions=focus bounds=191,122,804.5509643554688x718 id=16953913261441944301
+  @e3389 [text] "Switching branches requires a clean working tree; ↑/↓ selects a row, Enter checks out a branch, tracks a remote branch or opens a tag's commit." bounds=208,133.0224609375,760.67041015625x12.955078125 id=6585378293340714780
+  @e3390 [scroll] bounds=192,157,802.5509643554688x682 id=2566969453043968174
+    @e3391 [list] actions=scrollIntoView bounds=202,167,782.5509643554688x46 id=10201947903909331017
+      @e3392 [listItem] "main" selectable description="Current" item=1/1 actions=press,focus,scrollIntoView bounds=202,167,782.5509643554688x46 id=13393655742591695009
+        @e3393 [text] "Current" actions=scrollIntoView bounds=294.232421875,176.044921875,42.890625x14.1328125 id=12957918341967803816
+        @e3394 [text] "Upstream —" actions=scrollIntoView bounds=251,195.111328125,58.61328125x11.77734375 id=4163825517977557392
+        @e3395 [text] "33f9f9bc" actions=scrollIntoView bounds=927.5509643554688,183.39996337890625,48x13.2000732421875 id=1807752945586953105
+    @e3396 [text] "Remote branches" actions=scrollIntoView bounds=208,224.5224609375,97.520263671875x12.955078125 id=5533451185269769992
+    @e3397 [text] "2" actions=scrollIntoView bounds=311.520263671875,224.5224609375,6.703125x12.955078125 id=11621745703840913814
+    @e3398 [list] actions=scrollIntoView bounds=202,249,782.5509643554688x94 id=18209745427746985543
+      @e3399 [listItem] "main" selectable description="origin/main" item=1/2 actions=press,focus,scrollIntoView bounds=202,249,782.5509643554688x46 id=12491614057593883116
+        @e3400 [text] "origin" actions=scrollIntoView bounds=293.029296875,265.5224609375,31.3228759765625x12.955078125 id=14888292876068166251
+        @e3401 [text] "33f9f9bc" actions=scrollIntoView bounds=927.5509643554688,265.39996337890625,48x13.2000732421875 id=12502017888385778537
+      @e3402 [listItem] "main" selectable description="upstream/main" item=2/2 actions=press,focus,scrollIntoView bounds=202,297,782.5509643554688x46 id=12622483600859352940
+        @e3403 [text] "upstream" actions=scrollIntoView bounds=293.029296875,313.5224609375,51.81669235229492x12.955078125 id=1853632512706000044
+        @e3404 [text] "33f9f9bc" actions=scrollIntoView bounds=927.5509643554688,313.39996337890625,48x13.2000732421875 id=733433900700114309
+    @e3405 [text] "Tags" actions=scrollIntoView bounds=208,354.5224609375,26.31298828125x12.955078125 id=16188894326792375777
+    @e3406 [text] "No tags." actions=scrollIntoView bounds=202,379,782.5509643554688x26.955078125 id=2406631643582119129
+    @e3407 [text] "Right-click a commit in History to create a tag." actions=scrollIntoView bounds=202,407.955078125,782.5509643554688x26.955078125 id=4363042846933047139
+@e3408 [text] "Select a branch or tag to see its details." bounds=1049.0802001953125,488.93359375,224.390625x14.1328125 id=557095275186110303

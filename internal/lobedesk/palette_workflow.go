@@ -62,7 +62,7 @@ func (a *app) inputPalette(caption, placeholder, initial string, accept func(str
 
 func (a *app) showPaletteStep(step *paletteStep) {
 	id := a.commandPalette.actionID
-	a.setPaletteStage(paletteWorkflow, "")
+	a.setPaletteStage(paletteWorkflow)
 	a.commandPalette.step, a.commandPalette.actionID = step, id
 	a.commandPalette.query = step.initial
 	if step.resume {
@@ -74,17 +74,15 @@ func (a *app) paletteStepBack() {
 	s := a.commandPalette
 	if s.step != nil && s.step.parent != nil {
 		a.showPaletteStep(s.step.parent)
-	} else if s.stage == paletteFetchRemote {
-		a.setPaletteStage(paletteFetchOptions, "")
 	} else {
-		a.setPaletteStage(paletteCommands, "")
+		a.setPaletteStage(paletteCommands)
 	}
 }
 
 func (a *app) finishPaletteStep(generation uint64, run func()) {
 	a.discardStaleCommandPalette()
 	s := a.commandPalette
-	if !s.open || s.generation != generation || s.stage != paletteWorkflow || a.busy || a.loading || a.repositoryOpenPending() {
+	if !s.open || s.generation != generation || s.stage != paletteWorkflow || a.exclusiveBusy() || a.loading || a.repositoryOpenPending() {
 		return
 	}
 	if s.actionID != "" && a.commandPaletteUnavailable(s.actionID) != "" {

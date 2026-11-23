@@ -39,7 +39,7 @@ func TestPaletteMergeStateChangePreventsAcceptance(t *testing.T) {
 			a := headShortcutApp(t)
 			a.status.Branch = "main"
 			a.branches = []gitrepo.Branch{{Name: "topic", SHA: "1111111111"}}
-			a.setPaletteStage(paletteMergeRef, "")
+			a.setPaletteStage(paletteMergeRef)
 			row := a.paletteChoices()[0]
 			generation := a.commandPalette.generation
 			switch change {
@@ -70,29 +70,10 @@ func TestPaletteMergeAllowedWithNonConflictChanges(t *testing.T) {
 	if why := a.paletteMergeUnavailable(); why != "" {
 		t.Fatalf("palette merge should defer dirty checks to git, got %q", why)
 	}
-	a.setPaletteStage(paletteMergeRef, "")
+	a.setPaletteStage(paletteMergeRef)
 	rows := a.paletteChoices()
 	if len(rows) != 1 || rows[0].reason != "" {
 		t.Fatalf("expected enabled merge row with dirty worktree, got %+v", rows)
-	}
-}
-
-func TestPaletteFetchParameterGeneration(t *testing.T) {
-	a := headShortcutApp(t)
-	a.remotes = []gitrepo.Remote{{Name: "origin"}, {Name: "upstream"}}
-	a.fetchFromCommand()
-	generation := a.commandPalette.generation
-	option := a.paletteChoices()[1]
-	a.acceptPaletteChoice(option, generation)
-	if a.commandPalette.stage != paletteFetchRemote || a.commandPalette.fetchOption != "fetch --prune" {
-		t.Fatal("single-remote option must prompt for a remote")
-	}
-	a.acceptPaletteChoice(option, generation)
-	remote, generation := a.paletteChoices()[0], a.commandPalette.generation
-	a.setPaletteStage(paletteFetchOptions, "")
-	a.acceptPaletteChoice(remote, generation)
-	if a.fetching || !a.lastAutoFetch.IsZero() || a.commandPalette.stage != paletteFetchOptions || !a.commandPalette.open {
-		t.Fatal("old fetch option or remote advanced a different stage")
 	}
 }
 
@@ -105,7 +86,10 @@ func TestPaletteFetchRemoteSurvivesBackgroundRefresh(t *testing.T) {
 	if !ok {
 		t.Fatal("expected an idle repository probe")
 	}
-	a.setPaletteStage(paletteFetchRemote, "fetch --tags")
+	a.fetchRemoteFromCommand()
+	if a.commandPalette.stage != paletteFetchRemote {
+		t.Fatal("remote command did not open the picker")
+	}
 	if a.acceptLocalProbe(probe, "changed", nil, now) {
 		t.Fatal("in-flight probe would close the remote picker")
 	}

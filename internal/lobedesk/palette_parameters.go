@@ -13,7 +13,6 @@ type paletteStage uint8
 
 const (
 	paletteCommands paletteStage = iota
-	paletteFetchOptions
 	paletteFetchRemote
 	paletteMergeRef
 	paletteWorkflow
@@ -23,25 +22,10 @@ type paletteChoice struct {
 	id, label, detail, prefix, reason, sha string
 }
 
-type fetchOption struct {
-	label, detail string
-	all           bool
-	mode          gitrepo.FetchMode
-}
-
-var fetchOptions = [...]fetchOption{
-	{"fetch", "fetchOneHint", false, gitrepo.FetchDefault},
-	{"fetch --prune", "fetchOnePruneHint", false, gitrepo.FetchWithPrune},
-	{"fetch --tags", "fetchOneTagsHint", false, gitrepo.FetchWithTags},
-	{"fetch --all", "fetchAllHint", true, gitrepo.FetchDefault},
-	{"fetch --all --prune", "fetchAllPruneHint", true, gitrepo.FetchWithPrune},
-	{"fetch --all --tags", "fetchAllTagsHint", true, gitrepo.FetchWithTags},
-}
-
-func (a *app) setPaletteStage(stage paletteStage, option string) {
+func (a *app) setPaletteStage(stage paletteStage) {
 	a.commandPaletteGeneration++
 	a.commandPalette = commandPaletteState{open: true, root: a.paletteRoot(), epoch: a.loadSeq,
-		stage: stage, fetchOption: option, generation: a.commandPaletteGeneration,
+		stage: stage, generation: a.commandPaletteGeneration,
 		cursor: -1, reveal: true, searchFocus: true}
 	a.invalidate()
 }
@@ -51,10 +35,8 @@ func (a *app) paletteInputLabels() (title, chip, placeholder string) {
 	case paletteWorkflow:
 		step := a.commandPalette.step
 		return step.title, step.title, step.placeholder
-	case paletteFetchOptions:
-		return a.t("fetch"), a.t("fetch"), a.t("paletteFetchOptions")
 	case paletteFetchRemote:
-		return a.t("fetch"), a.commandPalette.fetchOption, a.t("remoteName")
+		return a.t("fetch"), "", a.t("remoteName")
 	case paletteMergeRef:
 		return a.t("paletteMergeBranch"), a.t("paletteMergeBranch"), a.t("branchName")
 	default:
@@ -67,7 +49,7 @@ func mergePaletteCommand() appShortcut {
 		Available: func(a *app) bool { return a.commandPaletteUnavailable("branch.merge") == "" && !a.commandPalette.open },
 		Run: func(a *app) {
 			if a.commandPaletteUnavailable("branch.merge") == "" && !a.commandPalette.open {
-				a.setPaletteStage(paletteMergeRef, "")
+				a.setPaletteStage(paletteMergeRef)
 			}
 		}}
 }
@@ -100,10 +82,6 @@ func (a *app) paletteChoices() []paletteChoice {
 			rows = append(rows, paletteChoice{id: s.ID, label: a.t(s.Label), detail: detail, reason: a.commandPaletteUnavailable(s.ID)})
 		}
 		return rows
-	case paletteFetchOptions:
-		for _, opt := range fetchOptions {
-			rows = append(rows, paletteChoice{id: opt.label, label: opt.label, detail: a.t(opt.detail)})
-		}
 	case paletteFetchRemote:
 		for _, remote := range a.remotes {
 			rows = append(rows, paletteChoice{id: remote.Name, label: remote.Name})
@@ -123,6 +101,9 @@ func (a *app) paletteChoices() []paletteChoice {
 	id := "repo.fetch"
 	if a.commandPalette.stage == paletteMergeRef {
 		id = "branch.merge"
+	}
+	if a.commandPalette.stage == paletteFetchRemote {
+		id = "repo.fetchRemote"
 	}
 	reason := a.commandPaletteUnavailable(id)
 	for i := range rows {
@@ -163,33 +144,18 @@ func (a *app) acceptPaletteChoice(row paletteChoice, generation uint64) {
 		}
 		return
 	}
-	if a.commandPaletteUnavailable("repo.fetch") != "" {
+	if s.stage != paletteFetchRemote {
 		return
 	}
-	option := row.id
-	if s.stage == paletteFetchRemote {
-		option = s.fetchOption
-	}
-	for _, opt := range fetchOptions {
-		if opt.label != option {
-			continue
-		}
-		if !opt.all && s.stage == paletteFetchOptions && len(a.remotes) > 1 {
-			a.setPaletteStage(paletteFetchRemote, option)
-			return
-		}
-		targets := a.remotes
-		if s.stage == paletteFetchRemote {
-			i := slices.IndexFunc(targets, func(r gitrepo.Remote) bool { return r.Name == row.id })
-			if i < 0 {
-				return
-			}
-			targets = targets[i : i+1]
-		}
-		a.commandPalette = commandPaletteState{}
-		a.fetchRemotes(targets, opt.mode, a.t("fetchFailed"), a.t("fetchSuccess"))
+	if a.commandPaletteUnavailable("repo.fetchRemote") != "" {
 		return
 	}
+	i := slices.IndexFunc(a.remotes, func(r gitrepo.Remote) bool { return r.Name == row.id })
+	if i < 0 {
+		return
+	}
+	a.commandPalette = commandPaletteState{}
+	a.fetchRemotes(a.remotes[i:i+1], gitrepo.FetchDefault, a.t("fetchFailed"), a.t("fetchSuccess"))
 }
 
 func commandPanel(c *ui.Context, backdrop, panel ui.Element, title string) ui.Element {

@@ -26,7 +26,8 @@ func commandPaletteShortcutBindings() []appShortcut {
 // metadata. Only the palette consumes these additions; window registration and
 // the Settings shortcut card still read the actual shortcut table.
 func commandPaletteTable() []appShortcut {
-	entries := append(shortcutTable(), fetchPaletteCommand(), mergePaletteCommand(), stashPaletteCommand(), createBranchPaletteCommand(), historyRefPaletteCommand(), createTagPaletteCommand(), clonePaletteCommand(), copySHAPaletteCommand())
+	entries := append(shortcutTable(), fetchPaletteCommands()...)
+	entries = append(entries, mergePaletteCommand(), stashPaletteCommand(), createBranchPaletteCommand(), historyRefPaletteCommand(), createTagPaletteCommand(), clonePaletteCommand(), copySHAPaletteCommand())
 	for i := range entries {
 		if entries[i].ID == "window.settings" {
 			entries[i].Label = "palettePreferences"
@@ -41,7 +42,6 @@ type commandPaletteState struct {
 	step         *paletteStep
 	actionID     string
 	stage        paletteStage
-	fetchOption  string
 	open         bool
 	root         string
 	epoch        uint64
@@ -58,11 +58,29 @@ type commandPaletteState struct {
 // table supplies labels, execution functions and keys where one exists.
 func paletteCommand(id string) bool {
 	switch id {
-	case "repo.open", "repo.reopenClosedTab", "repo.clone", "window.settings", "page.history", "page.branches", "page.stash", "page.worktrees", "repo.reload", "history.head", "workspace.focusCommitMessage", "branch.quickCheckout", "branch.merge", "repo.quickSwitch", "repo.fetch", "stash.saveTracked", "branch.create", "history.chooseRef", "tag.create", "commit.copySHA":
+	case "repo.open", "repo.reopenClosedTab", "repo.clone", "window.settings", "page.history", "page.branches", "page.stash", "page.worktrees", "repo.reload", "history.head", "workspace.focusCommitMessage", "branch.quickCheckout", "branch.merge", "repo.quickSwitch", "repo.fetch", "repo.fetchPrune", "repo.fetchTags", "repo.fetchRemote", "stash.saveTracked", "branch.create", "history.chooseRef", "tag.create", "commit.copySHA":
 		return true
 	}
 	_, ok := paletteActionsByID[id]
 	return ok
+}
+
+// fetchSafePaletteCommand lists commands that neither write Git nor depend on
+// a repository reload, so they stay usable while a fetch runs in the
+// background. A few of them persist UI settings; that is still safe.
+func fetchSafePaletteCommand(id string) bool {
+	for _, prefix := range []string{"page.", "history.show", "history.hide", "history.navigate", "view."} {
+		if strings.HasPrefix(id, prefix) {
+			return true
+		}
+	}
+	switch id {
+	case "history.head", "history.chooseRef", "commit.copySHA", "commit.viewTree", "file.history", "file.blame",
+		"diff.ignoreWhitespace", "window.settings", "window.about", "workspace.focusCommitMessage",
+		"repo.containingFolder", "repo.terminal", "repo.sublimeText":
+		return true
+	}
+	return false
 }
 
 func (a *app) commandPaletteEntries() []appShortcut {
@@ -73,12 +91,9 @@ func (a *app) commandPaletteEntries() []appShortcut {
 		if !paletteCommand(s.ID) {
 			continue
 		}
-		alias := ""
-		if s.ID == "repo.fetch" {
-			alias = a.t("fetchAllCommand")
-		}
 		en, zh := messages[localeEnglish][s.Label], messages[localeChinese][s.Label]
-		score := commandMatchScore(a.commandPalette.query, a.t(s.Label), en, zh, s.ID, alias, referenceCommandNames[s.ID])
+		names := append([]string{a.t(s.Label), en, zh, s.ID}, referenceCommandSearchNames(s.ID)...)
+		score := commandMatchScore(a.commandPalette.query, names...)
 		if query != "" && (query == paletteCaptionStem(s.ID) || query == paletteCaptionStem(en) || query == paletteCaptionStem(zh)) {
 			// An exact command must beat a longer command with the same prefix.
 			score = 1 << 30
@@ -104,8 +119,25 @@ func (a *app) paletteRoot() string {
 }
 
 func (a *app) discardStaleCommandPalette() {
-	if a.commandPalette.open && (a.commandPalette.root != a.paletteRoot() || a.commandPalette.epoch != a.loadSeq) {
+	if !a.commandPalette.open {
+		return
+	}
+	if a.commandPalette.root != a.paletteRoot() {
 		a.commandPalette = commandPaletteState{}
+		return
+	}
+	// The command list recomputes availability every frame, so a background
+	// reload in the same repository must not discard a query being typed.
+	// Bump the generation instead: callbacks captured before the reload are
+	// stale, while Enter on the open palette uses the current generation.
+	if a.commandPalette.epoch != a.loadSeq {
+		if a.commandPalette.stage != paletteCommands {
+			a.commandPalette = commandPaletteState{}
+			return
+		}
+		a.commandPaletteGeneration++
+		a.commandPalette.epoch = a.loadSeq
+		a.commandPalette.generation = a.commandPaletteGeneration
 	}
 }
 
@@ -115,7 +147,10 @@ func (a *app) commandPaletteUnavailable(id string) string {
 	if !paletteCommand(id) {
 		return a.t("commandPaletteUnavailable")
 	}
-	if a.busy || a.loading || a.historyReloading {
+	if a.exclusiveBusy() || a.loading || a.historyReloading {
+		return a.t("commandPaletteWait")
+	}
+	if a.fetching && !fetchSafePaletteCommand(id) {
 		return a.t("commandPaletteWait")
 	}
 	if a.repositoryChooserOpen || a.historyRefOpen || a.hasPendingDialogWithoutPalette(toastMain) {
@@ -158,7 +193,8 @@ func (a *app) commandPaletteUnavailable(id string) string {
 			return a.t("commandPaletteNeedRepo")
 		}
 	}
-	if (id == "branch.merge" || id == "repo.fetch") && (a.repositoryOpenPending() || a.tabSnapshotUnavailable()) {
+	fetchCommand := id == "repo.fetch" || id == "repo.fetchPrune" || id == "repo.fetchTags" || id == "repo.fetchRemote"
+	if (id == "branch.merge" || fetchCommand) && (a.repositoryOpenPending() || a.tabSnapshotUnavailable()) {
 		return a.t("commandPaletteWait")
 	}
 	if id == "branch.merge" {
@@ -176,7 +212,7 @@ func (a *app) commandPaletteUnavailable(id string) string {
 	if id == "stash.saveTracked" {
 		return a.trackedStashUnavailable()
 	}
-	if id == "repo.fetch" && len(a.remotes) == 0 {
+	if fetchCommand && len(a.remotes) == 0 {
 		return a.t("noRemote")
 	}
 	if id == "history.head" && a.status.Head == "" {
@@ -190,14 +226,15 @@ func (a *app) commandPaletteUnavailable(id string) string {
 
 func (a *app) canOpenCommandPalette() bool {
 	a.discardStaleCommandPalette()
-	return !a.commandPalette.open && a.commandPaletteUnavailable("repo.open") == ""
+	return !a.commandPalette.open && !a.exclusiveBusy() && !a.loading && !a.historyReloading &&
+		!a.repositoryChooserOpen && !a.historyRefOpen && !a.hasPendingDialogWithoutPalette(toastMain)
 }
 
 func (a *app) openCommandPalette() {
 	if !a.canOpenCommandPalette() {
 		return
 	}
-	a.setPaletteStage(paletteCommands, "")
+	a.setPaletteStage(paletteCommands)
 }
 
 func (a *app) runPaletteCommand(id string, generation uint64) {

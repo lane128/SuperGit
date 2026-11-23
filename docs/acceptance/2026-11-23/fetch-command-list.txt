@@ -1,0 +1,13 @@
+@e3221 [dialog] "Command palette" actions=press bounds=160,76,1000x166 id=3518943857300363651
+  @e3222 [textField] "Search commands…" value="repo.fetch" placeholder="Search commands…" selection=10,10 actions=focus,setValue bounds=171,88.3447265625,978x15.310546875 id=2840957881837848410
+  @e3223 [scroll] bounds=165,114,990x123 id=9496365661578403328
+    @e3224 [list] actions=scrollIntoView bounds=165,114,990x123 id=14843590051956450227
+      @e3225 [listItem] "Fetch all remotes" key=repo.fetch checked selectable focused item=1/4 actions=press,focus,scrollIntoView bounds=165,114,990x30 id=11359673038452369266
+        @e3226 [text] "Fetch all remotes" description="Fetch all remotes" actions=scrollIntoView bounds=173,121.93359375,974x14.1328125 id=3331091713517898260
+      @e3227 [listItem] "Fetch all remotes with prune" key=repo.fetchPrune selectable item=2/4 actions=press,focus,scrollIntoView bounds=165,145,990x30 id=15259261380926215607
+        @e3228 [text] "Fetch all remotes with prune" description="Fetch all remotes with prune" actions=scrollIntoView bounds=173,152.93359375,974x14.1328125 id=17208233645000253315
+      @e3229 [listItem] "Fetch all remotes with tags" key=repo.fetchTags selectable item=3/4 actions=press,focus,scrollIntoView bounds=165,176,990x30 id=11000068448613738680
+        @e3230 [text] "Fetch all remotes with tags" description="Fetch all remotes with tags" actions=scrollIntoView bounds=173,183.93359375,974x14.1328125 id=14466869524238979411
+      @e3231 [listItem] "Fetch from Remote…" key=repo.fetchRemote selectable item=4/4 actions=press,focus,scrollIntoView bounds=165,207,990x30 id=13679877479735296367
+        @e3232 [text] "Fetch from Remote…" description="Fetch from Remote…" actions=scrollIntoView bounds=173,214.93359375,974x14.1328125 id=5966801849596823569
+  @e3233 [button] "Scroll" actions=press bounds=1149,117,3x106.56784057617188 id=13595310665803708727

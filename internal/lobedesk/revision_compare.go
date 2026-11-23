@@ -73,7 +73,7 @@ const compareTargetKey = "compare-with-base"
 
 func (a *app) comparisonMenuItems(r comparisonRevision) []overlay.MenuItem {
 	a.discardStaleComparison()
-	disabled := r.sha == "" || a.busy || a.loading || a.tabSnapshotUnavailable()
+	disabled := r.sha == "" || a.exclusiveBusy() || a.loading || a.tabSnapshotUnavailable()
 	items := []overlay.MenuItem{{Key: compareBaseKey, Label: a.t("setComparisonBase"), Icon: lucide.GitCommitHorizontal(), Disabled: disabled}}
 	if base := a.comparison.base; base.root != "" && base.root == r.root {
 		items = append(items, overlay.MenuItem{Key: compareTargetKey, Label: a.t("compareWithBase"), Icon: lucide.GitCompareArrows(), Extra: shortSHA(base.sha), Disabled: disabled})
@@ -83,7 +83,7 @@ func (a *app) comparisonMenuItems(r comparisonRevision) []overlay.MenuItem {
 
 func (a *app) comparisonMenuAction(key string, r comparisonRevision) {
 	a.discardStaleComparison()
-	if a.repo == nil || a.repo.Root != r.root || r.sha == "" || a.localWatch.closed || a.activeRepositorySession() != a || a.busy || a.loading || a.tabSnapshotUnavailable() || a.hasPendingDialog(toastMain) {
+	if a.repo == nil || a.repo.Root != r.root || r.sha == "" || a.localWatch.closed || a.activeRepositorySession() != a || a.exclusiveBusy() || a.loading || a.tabSnapshotUnavailable() || a.hasPendingDialog(toastMain) {
 		return
 	}
 	switch key {
