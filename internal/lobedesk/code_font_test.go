@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
 func TestCodeFontPresetsDefaultAndPersistence(t *testing.T) {
@@ -73,12 +72,7 @@ func TestSettingsAppearanceCardSwitchesCodeFont(t *testing.T) {
 	defer func() { settingsConfigDir = origDir }()
 
 	a := &app{locale: localeEnglish, themeMode: "light", palette: themePaletteSuperGit, codeFont: codeFontJetBrainsMono}
-	tt := ui.NewTester(func(c *ui.Context) {
-		theme.Apply(c)
-		ui.Column(c).Width(680).Children(func() {
-			a.appearanceCard(c)
-		})
-	}, 680, 420)
+	tt := ui.NewTester(a.settingsRoot, settingsWindowWidth, settingsWindowHeight)
 
 	trigger, ok := tt.AccessByRole(ui.RoleButton, "Code font")
 	if !ok || trigger.Description != "JetBrains Mono" {

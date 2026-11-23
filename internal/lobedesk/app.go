@@ -446,14 +446,15 @@ type app struct {
 	// blameRev is the commit whose version of blamePath is blamed; empty means
 	// the worktree. A file opened from a commit's patch must not read the
 	// worktree, which may hold a different file by now.
-	blameRev        string
-	blame           []gitrepo.BlameLine
-	blameErr        string
-	blameLoading    bool
-	blameSeq        uint64
-	blameIgnoreWS   bool
-	revealSelection bool
-	paletteOpen     bool
+	blameRev             string
+	blame                []gitrepo.BlameLine
+	blameErr             string
+	blameLoading         bool
+	blameSeq             uint64
+	blameIgnoreWS        bool
+	revealSelection      bool
+	paletteOpen          bool
+	settingsIntervalOpen bool
 
 	revealGraphSelection bool
 	// showGraph draws the commit lane graph on the history page.

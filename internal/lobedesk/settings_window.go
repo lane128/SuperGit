@@ -6,15 +6,16 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
-// settingsWindowWidth and settingsWindowHeight open the panel at a size that
-// shows the cards at their capped measure with room for the scrollbar. The
-// window keeps its own size and position under the "settings" state key, so a
-// reader who widened it finds it that way again.
+// Settings opens at its capped reading width, while allowing narrower and
+// taller windows. Its new geometry key leaves legacy oversized states intact
+// without restoring them into the compact layout.
 const (
-	settingsWindowWidth  = 820
-	settingsWindowHeight = 720
+	settingsWindowWidth  = 848
+	settingsWindowHeight = 680
 	settingsWindowMinW   = 560
 	settingsWindowMinH   = 480
+	settingsWindowMaxW   = 848
+	settingsWindowMaxH   = 860
 )
 
 // settingsWindowTitle names the panel in the title bar and the window list.
@@ -35,21 +36,30 @@ func (a *app) openSettingsWindow() {
 	}
 	// The closed panel's dropdown state does not belong to the new one.
 	a.paletteOpen = false
+	a.settingsIntervalOpen = false
 	a.uiFontOpen = false
 	a.codeFontOpen = false
-	w := mygo.NewWindow(mygo.WindowOptions{
+	w := mygo.NewWindow(a.settingsWindowOptions())
+	a.settingsWindowSlot().Store(w)
+}
+
+func (a *app) settingsWindowOptions() mygo.WindowOptions {
+	return mygo.WindowOptions{
 		Title:                a.settingsWindowTitle(),
 		Width:                settingsWindowWidth,
 		Height:               settingsWindowHeight,
 		MinWidth:             settingsWindowMinW,
 		MinHeight:            settingsWindowMinH,
+		MaxWidth:             settingsWindowMaxW,
+		MaxHeight:            settingsWindowMaxH,
+		DisableMaximize:      true,
+		DisableFullScreen:    true,
 		TitleBarStyle:        mygo.TitleBarHidden,
 		TrafficLightPosition: &mygo.Point{X: 12, Y: 12},
 		BackgroundColor:      "light-dark(#f7f8fa, #09090b)",
-		StateKey:             "settings",
+		StateKey:             "settings-compact-v1",
 		Content:              ui.View(func(c *ui.Context) { a.activeRepositorySession().settingsRoot(c) }),
-	})
-	a.settingsWindowSlot().Store(w)
+	}
 }
 
 // settingsRoot applies the same theme to the panel and its title bar.

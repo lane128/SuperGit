@@ -8,6 +8,32 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestSettingsDetailKeepsItsMeasureAndSidePadding(t *testing.T) {
+	for _, mode := range []string{"light", "dark"} {
+		t.Run(mode, func(t *testing.T) {
+			a := &app{locale: localeEnglish, themeMode: mode}
+			view := ui.NewTester(a.settingsRoot, 820, 720)
+			for _, width := range []int{560, 687, 688, 848, 1200} {
+				view.SetSize(width, 720)
+				view.Frame()
+				view.Frame()
+				panel, ok := view.AccessByRole(ui.RoleGroup, a.t("settingsContent"))
+				if !ok {
+					t.Fatal("selected settings card has no named group")
+				}
+				left := panel.Bounds.X - 160
+				right := float32(width) - panel.Bounds.X - panel.Bounds.W
+				if left != 24 || right < 24 {
+					t.Errorf("at width %d, content must follow navigation by 24: left=%g right=%g", width, left, right)
+				}
+				if want := float32(min(640, width-160-48)); panel.Bounds.W != want {
+					t.Errorf("at width %d, content width=%g; want %g", width, panel.Bounds.W, want)
+				}
+			}
+		})
+	}
+}
+
 func TestSettingsTitleBarTracksAppearanceAndClearsWindowControls(t *testing.T) {
 	a := &app{locale: localeEnglish, palette: themePaletteCatppuccinMacchiato}
 	view := ui.NewTester(a.settingsRoot, settingsWindowMinW, settingsWindowMinH)
@@ -63,6 +89,13 @@ func TestCodeFontCanBeChangedAtMinimumSettingsSize(t *testing.T) {
 			click := func(label string, disabled bool) {
 				t.Helper()
 				button, ok := view.AccessByRole(ui.RoleButton, label)
+				// The padded, narrower card can wrap the follow-size control.
+				// Reach it through the real scroll viewport before clicking.
+				if ok && button.Bounds.Y+button.Bounds.H > settingsWindowMinH {
+					view.Scroll(settingsWindowMinW-40, settingsWindowMinH-40, 0, button.Bounds.Y+button.Bounds.H-settingsWindowMinH+24)
+					view.Frame()
+					button, ok = view.AccessByRole(ui.RoleButton, label)
+				}
 				if !ok || button.Offscreen || button.Disabled != disabled || button.Bounds.X < 132 || button.Bounds.X+button.Bounds.W > settingsWindowMinW || button.Bounds.Y+button.Bounds.H > settingsWindowMinH {
 					t.Fatalf("control %q (want disabled=%v) has unexpected state: %+v", label, disabled, button)
 				}
@@ -122,7 +155,7 @@ func TestSettingsChoicesFitMinimumWindowAndResetCanBeReached(t *testing.T) {
 					}{
 						{"appearance", "appearance", []string{a.t("themeSystem"), a.t("themeLight"), a.t("themeDark"), "中文", "English", a.t("fontSizeSmall"), a.t("fontSizeStandard"), a.t("fontSizeLarge")}},
 						{"history", "history", []string{a.t("showAuthor"), a.t("showTime"), a.t("showHistoryGraph"), a.t("graphLineThin"), a.t("graphLineStandard"), a.t("graphLineThick"), a.t("graphNodeSmall"), a.t("graphNodeStandard"), a.t("graphNodeLarge"), a.t("detailsInfo"), a.t("detailsChanges"), a.t("detailsDiff")}},
-						{"git", "settingsGit", []string{a.t("autoFetch"), a.t("autoFetchPrune"), a.fetchIntervalLabel(0), a.fetchIntervalLabel(5), a.fetchIntervalLabel(15), a.fetchIntervalLabel(30), a.fetchIntervalLabel(60)}},
+						{"git", "settingsGit", []string{a.t("autoFetch"), a.t("autoFetchPrune"), a.fetchIntervalLabel(0), a.t("autoFetchEvery")}},
 						{"shortcuts", "shortcuts", nil},
 						{"about", "about", []string{a.t("resetSettingsAction")}},
 					}

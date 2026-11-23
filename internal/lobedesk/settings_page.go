@@ -1,6 +1,7 @@
 package lobedesk
 
 import (
+	"math"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -12,16 +13,61 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
-// settingsMaxWidth keeps a settings card from stretching across a wide
-// window. Full-width cards push the label and the control metres apart and
-// run help text past a comfortable line length; Sublime Merge's preferences
-// hold a similar narrow measure.
-const settingsMaxWidth = 760
+// Settings use a fixed reading width, shrinking only when the window cannot
+// fit that width plus the page gutters.
+const settingsMaxWidth = 640
+const settingsPagePadding = 24
+const settingsNavigationWidth = 160
+const settingsStackWidth = 688
 
-// settingsHelpWidth keeps an explanatory line at a readable measure. A card
-// is 760 wide at most, and a sentence run across its full width reads as one
-// long line; capping it also keeps the help text from pushing the control it
-// describes out of the eye's way.
+// settingsFormRow uses a single reading order at both widths. Controls move as
+// a group below their label; individual segmented options never wrap.
+func settingsFormRow(c *ui.Context, label string, body func()) {
+	width, _ := c.Size()
+	compact := width < settingsStackWidth
+	var row ui.Element
+	if compact {
+		row = ui.Column(c).FillWidth().Padding(12).Gap(8).MinHeight(44)
+	} else {
+		row = ui.Row(c).FillWidth().Padding(10, 12).Gap(16).MinHeight(44).AlignItems(ui.Center)
+	}
+	row.Children(func() {
+		name := display.Text(c, label, display.TextProps{FontSize: scaledFont(13)})
+		if !compact {
+			name.Width(120).Shrink(0)
+		}
+		controls := ui.Row(c).Gap(8).Wrap().MinWidth(0).AlignItems(ui.Center)
+		if compact {
+			controls.FillWidth()
+		} else {
+			controls.Grow(1).Basis(0).Justify(ui.End)
+		}
+		controls.Children(body)
+	})
+	settingsDivider(c)
+}
+
+func settingsCheckRow(c *ui.Context, body func()) {
+	ui.Column(c).FillWidth().Padding(12).Gap(6).MinHeight(44).Children(body)
+}
+
+func settingsCheckbox(c *ui.Context, value *bool, label, help string, disabled bool) {
+	settingsCheckRow(c, func() {
+		ui.Box(c).FillWidth().Tooltip(help).Children(func() {
+			choice.Checkbox(c, value, label, choice.CheckboxProps{Size: 14}).Disabled(disabled).Tooltip(help)
+		})
+		if help != "" {
+			settingsHelp(c, help)
+		}
+	})
+	settingsDivider(c)
+}
+
+func settingsDivider(c *ui.Context) {
+	ui.Box(c).FillWidth().Height(1).Background(theme.TokensOf(c).BorderSecondary)
+}
+
+// settingsHelpWidth keeps explanatory text at a readable measure.
 const settingsHelpWidth = 520
 
 // settingsHelp explains the controls without truncating localized wording.
@@ -39,9 +85,17 @@ func (a *app) settingsPage(c *ui.Context) {
 	ui.Row(c).Grow(1).Basis(0).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 		a.settingsNavigation(c)
 		layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.settingsScroll}, func() {
-			ui.Row(c).FillWidth().Justify(ui.Center).Children(func() {
-				ui.Column(c).Grow(1).Basis(0).MinWidth(0).MaxWidth(settingsMaxWidth).Padding(16).Gap(14).Children(func() {
+			ui.Row(c).FillWidth().Padding(settingsPagePadding).Children(func() {
+				ui.Column(c).Width(settingsMaxWidth).Shrink(1).MinWidth(0).Gap(24).Role(ui.RoleGroup).Label(a.t("settingsContent")).Children(func() {
 					section := c.Key(a.activeSettingsSection())
+					ui.Column(section).FillWidth().Gap(4).Children(func() {
+						for _, item := range settingsSections {
+							if item.key == a.activeSettingsSection() {
+								display.Text(section, a.t(item.label), display.TextProps{FontSize: scaledFont(20), Strong: true})
+							}
+						}
+						settingsHelp(section, a.t("settingsIntro_"+a.activeSettingsSection()))
+					})
 					switch a.activeSettingsSection() {
 					case "appearance":
 						a.appearanceCard(section)
@@ -56,30 +110,32 @@ func (a *app) settingsPage(c *ui.Context) {
 					case "about":
 						a.aboutCard(section)
 						a.updatesCard(section)
-						ui.Row(section).FillWidth().Justify(ui.End).Children(func() {
-							if workbenchButton(section, a.t("resetSettingsAction"), buttonNormal, false).Clicked() {
-								a.confirmResetSettings()
-							}
+						ui.Column(section).FillWidth().Gap(12).Children(func() {
+							settingsDivider(section)
+							settingsFormRow(section, a.t("resetSettings"), func() {
+								if workbenchButton(section, a.t("resetSettingsAction"), buttonDangerIcon, false).Clicked() {
+									a.confirmResetSettings()
+								}
+							})
+							settingsHelp(section, a.t("settingsResetHelp"))
 						})
 					}
 				})
 			})
-		}).Grow(1).Basis(0).MinWidth(0).MinHeight(0)
+		}).Grow(1).Basis(0).MinWidth(0).MinHeight(0).Background(theme.TokensOf(c).BgContainer)
 	})
 }
 
 func (a *app) settingsCard(c *ui.Context, title string, body func()) {
 	tk := theme.TokensOf(c)
-	ui.Column(c).FillWidth().Padding(16).Gap(12).
-		Radius(tk.BorderRadiusLG).Background(tk.BgElevated).Border(1, tk.BorderSecondary).
-		Children(func() {
-			display.Text(c, title, display.TextProps{Strong: true, FontSize: scaledFont(13)})
-			body()
-		})
+	ui.Column(c).FillWidth().Gap(8).Role(ui.RoleGroup).Label(title).Children(func() {
+		display.Text(c, title, display.TextProps{Strong: true, Type: display.TextSecondary, FontSize: scaledFont(12)})
+		ui.Column(c).FillWidth().Radius(8).Border(1, tk.BorderSecondary).Children(body)
+	})
 }
 
 func (a *app) appearanceCard(c *ui.Context) {
-	a.settingsCard(c, a.t("appearance"), func() {
+	a.settingsCard(c, a.t("settingsInterface"), func() {
 		a.choiceRow(c, a.t("themeMode"), []choice.ToggleItem{
 			{Value: "system", Label: a.t("themeSystem")},
 			{Value: "light", Label: a.t("themeLight")},
@@ -98,6 +154,8 @@ func (a *app) appearanceCard(c *ui.Context) {
 		}, string(a.locale), func(key string) {
 			a.setLocale(locale(key))
 		})
+	})
+	a.settingsCard(c, a.t("settingsTypography"), func() {
 		a.uiFontFamilySetting(c)
 		// Text size scales every size the app draws, so this row itself grows or
 		// shrinks as soon as it is chosen, which is the clearest preview.
@@ -112,8 +170,11 @@ func (a *app) appearanceCard(c *ui.Context) {
 		})
 		a.codeFontFamilySetting(c)
 		a.codeFontSizeSetting(c)
+	})
+	ui.Column(c).FillWidth().Gap(8).Children(func() {
+		display.Text(c, a.t("settingsReadingPreview"), display.TextProps{Strong: true, Type: display.TextSecondary, FontSize: scaledFont(12)})
 		a.fontPreviewBox(c)
-		settingsHelp(c, a.t("appearanceHelp"))
+		settingsHelp(c, a.t("settingsFontHelp"))
 	})
 }
 
@@ -132,28 +193,17 @@ func (a *app) detailsCard(c *ui.Context) {
 		// keep the full width without it.
 		lastSummary := showInfo && !showDiff
 		lastPatch := showDiff && !showInfo
-		// A disabled box with no reason reads as broken. MyGo's tooltip skips a
-		// disabled control, so the reason sits on an enabled wrapper around the
-		// box, where a hover reaches it; the box keeps it for assistive
-		// technology.
 		blockBox := func(value *bool, label string, disabled bool) {
-			draw := func(c *ui.Context) {
-				box := choice.Checkbox(c, value, label, choice.CheckboxProps{Size: 14})
-				box.Disabled(disabled)
-				box.Tooltip(a.t("detailsKeepOneBlock"))
+			help := ""
+			if disabled {
+				help = a.t("detailsKeepOneBlock")
 			}
-			if !disabled {
-				draw(c)
-				return
-			}
-			ui.Box(c).AlignSelf(ui.Start).Tooltip(a.t("detailsKeepOneBlock")).Children(func() {
-				draw(c)
-			})
+			settingsCheckbox(c, value, label, help, disabled)
 		}
 		blockBox(&showInfo, a.t("detailsInfo"), lastSummary)
 		blockBox(&showChanges, a.t("detailsChanges"), false)
 		blockBox(&showDiff, a.t("detailsDiff"), lastPatch)
-		settingsHelp(c, a.t("detailsLayoutHelp"))
+		settingsCheckRow(c, func() { settingsHelp(c, a.t("detailsLayoutHelp")) })
 		if showInfo != was[0] || showChanges != was[1] || showDiff != was[2] {
 			a.detailsInfoHidden = !showInfo
 			a.detailsChangesHidden = !showChanges
@@ -183,8 +233,7 @@ func (a *app) currentTheme() appTheme {
 func (a *app) paletteRow(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	current := a.currentTheme()
-	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-		display.Text(c, a.t("palette"), display.TextProps{FontSize: scaledFont(12)}).Width(96)
+	settingsFormRow(c, a.t("palette"), func() {
 		items := make([]overlay.MenuItem, 0, len(appThemes))
 		for _, th := range appThemes {
 			item := overlay.MenuItem{Key: th.key, Label: a.t(th.label)}
@@ -199,11 +248,11 @@ func (a *app) paletteRow(c *ui.Context) {
 			// trigger itself, so a reader reaching the button heard only its
 			// dots and name. Name the control and say what it currently holds.
 			trigger.Role(ui.RoleButton).Label(a.t("palette")).Description(a.t(current.label))
-			trigger.Gap(6).Children(func() {
+			trigger.Gap(6).MaxWidth(252).Shrink(1).Children(func() {
 				for _, dot := range current.dots {
 					ui.Box(c).Size(6, 6).Radius(3).Background(dot)
 				}
-				ui.Text(c, a.t(current.label)).FontSize(scaledFont(12)).SingleLine()
+				ui.Text(c, a.t(current.label)).FontSize(scaledFont(12)).SingleLine().Shrink(1).MinWidth(0)
 				ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(11)).TextColor(tk.TextTertiary)
 			})
 		})
@@ -220,17 +269,25 @@ func (a *app) paletteRow(c *ui.Context) {
 // independent switches; a segmented control shows they are one choice, which
 // keeps the appearance card calm as more palettes arrive.
 func (a *app) choiceRow(c *ui.Context, label string, items []choice.ToggleItem, current string, set func(string)) {
-	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-		display.Text(c, label, display.TextProps{FontSize: scaledFont(12)}).Width(96)
+	settingsFormRow(c, label, func() {
 		tk := theme.TokensOf(c)
-		ui.Row(c).Grow(1).Basis(0).MinWidth(0).Wrap().Padding(3).Gap(4).
+		var optionWidth float32
+		for _, item := range items {
+			width, _ := c.MeasureText(0, ui.Span{Text: item.Label, Size: scaledFont(12), Weight: 600})
+			width += 22
+			if item.Icon != nil {
+				width += scaledFont(14) + 6
+			}
+			optionWidth = max(optionWidth, float32(math.Ceil(float64(width))))
+		}
+		ui.Row(c).Shrink(0).Padding(3).Gap(2).
 			Background(tk.BgLayout).Radius(6).Children(func() {
 			for _, item := range items {
 				selected := item.Value == current
 				button := styleWorkbenchButton(c.Key(item.Value), ui.ButtonBase(c.Key(item.Value)), buttonNormal, item.Disabled, selected).
-					Role(ui.RoleToggleButton).Label(item.Label).Checked(selected).Shrink(0)
+					Role(ui.RoleToggleButton).Label(item.Label).Checked(selected).Width(optionWidth).Shrink(0)
 				if !selected && !item.Disabled && !button.Hovered() && !button.Pressed() {
-					button.Background(ui.Transparent).Border(0, ui.Transparent)
+					button.Background(ui.Transparent).Border(1, ui.Transparent)
 				}
 				button.Children(func() {
 					if item.Icon != nil {
@@ -253,46 +310,37 @@ func (a *app) gitCard(c *ui.Context) {
 	a.settingsCard(c, a.t("gitBehavior"), func() {
 		wasFetch := a.autoFetch
 		wasPrune := a.autoFetchPrune
-		choice.Checkbox(c, &a.autoFetch, a.t("autoFetch"), choice.CheckboxProps{Size: 14})
-		settingsHelp(c, a.t("autoFetchHelp"))
-		// Pruning rides on that fetch, so with fetching off the box would
-		// save a choice that never applies: it reads unavailable instead of
-		// pretending to be a setting of its own. The reason goes on an enabled
-		// wrapper as well as the box, since a disabled control shows no
-		// tooltip of its own.
-		pruneBox := func(c *ui.Context) {
-			box := choice.Checkbox(c, &a.autoFetchPrune, a.t("autoFetchPrune"), choice.CheckboxProps{Size: 14})
-			box.Disabled(!a.autoFetch)
-			box.Tooltip(a.t("autoFetchPruneNeedsFetch"))
+		settingsCheckbox(c, &a.autoFetch, a.t("autoFetch"), a.t("autoFetchHelp"), false)
+		pruneHelp := a.t("autoFetchPruneHelp")
+		if !a.autoFetch {
+			pruneHelp = a.t("autoFetchPruneNeedsFetch")
 		}
-		if a.autoFetch {
-			pruneBox(c)
-		} else {
-			ui.Box(c).AlignSelf(ui.Start).Tooltip(a.t("autoFetchPruneNeedsFetch")).Children(func() {
-				pruneBox(c)
-			})
-		}
-		settingsHelp(c, a.t("autoFetchPruneHelp"))
-		a.choiceRow(c, a.t("autoFetchEvery"), []choice.ToggleItem{
-			{Value: "0", Label: a.fetchIntervalLabel(0)},
-			{Value: "5", Label: a.fetchIntervalLabel(5)},
-			{Value: "15", Label: a.fetchIntervalLabel(15)},
-			{Value: "30", Label: a.fetchIntervalLabel(30)},
-			{Value: "60", Label: a.fetchIntervalLabel(60)},
-		}, itoa(a.autoFetchEvery), func(key string) {
-			next := fetchIntervalValue(key)
-			if next == a.autoFetchEvery {
-				return
+		settingsCheckbox(c, &a.autoFetchPrune, a.t("autoFetchPrune"), pruneHelp, !a.autoFetch)
+		settingsFormRow(c, a.t("autoFetchEvery"), func() {
+			var items []overlay.MenuItem
+			for _, minutes := range []int{0, 5, 15, 30, 60} {
+				item := overlay.MenuItem{Key: itoa(minutes), Label: a.fetchIntervalLabel(minutes)}
+				if minutes == a.autoFetchEvery {
+					item.Extra = "✓"
+				}
+				items = append(items, item)
 			}
-			a.autoFetchEvery = next
-			// A newly chosen interval starts counting now: choosing 15
-			// minutes should not fire a fetch the moment the choice is made,
-			// and switching between presets should not fetch again and again.
-			a.lastAutoFetch = time.Now()
-			a.saveSettingsFor(toastSettings)
-			a.invalidate()
+			key := overlay.DropdownMenu(c, &a.settingsIntervalOpen, overlay.DropdownMenuProps{Items: items}, func(trigger ui.Element) {
+				styleWorkbenchButton(c, trigger, buttonNormal, false, a.settingsIntervalOpen)
+				trigger.Role(ui.RoleButton).Label(a.t("autoFetchEvery")).Description(a.fetchIntervalLabel(a.autoFetchEvery)).Gap(6).Children(func() {
+					ui.Text(c, a.fetchIntervalLabel(a.autoFetchEvery)).FontSize(scaledFont(12)).SingleLine()
+					ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(11))
+				})
+			})
+			if key != "" && fetchIntervalValue(key) != a.autoFetchEvery {
+				a.autoFetchEvery = fetchIntervalValue(key)
+				// Start a new interval without performing a fetch on selection.
+				a.lastAutoFetch = time.Now()
+				a.saveSettingsFor(toastSettings)
+				a.invalidate()
+			}
 		})
-		settingsHelp(c, a.t("autoFetchEveryHelp"))
+		settingsCheckRow(c, func() { settingsHelp(c, a.t("autoFetchEveryHelp")) })
 		if a.autoFetch != wasFetch || a.autoFetchPrune != wasPrune {
 			a.saveSettingsFor(toastSettings)
 			a.invalidate()
@@ -303,12 +351,11 @@ func (a *app) gitCard(c *ui.Context) {
 func (a *app) graphCard(c *ui.Context) {
 	a.settingsCard(c, a.t("historyGraph"), func() {
 		was := a.showGraph
-		choice.Checkbox(c, &a.showGraph, a.t("showHistoryGraph"), choice.CheckboxProps{Size: 14})
+		settingsCheckbox(c, &a.showGraph, a.t("showHistoryGraph"), a.t("showHistoryGraphHelp"), false)
 		if a.showGraph != was {
 			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		}
-		settingsHelp(c, a.t("showHistoryGraphHelp"))
 		line, node := a.graphStyle()
 		a.choiceRow(c, a.t("graphLineWidth"), []choice.ToggleItem{
 			{Value: "thin", Label: a.t("graphLineThin")},
@@ -339,9 +386,8 @@ func (a *app) historyColumnsCard(c *ui.Context) {
 		showAuthor := !a.hideAuthor
 		showTime := !a.hideTime
 		wasAuthor, wasTime := showAuthor, showTime
-		choice.Checkbox(c, &showAuthor, a.t("showAuthor"), choice.CheckboxProps{Size: 14})
-		choice.Checkbox(c, &showTime, a.t("showTime"), choice.CheckboxProps{Size: 14})
-		settingsHelp(c, a.t("historyColumnsHelp"))
+		settingsCheckbox(c, &showAuthor, a.t("showAuthor"), "", false)
+		settingsCheckbox(c, &showTime, a.t("showTime"), "", false)
 		if showAuthor != wasAuthor || showTime != wasTime {
 			a.hideAuthor = !showAuthor
 			a.hideTime = !showTime
@@ -356,60 +402,46 @@ func (a *app) historyColumnsCard(c *ui.Context) {
 // cannot go stale: a key that works is on this card, and the dispatcher test
 // fails if a window key is registered anywhere else.
 func (a *app) shortcutsCard(c *ui.Context) {
-	a.settingsCard(c, a.t("shortcuts"), func() {
-		for _, group := range shortcutGroupOrder {
-			var rows []appShortcut
-			for _, s := range shortcutTable() {
-				if s.Group == group {
-					rows = append(rows, s)
-				}
+	for _, group := range shortcutGroupOrder {
+		var rows []appShortcut
+		for _, s := range shortcutTable() {
+			if s.Group == group {
+				rows = append(rows, s)
 			}
-			// A page with no keys of its own gets no empty heading.
-			if len(rows) == 0 {
-				continue
-			}
-			ui.Column(c).FillWidth().Gap(4).Children(func() {
-				display.Text(c, a.t(shortcutGroupLabel(group)), display.TextProps{
-					Type: display.TextSecondary, Strong: true, FontSize: scaledFont(11),
-				})
-				for _, s := range rows {
-					// The label is the row's text and the key sits at the far
-					// edge, so a reader scans one column of actions and one of
-					// keys however long the wording is.
-					ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
-						display.Text(c, a.t(s.Label), display.TextProps{FontSize: scaledFont(12)}).
-							Grow(1).Basis(0).MinWidth(0).SingleLine()
-						display.Text(c, s.Keys, display.TextProps{
-							Type: display.TextSecondary, Code: true, FontSize: scaledFont(11),
-						}).Font(a.patchFontFamily()).Shrink(0)
-					})
-				}
-			})
 		}
-		settingsHelp(c, a.t("shortcutsHelp"))
-	})
+		if len(rows) == 0 {
+			continue
+		}
+		a.settingsCard(c, a.t(shortcutGroupLabel(group)), func() {
+			for i, s := range rows {
+				if i > 0 {
+					settingsDivider(c)
+				}
+				ui.Row(c).FillWidth().Padding(8, 12).Gap(16).AlignItems(ui.Center).Children(func() {
+					display.Text(c, a.t(s.Label), display.TextProps{FontSize: scaledFont(13)}).Grow(1).Basis(0).MinWidth(0)
+					tk := theme.TokensOf(c)
+					ui.Box(c).MaxWidth(140).Shrink(0).Padding(3, 6).Radius(4).Background(tk.BgContainerSecondary).Border(1, tk.BorderSecondary).Children(func() {
+						display.Text(c, s.Keys, display.TextProps{Code: true, FontSize: scaledFont(11)}).Font(a.patchFontFamily())
+					})
+				})
+			}
+		})
+	}
+	settingsHelp(c, a.t("shortcutsHelp"))
 }
 
 func (a *app) aboutCard(c *ui.Context) {
-	a.settingsCard(c, a.t("about"), func() {
-		display.Text(c, "SuperGit · Lobe MyGo", display.TextProps{FontSize: scaledFont(12), Strong: true})
-		display.Text(c, a.t("settingsAboutText"), display.TextProps{
-			Type: display.TextSecondary, FontSize: scaledFont(11), Rows: 2,
-		})
-		version := currentAppVersionLabel()
-		ui.Row(c).Gap(6).AlignItems(ui.Center).Selectable().Children(func() {
-			display.Text(c, a.t("settingsVersion"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
-			display.Text(c, version, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Code: true}).
-				Font(a.patchFontFamily()).SingleLine()
+	a.settingsCard(c, "SuperGit", func() {
+		settingsFormRow(c, a.t("settingsVersion"), func() {
+			ui.Row(c).MinWidth(0).Selectable().Children(func() {
+				display.Text(c, currentAppVersionLabel(), display.TextProps{Code: true, FontSize: scaledFont(12)}).Font(a.patchFontFamily())
+			})
 		})
 		if path, err := settingsPath(); err == nil {
-			// The row is the selectable scope: a paragraph on its own inside the
-			// page's scroll area would not be selectable, since MyGo needs a
-			// Selectable container between the text and the scroll controls.
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Selectable().Children(func() {
-				display.Text(c, a.t("settingsPath"), display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11)})
-				display.Text(c, path, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11), Code: true}).
-					Font(a.patchFontFamily()).SingleLine().Tooltip(path)
+			settingsFormRow(c, a.t("settingsPath"), func() {
+				ui.Row(c).FillWidth().MinWidth(0).Selectable().Children(func() {
+					display.Text(c, path, display.TextProps{Code: true, FontSize: scaledFont(11)}).Font(a.patchFontFamily()).FillWidth().Tooltip(path)
+				})
 			})
 		}
 	})

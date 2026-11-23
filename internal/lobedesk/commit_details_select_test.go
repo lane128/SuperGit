@@ -1,7 +1,6 @@
 package lobedesk
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -71,17 +70,13 @@ func TestSettingsPathTextCanBeSelected(t *testing.T) {
 	if !ok {
 		t.Fatalf("the settings path %q is not laid out", path)
 	}
-	mid := r.Y + r.H/2
-	tt.Press(r.X+1, mid)
-	tt.Move(r.X+r.W/2, mid)
-	tt.Move(r.X+r.W-1, mid)
-	tt.Release(r.X+r.W-1, mid)
+	// The full path now wraps. Select from the start of its first line to the
+	// end of its last line rather than dragging only across the middle line.
+	tt.Press(r.X, r.Y+2)
+	tt.Move(r.X+r.W, r.Y+r.H-2)
+	tt.Release(r.X+r.W, r.Y+r.H-2)
 	tt.Key(ui.Cmd, ui.KeyC)
-	// The path is one line, so a narrow card shows a prefix of it and the drag
-	// copies what is on screen. What matters here is that the row selects at
-	// all: without its own selectable scope, the drag under the clickable page
-	// copies nothing.
-	if got := tt.Clipboard(); got == "" || !strings.HasPrefix(path, got) {
+	if got := tt.Clipboard(); got != path {
 		t.Errorf("dragging the settings path copied %q; want it to select the path shown in the row (%q)", got, path)
 	}
 }

@@ -199,8 +199,7 @@ func (a *app) currentCodeFontOption() codeFontOption {
 func (a *app) codeFontFamilySetting(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	current := a.currentCodeFontOption()
-	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-		display.Text(c, a.t("codeFontFamily"), display.TextProps{FontSize: scaledFont(12)}).Width(96).Shrink(0)
+	settingsFormRow(c, a.t("codeFontFamily"), func() {
 		items := make([]overlay.MenuItem, 0, len(codeFontOptions))
 		for _, opt := range codeFontOptions {
 			item := overlay.MenuItem{Key: opt.Key, Label: opt.Label}
@@ -212,7 +211,7 @@ func (a *app) codeFontFamilySetting(c *ui.Context) {
 		chosen := overlay.DropdownMenu(c, &a.codeFontOpen, overlay.DropdownMenuProps{Items: items}, func(trigger ui.Element) {
 			styleWorkbenchButton(c, trigger, buttonNormal, false, a.codeFontOpen)
 			trigger.Role(ui.RoleButton).Label(a.t("codeFontFamily")).Description(current.Label)
-			trigger.Gap(6).Children(func() {
+			trigger.Gap(6).MaxWidth(252).Shrink(1).Children(func() {
 				ui.Text(c, current.Label).Font(current.Family).FontSize(scaledFont(12)).SingleLine()
 				ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(11)).TextColor(tk.TextTertiary)
 			})
@@ -232,9 +231,8 @@ func (a *app) codeFontSizeSetting(c *ui.Context) {
 	down := max(codeFontMin, float32(math.Ceil(float64(size)))-1)
 	up := min(codeFontMax, float32(math.Floor(float64(size)))+1)
 	next := a.codeFontSize
-	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-		display.Text(c, a.t("codeFontSize"), display.TextProps{FontSize: scaledFont(12)}).Width(96).Shrink(0)
-		ui.Row(c).Grow(1).Basis(0).MinWidth(0).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
+	settingsFormRow(c, a.t("codeFontSize"), func() {
+		ui.Row(c).MinWidth(0).Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Row(c).Gap(6).AlignItems(ui.Center).Shrink(0).Children(func() {
 				if workbenchIconButton(c, lucide.Minus(), a.t("decreaseCodeFont"), buttonNormal, size <= codeFontMin).Clicked() {
 					next = down

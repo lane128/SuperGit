@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/overlay"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
@@ -187,8 +186,7 @@ func (a *app) uiFontFamilySetting(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	current := a.currentUIFontOption()
 	currentLabel := a.uiFontOptionLabel(current)
-	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-		display.Text(c, a.t("uiFontFamily"), display.TextProps{FontSize: scaledFont(12)}).Width(96).Shrink(0)
+	settingsFormRow(c, a.t("uiFontFamily"), func() {
 		items := make([]overlay.MenuItem, 0, len(uiFontOptions))
 		for _, opt := range uiFontOptions {
 			item := overlay.MenuItem{Key: opt.Key, Label: a.uiFontOptionLabel(opt)}
@@ -200,7 +198,7 @@ func (a *app) uiFontFamilySetting(c *ui.Context) {
 		chosen := overlay.DropdownMenu(c, &a.uiFontOpen, overlay.DropdownMenuProps{Items: items}, func(trigger ui.Element) {
 			styleWorkbenchButton(c, trigger, buttonNormal, false, a.uiFontOpen)
 			trigger.Role(ui.RoleButton).Label(a.t("uiFontFamily")).Description(currentLabel)
-			trigger.Gap(6).Children(func() {
+			trigger.Gap(6).MaxWidth(252).Shrink(1).Children(func() {
 				label := ui.Text(c, currentLabel).FontSize(scaledFont(12)).SingleLine()
 				if current.Family != "" {
 					label.Font(current.Family)
@@ -223,9 +221,8 @@ func (a *app) uiFontFamilySetting(c *ui.Context) {
 func (a *app) fontPreviewBox(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	uiFamily := a.uiFontFamily()
-	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-		ui.Box(c).Width(96).Shrink(0)
-		ui.Column(c).Grow(1).Basis(0).MinWidth(0).Padding(8, 10).Gap(6).Radius(6).
+	ui.Column(c).FillWidth().Children(func() {
+		ui.Column(c).FillWidth().MinWidth(0).Padding(12).Gap(8).Radius(6).
 			Background(tk.BgLayout).Border(1, tk.BorderSecondary).Children(func() {
 			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Justify(ui.SpaceBetween).Children(func() {
 				sample := ui.Text(c, a.t("uiFontPreviewSample")).FontSize(scaledFont(12)).TextColor(tk.Text).SingleLine().Grow(1).Basis(0).MinWidth(0)
@@ -239,7 +236,7 @@ func (a *app) fontPreviewBox(c *ui.Context) {
 			})
 			ui.Box(c).FillWidth().Height(1).Background(tk.BorderSecondary)
 			ui.Text(c, `func diff(a, b int) bool { return a != b && a <= 0xFF }`).
-				Font(a.patchFontFamily()).FontSize(a.patchFontSize()).TextColor(tk.Text).SingleLine()
+				Font(a.patchFontFamily()).FontSize(a.patchFontSize()).TextColor(tk.Text).FillWidth()
 		})
 	})
 }

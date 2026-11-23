@@ -38,6 +38,7 @@ func (a *app) selectSettingsSection(key string) {
 	position := a.settingsPositions[key]
 	a.settingsScroll = ui.ScrollState{X: position.X, Y: position.Y}
 	a.paletteOpen = false
+	a.settingsIntervalOpen = false
 	a.uiFontOpen = false
 	a.codeFontOpen = false
 	a.invalidate()
@@ -45,13 +46,27 @@ func (a *app) selectSettingsSection(key string) {
 
 func (a *app) settingsNavigation(c *ui.Context) {
 	tk := theme.TokensOf(c)
-	ui.Column(c).Width(132).Shrink(0).Padding(12, 8).Gap(6).
+	ui.Column(c).Width(settingsNavigationWidth).Shrink(0).Padding(16, 10).Gap(4).
 		Background(tk.BgContainerSecondary).Role(ui.RoleTabList).Label(a.t("settingsCategories")).FocusGroup(ui.Vertical).
 		Children(func() {
 			for _, section := range settingsSections {
 				current := section.key == a.activeSettingsSection()
-				button := styleWorkbenchButton(c.Key(section.key), ui.ButtonBase(c.Key(section.key)), buttonNormal, false, current).
-					FillWidth().Role(ui.RoleTab).Label(a.t(section.label)).AccessSelected(current).Justify(ui.Start)
+				button := ui.ButtonBase(c.Key(section.key)).FillWidth().Height(scaledFont(36)).Padding(0, 12).
+					Radius(tk.BorderRadius).Role(ui.RoleTab).Label(a.t(section.label)).AccessSelected(current).
+					Justify(ui.Start).FocusRing(true).FocusRingColor(tk.Blue).Cursor(ui.CursorPointer)
+				ink, ground := tk.TextSecondary, ui.Transparent
+				switch {
+				case button.Pressed():
+					ink, ground = tk.Text, tk.FillSecondary
+				case current:
+					ink, ground = tk.PrimaryText, tk.PrimaryBg
+				case button.Hovered():
+					ink, ground = tk.Text, tk.FillTertiary
+				}
+				button.Background(ground).TextColor(ink).FontSize(scaledFont(13))
+				if current {
+					button.FontWeight(600)
+				}
 				button.Children(func() {
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 						ui.Text(c, a.t(section.label)).SingleLine().Grow(1).Basis(0).MinWidth(0)

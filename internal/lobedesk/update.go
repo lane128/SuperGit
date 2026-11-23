@@ -693,22 +693,12 @@ func (a *app) updatesCard(c *ui.Context) {
 	a.settingsCard(c, a.t("softwareUpdates"), func() {
 		wasCheck := a.autoCheckUpdates
 		wasDownload := a.autoDownloadUpdates
-		choice.Checkbox(c.Key("settings-auto-check-updates"), &a.autoCheckUpdates, a.t("autoCheckUpdates"), choice.CheckboxProps{Size: 14})
-		settingsHelp(c, a.t("autoCheckUpdatesHelp"))
-
-		downloadBox := func(c *ui.Context) {
-			box := choice.Checkbox(c.Key("settings-auto-download-updates"), &a.autoDownloadUpdates, a.t("autoDownloadUpdates"), choice.CheckboxProps{Size: 14})
-			box.Disabled(!a.autoCheckUpdates)
-			box.Tooltip(a.t("autoDownloadNeedsAutoCheck"))
+		settingsCheckbox(c.Key("settings-auto-check-updates"), &a.autoCheckUpdates, a.t("autoCheckUpdates"), a.t("autoCheckUpdatesHelp"), false)
+		downloadHelp := a.t("autoDownloadUpdatesHelp")
+		if !a.autoCheckUpdates {
+			downloadHelp = a.t("autoDownloadNeedsAutoCheck")
 		}
-		if a.autoCheckUpdates {
-			downloadBox(c)
-		} else {
-			ui.Box(c).AlignSelf(ui.Start).Tooltip(a.t("autoDownloadNeedsAutoCheck")).Children(func() {
-				downloadBox(c)
-			})
-		}
-		settingsHelp(c, a.t("autoDownloadUpdatesHelp"))
+		settingsCheckbox(c.Key("settings-auto-download-updates"), &a.autoDownloadUpdates, a.t("autoDownloadUpdates"), downloadHelp, !a.autoCheckUpdates)
 
 		if a.autoCheckUpdates != wasCheck || a.autoDownloadUpdates != wasDownload {
 			a.syncUpdaterPreferences()
@@ -716,53 +706,57 @@ func (a *app) updatesCard(c *ui.Context) {
 			a.invalidate()
 		}
 
-		snap := a.updateSnapshot()
-		statusText := a.updateSettingsStatusText(snap)
-		ui.Column(c).FillWidth().Gap(4).Children(func() {
-			display.Text(c, statusText, display.TextProps{FontSize: scaledFont(12)})
-			if !snap.LastCheckedAt.IsZero() {
-				display.Text(c, a.tf("updateLastChecked", snap.LastCheckedAt.Local().Format("2006-01-02 15:04")), display.TextProps{
-					Type: display.TextSecondary, FontSize: scaledFont(11),
-				})
-			}
-		})
+		a.settingsUpdateStatus(c, a.updateSnapshot())
+	})
+}
 
-		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-			switch snap.State {
-			case updater.StateChecking:
-				workbenchButton(c.Key("settings-update-checking"), a.t("updateStatusChecking"), buttonNormal, true)
-			case updater.StateAvailable:
-				if workbenchButton(c.Key("settings-update-view"), a.t("updateViewDetailsAction"), buttonPrimary, false).Clicked() {
-					a.openUpdateDialog(toastSettings)
-				}
-				if workbenchButton(c.Key("settings-update-recheck"), a.t("checkForUpdates"), buttonNormal, false).Clicked() {
-					a.checkForUpdates(toastSettings)
-				}
-			case updater.StateDownloading, updater.StateVerifying:
-				if workbenchButton(c.Key("settings-update-progress"), a.t("updateViewDetailsAction"), buttonPrimary, false).Clicked() {
-					a.openUpdateDialog(toastSettings)
-				}
-				if snap.State == updater.StateDownloading {
-					if workbenchButton(c.Key("settings-update-cancel"), a.t("updateCancelDownload"), buttonNormal, false).Clicked() {
-						if ctrl := a.updateCtrl(); ctrl != nil && ctrl.mgr != nil {
-							ctrl.mgr.Cancel()
-							a.invalidate()
-						}
+// settingsUpdateStatus renders a snapshot without changing the updater state.
+func (a *app) settingsUpdateStatus(c *ui.Context, snap updater.Snapshot) {
+	statusText := a.updateSettingsStatusText(snap)
+	ui.Column(c).FillWidth().Padding(12).Gap(4).Children(func() {
+		display.Text(c, statusText, display.TextProps{FontSize: scaledFont(12)})
+		if !snap.LastCheckedAt.IsZero() {
+			display.Text(c, a.tf("updateLastChecked", snap.LastCheckedAt.Local().Format("2006-01-02 15:04")), display.TextProps{
+				Type: display.TextSecondary, FontSize: scaledFont(11),
+			})
+		}
+	})
+
+	ui.Row(c).FillWidth().Padding(0, 12, 12).Gap(8).Wrap().AlignItems(ui.Center).Children(func() {
+		switch snap.State {
+		case updater.StateChecking:
+			workbenchButton(c.Key("settings-update-checking"), a.t("updateStatusChecking"), buttonNormal, true)
+		case updater.StateAvailable:
+			if workbenchButton(c.Key("settings-update-view"), a.t("updateViewDetailsAction"), buttonPrimary, false).Clicked() {
+				a.openUpdateDialog(toastSettings)
+			}
+			if workbenchButton(c.Key("settings-update-recheck"), a.t("checkForUpdates"), buttonNormal, false).Clicked() {
+				a.checkForUpdates(toastSettings)
+			}
+		case updater.StateDownloading, updater.StateVerifying:
+			if workbenchButton(c.Key("settings-update-progress"), a.t("updateViewDetailsAction"), buttonPrimary, false).Clicked() {
+				a.openUpdateDialog(toastSettings)
+			}
+			if snap.State == updater.StateDownloading {
+				if workbenchButton(c.Key("settings-update-cancel"), a.t("updateCancelDownload"), buttonNormal, false).Clicked() {
+					if ctrl := a.updateCtrl(); ctrl != nil && ctrl.mgr != nil {
+						ctrl.mgr.Cancel()
+						a.invalidate()
 					}
 				}
-			case updater.StateReadyToRestart:
-				if workbenchButton(c.Key("settings-update-restart"), a.t("updateRestartAndInstall"), buttonPrimary, false).Clicked() {
-					a.applyPreparedUpdate(toastSettings)
-				}
-				if workbenchButton(c.Key("settings-update-details"), a.t("updateViewDetailsAction"), buttonNormal, false).Clicked() {
-					a.openUpdateDialog(toastSettings)
-				}
-			default:
-				if workbenchButton(c.Key("settings-check-updates"), a.t("checkForUpdates"), buttonNormal, false).Clicked() {
-					a.checkForUpdates(toastSettings)
-				}
 			}
-		})
+		case updater.StateReadyToRestart:
+			if workbenchButton(c.Key("settings-update-restart"), a.t("updateRestartAndInstall"), buttonPrimary, false).Clicked() {
+				a.applyPreparedUpdate(toastSettings)
+			}
+			if workbenchButton(c.Key("settings-update-details"), a.t("updateViewDetailsAction"), buttonNormal, false).Clicked() {
+				a.openUpdateDialog(toastSettings)
+			}
+		default:
+			if workbenchButton(c.Key("settings-check-updates"), a.t("checkForUpdates"), buttonNormal, false).Clicked() {
+				a.checkForUpdates(toastSettings)
+			}
+		}
 	})
 }
 

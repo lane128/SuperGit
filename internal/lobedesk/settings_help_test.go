@@ -18,7 +18,7 @@ func TestAppearanceHelpShowsCompleteTextAtMinimumWidth(t *testing.T) {
 				a.applyTheme(c)
 				ui.Column(c).Fill().Children(func() { a.settingsPage(c) })
 			}, settingsWindowMinW, settingsWindowMinH)
-			// Scroll to the bottom of the Appearance card so the help paragraph
+			// Scroll to the reading preview so the typography help paragraph
 			// is inside the scroll viewport before checking for text truncation.
 			if a.settingsScroll.MaxY > 0 {
 				a.settingsScroll.Y = a.settingsScroll.MaxY
@@ -26,7 +26,7 @@ func TestAppearanceHelpShowsCompleteTextAtMinimumWidth(t *testing.T) {
 					tt.Frame()
 				}
 			}
-			text := a.t("appearanceHelp")
+			text := a.t("settingsFontHelp")
 			shown, ok := tt.Find(text)
 			if !ok {
 				t.Fatal("appearance explanation missing")
