@@ -315,7 +315,7 @@ func TestFetchAllowsTabReorder(t *testing.T) {
 	b.busy, b.fetching = false, false
 }
 
-func TestPaletteFetchAllStartsInOneStep(t *testing.T) {
+func TestPaletteFetchAllStartsAfterChoosingMode(t *testing.T) {
 	a, done, root := worktreeApp(t)
 	t.Setenv("GIT_ALLOW_PROTOCOL", "file")
 	bare := filepath.Join(t.TempDir(), "remote.git")
@@ -329,11 +329,16 @@ func TestPaletteFetchAllStartsInOneStep(t *testing.T) {
 	entry := paletteFetchEntry(t, a)
 	a.openCommandPalette()
 	a.runPaletteCommand(entry.ID, a.commandPalette.generation)
-	if a.commandPalette.open || a.commandPalette.stage != paletteCommands {
-		t.Fatalf("Fetch opened a parameter stage: %+v", a.commandPalette)
+	if !a.commandPalette.open || a.commandPalette.stage != paletteFetchOptions || a.busy || a.fetching || !a.lastAutoFetch.IsZero() {
+		t.Fatal("opening the Fetch mode picker should leave Git idle")
 	}
-	if !a.busy || !a.fetching || a.lastAutoFetch.IsZero() {
-		t.Fatalf("Fetch did not start immediately: busy=%v fetching=%v", a.busy, a.fetching)
+	options := a.paletteChoices()
+	if len(options) == 0 || options[0].id != entry.ID {
+		t.Fatalf("missing the default Fetch option: %v", options)
+	}
+	a.acceptPaletteChoice(options[0], a.commandPalette.generation)
+	if a.commandPalette.open || !a.busy || !a.fetching || a.lastAutoFetch.IsZero() {
+		t.Fatal("choosing the default mode should close the picker and start Fetch")
 	}
 	for a.busy || a.fetching || a.loading {
 		runContinuation(t, done)
@@ -343,10 +348,11 @@ func TestPaletteFetchAllStartsInOneStep(t *testing.T) {
 func TestPaletteFetchCommandsRegistered(t *testing.T) {
 	a := headShortcutApp(t)
 	entries := map[string]appShortcut{}
-	for _, entry := range a.commandPaletteEntries() {
+	for _, entry := range commandPaletteTable() {
 		entries[entry.ID] = entry
 	}
-	for _, id := range []string{"repo.fetch", "repo.fetchPrune", "repo.fetchTags", "repo.fetchRemote"} {
+	ids := []string{"repo.fetch", "repo.fetchPrune", "repo.fetchTags", "repo.fetchRemote"}
+	for _, id := range ids {
 		entry, ok := entries[id]
 		if !ok || entry.Run == nil || a.t(entry.Label) == "" {
 			t.Fatalf("missing palette command %q: %+v", id, entry)
@@ -356,7 +362,7 @@ func TestPaletteFetchCommandsRegistered(t *testing.T) {
 		}
 	}
 	a.remotes = nil
-	for _, id := range []string{"repo.fetch", "repo.fetchPrune", "repo.fetchTags", "repo.fetchRemote"} {
+	for _, id := range ids {
 		if why := a.commandPaletteUnavailable(id); why != a.t("noRemote") {
 			t.Fatalf("%s without remotes: %q", id, why)
 		}

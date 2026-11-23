@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,6 +25,124 @@ func paletteFetchEntry(t *testing.T, a *app) appShortcut {
 	}
 	t.Fatal("missing palette Fetch command")
 	return appShortcut{}
+}
+
+func TestPaletteFetchSearchShowsOnlyEntry(t *testing.T) {
+	for _, loc := range []locale{localeEnglish, localeChinese} {
+		a := &app{locale: loc}
+		for _, query := range []string{"fetch", " FETCH... ", "获取", "获取全部远端"} {
+			a.commandPalette.query = query
+			var ids []string
+			for _, row := range a.paletteChoices() {
+				ids = append(ids, row.id)
+				if row.detail == "" {
+					t.Errorf("%q: %s has no visible description", query, row.id)
+				}
+			}
+			if want := []string{"repo.fetch"}; !slices.Equal(ids, want) {
+				t.Errorf("%q: got %v, want only %v", query, ids, want)
+			}
+		}
+	}
+}
+
+func TestPaletteFetchExplicitSearchRanksVariantFirst(t *testing.T) {
+	a := &app{locale: localeEnglish}
+	for query, id := range map[string]string{
+		"fetch prune": "repo.fetchPrune", "fetch --prune": "repo.fetchPrune",
+		"fetch tags": "repo.fetchTags", "fetch --tags": "repo.fetchTags",
+		"fetch remote": "repo.fetchRemote", "repo.fetchRemote": "repo.fetchRemote",
+		"获取并清理": "repo.fetchPrune", "获取标签": "repo.fetchTags",
+	} {
+		a.commandPalette.query = query
+		rows := a.paletteChoices()
+		if len(rows) == 0 || rows[0].id != id || rows[0].detail == "" {
+			t.Errorf("%q: top result should be %s with a description, got %v", query, id, rows)
+		}
+	}
+}
+
+func TestPaletteFetchOptionsNavigateWithoutStartingFetch(t *testing.T) {
+	a := headShortcutApp(t)
+	a.locale = localeEnglish
+	a.remotes = []gitrepo.Remote{{Name: "origin"}, {Name: "upstream"}}
+	a.openCommandPalette()
+	tt := paletteTester(a, false, 720, 500)
+	tt.Frame()
+	tt.Type("fetch")
+	tt.Frame()
+	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
+	if a.busy || a.fetching || !a.lastAutoFetch.IsZero() {
+		t.Fatal("choosing Fetch started Git before a mode was selected")
+	}
+	options := a.paletteChoices()
+	want := []string{"repo.fetch", "repo.fetchPrune", "repo.fetchTags", "repo.fetchRemote"}
+	if len(options) != len(want) {
+		t.Fatalf("expected four Fetch options, got %v", options)
+	}
+	if a.commandPalette.cursor != 0 || options[0].label != "Fetch" {
+		t.Fatal("plain Fetch should be the initially selected option")
+	}
+	for i, row := range options {
+		if row.id != want[i] || row.detail == "" || row.reason != "" {
+			t.Fatalf("invalid option %d: %+v", i, row)
+		}
+	}
+	for range 3 {
+		tt.Key(0, ui.KeyDown)
+		tt.Frame()
+	}
+	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
+	if rows := a.paletteChoices(); len(rows) != 2 || rows[0].id != "origin" || rows[1].id != "upstream" || a.fetching {
+		t.Fatalf("expected remote picker without executing, got %v", rows)
+	}
+	tt.Key(0, ui.KeyBackspace)
+	tt.Frame()
+	if !slices.Equal(a.paletteChoices(), options) {
+		t.Fatal("Backspace from the remote picker did not return to Fetch options")
+	}
+	tt.Key(0, ui.KeyBackspace)
+	tt.Frame()
+	if a.commandPalette.query != "fetch" || len(a.paletteChoices()) != 1 {
+		t.Fatal("Backspace from options did not restore the original search")
+	}
+	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+	if a.commandPalette.open || a.fetching || !a.lastAutoFetch.IsZero() {
+		t.Fatal("cancelling Fetch options started a fetch or left the palette open")
+	}
+}
+
+func TestPaletteFetchOptionsRejectStaleChoice(t *testing.T) {
+	for _, change := range []string{"remotes removed", "repository refreshed", "another fetch"} {
+		t.Run(change, func(t *testing.T) {
+			a := headShortcutApp(t)
+			a.remotes = []gitrepo.Remote{{Name: "origin"}}
+			a.openCommandPalette()
+			a.runPaletteCommand("repo.fetch", a.commandPalette.generation)
+			rows := a.paletteChoices()
+			if len(rows) != 4 || rows[0].reason != "" {
+				t.Fatalf("missing enabled Fetch options: %v", rows)
+			}
+			generation := a.commandPalette.generation
+			switch change {
+			case "remotes removed":
+				a.remotes = nil
+			case "repository refreshed":
+				a.loadSeq++
+			case "another fetch":
+				a.busy, a.fetching = true, true
+			}
+			a.acceptPaletteChoice(rows[0], generation)
+			if !a.lastAutoFetch.IsZero() {
+				t.Fatal("a stale option started Fetch")
+			}
+		})
+	}
 }
 
 func TestPaletteFetchCatalogAndGuards(t *testing.T) {
@@ -245,7 +364,7 @@ func TestPaletteFetchOwnedInputs(t *testing.T) {
 				}
 				tt.Key(ui.Cmd, ui.KeyP)
 				tt.Frame()
-				tt.Type("repo.fetch")
+				tt.Type("fetch")
 				tt.Frame()
 				row, ok := tt.AccessByRole(ui.RoleOption, a.t(entry.Label))
 				if !ok || row.Disabled {
@@ -259,8 +378,21 @@ func TestPaletteFetchOwnedInputs(t *testing.T) {
 				}
 				tt.Frame()
 				tt.Frame()
+				if !a.commandPalette.open || a.busy || a.fetching || !a.lastAutoFetch.IsZero() {
+					t.Fatal("the first selection should open options without fetching")
+				}
+				if activation == "enter" {
+					tt.Key(0, ui.KeyEnter)
+				} else {
+					option, ok := tt.AccessByRole(ui.RoleOption, "Fetch")
+					if !ok || option.Disabled {
+						t.Fatal("missing enabled default Fetch option")
+					}
+					tt.ClickAt(option.Bounds.X+option.Bounds.W/2, option.Bounds.Y+option.Bounds.H/2)
+				}
+				tt.Frame()
 				if a.commandPalette.open || !a.busy || !a.fetching {
-					t.Fatal("Fetch should start in one step")
+					t.Fatal("selecting the default option should start Fetch")
 				}
 				started := a.lastAutoFetch
 				a.runPaletteCommand(entry.ID, generation)
@@ -323,6 +455,8 @@ func TestPaletteFetchFailureFeedback(t *testing.T) {
 	tt.Key(ui.Cmd, ui.KeyP)
 	tt.Frame()
 	tt.Type(entry.ID)
+	tt.Frame()
+	tt.Key(0, ui.KeyEnter)
 	tt.Frame()
 	tt.Key(0, ui.KeyEnter)
 	tt.Frame()

@@ -2,6 +2,7 @@ package lobedesk
 
 import (
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -40,6 +41,7 @@ type commandPaletteState struct {
 	scroll       ui.ScrollState
 	viewport     ui.Rect
 	step         *paletteStep
+	fetchParent  *fetchPaletteParent
 	actionID     string
 	stage        paletteStage
 	open         bool
@@ -58,7 +60,10 @@ type commandPaletteState struct {
 // table supplies labels, execution functions and keys where one exists.
 func paletteCommand(id string) bool {
 	switch id {
-	case "repo.open", "repo.reopenClosedTab", "repo.clone", "window.settings", "page.history", "page.branches", "page.stash", "page.worktrees", "repo.reload", "history.head", "workspace.focusCommitMessage", "branch.quickCheckout", "branch.merge", "repo.quickSwitch", "repo.fetch", "repo.fetchPrune", "repo.fetchTags", "repo.fetchRemote", "stash.saveTracked", "branch.create", "history.chooseRef", "tag.create", "commit.copySHA":
+	case "repo.open", "repo.reopenClosedTab", "repo.clone", "window.settings", "page.history", "page.branches", "page.stash", "page.worktrees", "repo.reload", "history.head", "workspace.focusCommitMessage", "branch.quickCheckout", "branch.merge", "repo.quickSwitch", "stash.saveTracked", "branch.create", "history.chooseRef", "tag.create", "commit.copySHA":
+		return true
+	}
+	if _, ok := fetchPaletteMetadata[id]; ok {
 		return true
 	}
 	_, ok := paletteActionsByID[id]
@@ -87,14 +92,28 @@ func (a *app) commandPaletteEntries() []appShortcut {
 	var entries []appShortcut
 	scores := map[string]int{}
 	query := paletteCaptionStem(a.commandPalette.query)
+	fetchQuery := strings.Join(strings.Fields(query), " ")
+	plainFetch := isPlainFetchQuery(fetchQuery)
 	for _, s := range commandPaletteTable() {
 		if !paletteCommand(s.ID) {
 			continue
 		}
+		if plainFetch {
+			// An exact Fetch search shows the entry to the mode picker.
+			if s.ID == "repo.fetch" {
+				entries = append(entries, s)
+			}
+			continue
+		}
+		if query == "" && isFetchVariant(s.ID) {
+			continue
+		}
 		en, zh := messages[localeEnglish][s.Label], messages[localeChinese][s.Label]
+		aliases := fetchPaletteMetadata[s.ID].aliases
 		names := append([]string{a.t(s.Label), en, zh, s.ID}, referenceCommandSearchNames(s.ID)...)
+		names = append(names, aliases...)
 		score := commandMatchScore(a.commandPalette.query, names...)
-		if query != "" && (query == paletteCaptionStem(s.ID) || query == paletteCaptionStem(en) || query == paletteCaptionStem(zh)) {
+		if query != "" && (query == paletteCaptionStem(s.ID) || query == paletteCaptionStem(en) || query == paletteCaptionStem(zh) || slices.Contains(aliases, fetchQuery)) {
 			// An exact command must beat a longer command with the same prefix.
 			score = 1 << 30
 		}
@@ -193,7 +212,7 @@ func (a *app) commandPaletteUnavailable(id string) string {
 			return a.t("commandPaletteNeedRepo")
 		}
 	}
-	fetchCommand := id == "repo.fetch" || id == "repo.fetchPrune" || id == "repo.fetchTags" || id == "repo.fetchRemote"
+	_, fetchCommand := fetchPaletteMetadata[id]
 	if (id == "branch.merge" || fetchCommand) && (a.repositoryOpenPending() || a.tabSnapshotUnavailable()) {
 		return a.t("commandPaletteWait")
 	}
@@ -242,6 +261,12 @@ func (a *app) runPaletteCommand(id string, generation uint64) {
 	if !a.commandPalette.open || a.commandPalette.stage != paletteCommands || a.commandPalette.generation != generation || a.commandPaletteUnavailable(id) != "" {
 		return
 	}
+	a.dispatchPaletteCommand(id)
+}
+
+// The caller must validate the generation and, for a parameter page, the row.
+func (a *app) dispatchPaletteCommand(id string) {
+	previous := a.commandPalette
 	for _, s := range commandPaletteTable() {
 		if s.ID != id || !paletteCommand(id) || s.Run == nil {
 			continue
@@ -250,9 +275,17 @@ func (a *app) runPaletteCommand(id string, generation uint64) {
 		// Closing first lets the existing action see the real remaining dialogs.
 		if a.commandPaletteUnavailable(id) == "" && (s.Available == nil || s.Available(a)) {
 			a.commandPalette.actionID = id
-			s.Run(a)
+			if previous.stage == paletteFetchOptions && id == "repo.fetch" {
+				a.fetchAll()
+			} else {
+				s.Run(a)
+			}
 			if !a.commandPalette.open {
 				a.commandPalette = commandPaletteState{}
+			} else if a.commandPalette.stage == paletteFetchOptions || previous.stage == paletteFetchOptions && a.commandPalette.stage == paletteFetchRemote {
+				a.commandPalette.fetchParent = &fetchPaletteParent{
+					stage: previous.stage, query: previous.query, cursor: previous.cursor, parent: previous.fetchParent,
+				}
 			}
 		}
 		a.invalidate()
@@ -313,7 +346,9 @@ func (a *app) commandPaletteDialog(c *ui.Context) {
 						item := rows[i]
 						selected := i == s.cursor && selectable(i)
 						row := pickerRowBase(rc.Key(item.id), item.label, i+1, len(rows), selected)
-						if item.prefix != "" {
+						if _, ok := fetchPaletteMetadata[item.id]; ok {
+							row.Description(item.detail)
+						} else if item.prefix != "" {
 							row.Description(item.id)
 						}
 						if selected {

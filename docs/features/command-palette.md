@@ -53,7 +53,9 @@ View Tree 按所选提交读取目录、子目录和文件，Back 返回所在�
 
 ### Fetch
 
-命令列表中的 Fetch 表示“获取全部远端”：选中后直接抓取所有远端，不再显示选项页或远端选择。需要清理过期引用或同时获取标签时，使用独立的 `Fetch all remotes with prune` 与 `Fetch all remotes with tags` 命令。只有 `Fetch from Remote…` 会打开远端选择器，抓取指定远端。
+搜 `fetch`（或「获取」）显示一个 `Fetch…` 入口。回车或点击进入参数选择，再次确认所选方式后才启动获取。
+
+参数页默认选中 `Fetch`（后台获取全部远端）。还可选 `Fetch --prune`（同时清理远端已删除分支的本地跟踪引用）、`Fetch --tags`（同时获取全部标签）或 `Fetch from Remote…`（继续选择一个远端）。也可搜 `fetch prune`、`fetch tags` 或 `fetch remote` 直达各项。在空输入框按退格返回上一层，Esc 关闭面板。顶栏 Sync 菜单中的 `Fetch` 仍直接获取全部远端。
 
 Fetch 在后台运行：进度仍显示在标题栏与分支栏，可随时取消；期间提交、推送、检出等写操作保持禁用，但历史、文件、差异、仓库标签页和命令面板的浏览命令继续可用。选择远端期间，后台仓库刷新和定时 Fetch 会等到面板关闭后继续，避免正在输入的远端名被刷新清空。
 
@@ -61,7 +63,7 @@ Fetch 在后台运行：进度仍显示在标题栏与分支栏，可随时取�
 
 选择 Merge Branch 或「合并分支」后，直接输入分支名。列表用 `L` 标出本地分支，用 `R` 标出远端跟踪分支。当前检出的分支作为合并目的地，其他分支作为候选。方向键移动选中项时，面板底部同步显示完整来源引用与当前分支。按 Enter 或点击候选打开 SuperGit 的合并确认，确认框显示来源和提交短 SHA。取消保留原 HEAD。仓库处于分离 HEAD、有未提交改动或有进行中的 Git 操作时，面板说明禁用原因。
 
-Merge Branch 参数页的布局依据用户提供的 Sublime Merge 截图。Build 2125 的内置命令目录确认了 `fetch` 和 `merge_branch` 的入口；Fetch 现按产品选择改为一步获取全部远端，不再复现参考的选择流程。本轮 Computer Use 打开原应用的仓库选择器后超时，独立实例也未获得控制许可。上方首次实测表覆盖通用命令与 Checkout，本轮尚缺 Merge 参考参数页的现场复核。
+Merge Branch 参数页的布局依据用户提供的 Sublime Merge 截图。Build 2125 的内置命令目录确认了 `fetch` 和 `merge_branch` 的入口；SuperGit 在 Fetch 参数页提供全部远端的默认方式与指定远端选项。本轮 Computer Use 打开原应用的仓库选择器后超时，独立实例也未获得控制许可。上方首次实测表覆盖通用命令与 Checkout，本轮尚缺 Merge 参考参数页的现场复核。
 
 实现选择：保留现有共享 command picker 和 DialogBase 的焦点／弹层管理，统一顶部位置；增加小型模糊匹配器，不引入依赖。没有自动导入全部快捷键，避免把局部编辑快捷键变成全局命令。
 
@@ -83,7 +85,7 @@ Merge Branch 参数页的布局依据用户提供的 Sublime Merge 截图。Buil
 - 在合并页输入 `trial-2`，用方向键依次选中本地、origin、upstream 三个来源，核对每一步底部显示的完整引用。取消确认保留原 HEAD。重新选择有新提交的远端目标并确认，当前分支实际前进到选中的 SHA。
 - 从 Sync 菜单执行 Fetch、Pull 和 Push。分别核对跟踪引用前进、工作树快进、裸仓库收到指定提交。取消 Push 保留裸仓库原引用。
 
-脚本会输出该轮截图和原生操作日志的目录。`fetch-one-step.png` 记录一步 Fetch 的列表，`merge-preview.png` 记录合并参数页，`sync-menu.png` 记录同步菜单。
+脚本会输出该轮截图和原生操作日志的目录。`fetch-search.png` 记录 Fetch 搜索结果，`fetch-options.png` 记录获取参数页，`merge-preview.png` 记录合并参数页，`sync-menu.png` 记录同步菜单。
 
 ## 完整目录的验收记录
 

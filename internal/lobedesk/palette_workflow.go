@@ -72,7 +72,12 @@ func (a *app) showPaletteStep(step *paletteStep) {
 
 func (a *app) paletteStepBack() {
 	s := a.commandPalette
-	if s.step != nil && s.step.parent != nil {
+	if parent := s.fetchParent; parent != nil {
+		a.setPaletteStage(parent.stage)
+		a.commandPalette.fetchParent = parent.parent
+		a.commandPalette.query = parent.query
+		a.commandPalette.cursor, a.commandPalette.cursorQuery, a.commandPalette.cursorPlaced = parent.cursor, parent.query, true
+	} else if s.step != nil && s.step.parent != nil {
 		a.showPaletteStep(s.step.parent)
 	} else {
 		a.setPaletteStage(paletteCommands)
