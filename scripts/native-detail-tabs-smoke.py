@@ -254,7 +254,7 @@ def run(refresh_only=False):
                 assert "Draft survives tabs" in auto("snapshot", "--full"), "refresh lost draft"
                 print("PASS native Changes exact-file stage and refresh preserve HEAD, working bytes, unrelated Index entries and draft", flush=True)
                 auto("screenshot", str(artifacts / "changes-staged.png"))
-                press("button", "History")
+                auto("key", "cmd+1", "--settle")
                 press("listItem", "2 changes")
 
                 # A tracked patch exceeds the existing 4 MiB Git output cap.
@@ -286,7 +286,7 @@ def run(refresh_only=False):
                         if time.monotonic() > deadline:
                             raise AssertionError("repository title did not switch to " + name)
                         time.sleep(0.05)
-                    press("button", "History")
+                    auto("key", "cmd+1", "--settle")
                     wait("Tab fixture empty")
 
                 switch_worktree("other-worktree")
@@ -460,7 +460,7 @@ def run(refresh_only=False):
                 auto("screenshot", str(artifacts / "file-actions-final.png"))
                 print("PASS native Stage All / Unstage All scopes, Discard All cancellation and Index preservation, explicit untracked file deletion", flush=True)
 
-                press("button", "History")
+                auto("key", "cmd+1", "--settle")
                 history_before = fingerprint()
                 imported = []
                 for i in range(2401):

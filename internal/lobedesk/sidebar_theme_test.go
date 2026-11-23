@@ -47,7 +47,8 @@ func TestSidebarThemeKeepsReadableInkAndOtherPalettes(t *testing.T) {
 func TestSuperGitSidebarUsesItsOwnSurfaceAndSelection(t *testing.T) {
 	for _, mode := range []string{"light", "dark"} {
 		t.Run(mode, func(t *testing.T) {
-			a := &app{palette: themePaletteSuperGit, themeMode: mode, locale: localeEnglish, page: "history", repo: &gitrepo.Repository{Root: t.TempDir()}}
+			a := &app{palette: themePaletteSuperGit, themeMode: mode, locale: localeEnglish, page: "history", repo: &gitrepo.Repository{Root: t.TempDir()},
+				historyRef: historyRef{Kind: historyRefRemote, Name: "origin/main"}, remoteBranches: []gitrepo.Branch{{Name: "origin/main"}}, sidebarOpen: map[string]bool{"remotes": true}}
 			tt := ui.NewTester(func(c *ui.Context) {
 				a.applyTheme(c)
 				ui.Row(c).Fill().Children(func() {
@@ -67,9 +68,9 @@ func TestSuperGitSidebarUsesItsOwnSurfaceAndSelection(t *testing.T) {
 			if got := pixel(1, 400); got != ground {
 				t.Errorf("sidebar surface=%v want %v", got, ground)
 			}
-			row, ok := tt.AccessByRole(ui.RoleButton, a.t("history"))
+			row, ok := tt.AccessByRole(ui.RoleButton, "origin/main")
 			if !ok {
-				t.Fatal("history entry missing")
+				t.Fatal("selected remote branch entry missing")
 			}
 			if got := pixel(int(row.Bounds.X+3), int(row.Bounds.Y+row.Bounds.H/2)); got != chosen {
 				t.Errorf("sidebar selection=%v want %v", got, chosen)

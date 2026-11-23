@@ -207,7 +207,7 @@ def run():
                 print("PASS native child Worktrees page identifies real checkout and Current state", flush=True)
                 # Repository switching preserves the current page; open History
                 # explicitly before asserting the child's commit list.
-                press("History")
+                auto("key", "cmd+1", "--settle")
                 wait("Child fixture target")
                 ready()
                 entries = controls()

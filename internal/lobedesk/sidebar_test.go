@@ -32,7 +32,7 @@ func TestTheSidebarNamesEachPage(t *testing.T) {
 		theme.Apply(c)
 		a.sidebar(c)
 	}, 240, 520)
-	for _, page := range []string{"history", "branches", "worktrees", "stashes", "settings"} {
+	for _, page := range []string{"branches", "worktrees", "stashes", "settings"} {
 		name := a.t(page)
 		if _, ok := tt.Find(name); !ok {
 			t.Errorf("the sidebar does not name %q", name)
@@ -43,17 +43,23 @@ func TestTheSidebarNamesEachPage(t *testing.T) {
 	}
 }
 
-// A named row is a page switch, not decoration: clicking it opens its page.
-func TestASidebarRowOpensItsPage(t *testing.T) {
-	a := &app{locale: localeChinese, page: "branches", repo: &gitrepo.Repository{Root: t.TempDir()}}
-	tt := sidebarTester(a)
-	row, ok := tt.AccessByRole(ui.RoleButton, a.t("history"))
-	if !ok {
-		t.Fatal("the history row is not laid out")
-	}
-	tt.ClickAt(row.Bounds.X+row.Bounds.W/2, row.Bounds.Y+row.Bounds.H/2)
-	if a.page != "history" {
-		t.Errorf("clicking the history row opened %q", a.page)
+func TestSidebarOmitsRedundantHistoryRowAndKeepsShortcut(t *testing.T) {
+	for _, language := range []locale{localeEnglish, localeChinese} {
+		t.Run(string(language), func(t *testing.T) {
+			a := &app{locale: language, page: "branches", repo: &gitrepo.Repository{Root: t.TempDir()}}
+			tt := ui.NewTester(func(c *ui.Context) {
+				theme.Apply(c)
+				a.registerShortcuts(c)
+				ui.Row(c).Width(260).Height(620).Children(func() { a.sidebar(c) })
+			}, 260, 620)
+			if _, ok := tt.AccessByRole(ui.RoleButton, a.t("history")); ok {
+				t.Error("sidebar still contains the redundant History row")
+			}
+			tt.Key(ui.Cmd, ui.Key1)
+			if a.page != "history" {
+				t.Errorf("Cmd+1 opened %q; want history", a.page)
+			}
+		})
 	}
 }
 
@@ -76,17 +82,12 @@ func TestSidebarHasNoSeparateBranchManagementPage(t *testing.T) {
 	}
 }
 
-// Without a repository there is nothing on the other pages to show: the
-// history row reads unavailable, and a group heading opens nothing.
+// Without a repository a group heading folds its list but opens no page.
 func TestWithoutARepositoryTheSidebarOpensNoPage(t *testing.T) {
 	a := &app{locale: localeChinese, page: "worktrees"}
 	tt := sidebarTester(a)
-	history, ok := tt.AccessByRole(ui.RoleButton, a.t("history"))
-	if !ok {
-		t.Fatal("the history row is not in the accessibility tree")
-	}
-	if !history.Disabled {
-		t.Error("the history row is enabled with no repository")
+	if _, ok := tt.AccessByRole(ui.RoleButton, a.t("history")); ok {
+		t.Error("empty sidebar still contains a History row")
 	}
 	heading, ok := tt.AccessByRole(ui.RoleDisclosure, a.t("branches"))
 	if !ok {

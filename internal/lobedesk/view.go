@@ -338,7 +338,7 @@ func itoa(n int) string {
 // their places in a sidebar, and the extra width buys the first-glance
 // understanding the rail could not.
 //
-// Below History come the repository's own locations: its
+// Below the repository header come its locations:
 // branches, remote branches, tags, stashes, worktrees and submodules, each a
 // folded list under a counted heading. Picking a ref locates its commit in
 // the history list and selects it, the way a branch tree in a Git client
@@ -355,9 +355,6 @@ func (a *app) sidebar(c *ui.Context) float32 {
 			if a.repo == nil && a.repositoryTabs != nil {
 				ui.Box(c).Grow(1)
 			} else {
-				ui.Column(c).FillWidth().Gap(1).Padding(0, 8, 6, 8).Children(func() {
-					a.sidebarItem(c, lucide.History(), "history", a.t("history"), shortcutKeys("page.history"))
-				})
 				layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.sidebarScroll}, func() {
 					ui.Column(c).FillWidth().Gap(0).Children(func() {
 						a.sidebarRefGroups(c)
