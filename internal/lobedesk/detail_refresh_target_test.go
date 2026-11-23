@@ -63,6 +63,8 @@ func TestRefreshAfterDeselectingLastFile(t *testing.T) {
 	a.reload()
 	waitSelectionOperation(t, a, callbacks)
 	clickSelectionRow(t, view, "b.go", filesSectionUnstaged, 0)
+	// Keep the modified click separate from the first click in the test clock.
+	view.Advance(time.Second)
 	clickSelectionRow(t, view, "b.go", filesSectionUnstaged, ui.Cmd)
 	a.reload()
 	waitSelectionOperation(t, a, callbacks)
