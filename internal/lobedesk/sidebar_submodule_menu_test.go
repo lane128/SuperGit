@@ -60,6 +60,60 @@ func TestSidebarSubmoduleMenuIsReachable(t *testing.T) {
 	}
 }
 
+func TestSidebarSubmoduleShowsCheckedOutRef(t *testing.T) {
+	const current = "0a4e5979ba02aaff9debfabb9ad4a41012aa6474"
+	const recorded = "d534878fd8bc2b0e8469ef19d389722f1ad26c14"
+	const longBranch = "feature/long-submodule-branch-that-must-fit-the-sidebar"
+	for _, tc := range []struct {
+		name, branch, current string
+		initialized           bool
+		label, fullRef        string
+	}{
+		{name: "branch", initialized: true, branch: longBranch, current: current, label: longBranch, fullRef: longBranch},
+		{name: "detached", initialized: true, current: current, label: "0a4e5979", fullRef: current},
+		{name: "uninitialized"},
+		{name: "unavailable", initialized: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const name = "modules/Audio"
+			a := &app{
+				locale: localeEnglish, page: "history", repo: &gitrepo.Repository{Root: t.TempDir()},
+				sidebarOpen: map[string]bool{"submodules": true},
+				submodules:  []gitrepo.Submodule{{Name: name, Path: name, Branch: tc.branch, Current: tc.current, Recorded: recorded, Index: recorded, Initialized: tc.initialized}},
+			}
+			tt := sidebarTester(a)
+			row, ok := tt.AccessByRole(ui.RoleButton, name)
+			if !ok {
+				t.Fatal("missing submodule row")
+			}
+			if strings.Contains(row.Description, recorded) {
+				t.Fatalf("row reported the parent's recorded commit as the current ref: %q", row.Description)
+			}
+			if _, ok := tt.Find("d534878f"); ok {
+				t.Fatal("row displayed the parent's recorded commit")
+			}
+			if tc.fullRef == "" {
+				return
+			}
+			if !strings.Contains(row.Description, tc.fullRef) {
+				t.Fatalf("row description %q does not include %q", row.Description, tc.fullRef)
+			}
+			label, ok := tt.Find(tc.label)
+			if !ok {
+				t.Fatalf("missing visible ref %q", tc.label)
+			}
+			if label.X < row.Bounds.X+row.Bounds.W/2 || label.Y >= row.Bounds.Y+row.Bounds.H/2 ||
+				label.W < 1 || label.X+label.W > row.Bounds.X+row.Bounds.W {
+				t.Fatalf("ref should fit on the right half of the row: row=%+v ref=%+v", row.Bounds, label)
+			}
+			leaf, ok := tt.Find("Audio")
+			if !ok || leaf.W < 1 || leaf.X+leaf.W > label.X {
+				t.Fatalf("module name should keep its leaf visible before the ref: leaf=%+v ref=%+v", leaf, label)
+			}
+		})
+	}
+}
+
 func TestSidebarSubmoduleStateDoesNotConsumeNameWidth(t *testing.T) {
 	for _, language := range []locale{localeEnglish, localeChinese} {
 		a := &app{locale: language, page: "history", repo: &gitrepo.Repository{Root: t.TempDir()}, sidebarOpen: map[string]bool{"submodules": true}, submodules: []gitrepo.Submodule{{Name: "fixture-child", Path: "child"}}}

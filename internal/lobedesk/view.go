@@ -445,17 +445,26 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 	a.sidebarGroup(c, "submodules", a.t("submodules"), len(a.submodules), func() {
 		for _, module := range a.submodules {
 			key := "submodule:" + module.Path
-			state := ""
-			if !module.Initialized {
+			state, refLabel, fullRef := "", "", ""
+			switch {
+			case !module.Initialized:
 				state = a.t("notInitialized")
+			case module.Branch != "":
+				refLabel, fullRef = module.Branch, module.Branch
+			default:
+				refLabel, fullRef = shortSHA(module.Current), module.Current
 			}
-			row := a.sidebarRefRowWithState(c, lucide.Boxes(), module.Name, state, false, false, func() {
+			row := a.sidebarRefRowWithState(c, lucide.Boxes(), module.Name, state, refLabel, false, false, func() {
 				a.openSidebarWorkspace(key)
 			})
-			description := module.Path + "\n" + a.t("submoduleMenuHint")
+			description := module.Path
 			if state != "" {
 				description = state + " · " + description
 			}
+			if fullRef != "" {
+				description += "\n" + fullRef
+			}
+			description += "\n" + a.t("submoduleMenuHint")
 			row.Description(description).Tooltip(description)
 			a.submoduleMenu(c, row, module)
 		}
@@ -545,10 +554,10 @@ func (a *app) sidebarGroup(c *ui.Context, key, title string, count int, items fu
 // checked-out branch with its own glyph, so a long name that clips still says
 // which branch is live.
 func (a *app) sidebarRefRow(c *ui.Context, icon *ui.SVG, label string, selected, current bool, onClick func()) ui.Element {
-	return a.sidebarRefRowWithState(c, icon, label, "", selected, current, onClick)
+	return a.sidebarRefRowWithState(c, icon, label, "", "", selected, current, onClick)
 }
 
-func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state string, selected, current bool, onClick func()) ui.Element {
+func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state, trailing string, selected, current bool, onClick func()) ui.Element {
 	tk := a.sidebarTokens(c)
 	height := float32(24)
 	if state != "" {
@@ -571,10 +580,20 @@ func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state s
 	var name ui.Element
 	row.Children(func() {
 		ui.Icon(c, icon).FontSize(scaledFont(10)).TextColor(tk.TextTertiary)
-		if state == "" {
+		dir, base := filepath.Split(label)
+		switch {
+		case trailing != "" && dir != "" && base != "":
+			// Give the final path component priority when the ref leaves little room.
+			name = ui.Row(c).Grow(1).Basis(0).MinWidth(0).Children(func() {
+				ui.Text(c, dir).FontSize(scaledFont(11)).TextColor(color).
+					SingleLine().MinWidth(0).Shrink(1).Clip().AccessHidden(true)
+				ui.Text(c, base).FontSize(scaledFont(11)).TextColor(color).
+					SingleLine().MinWidth(0).MaxWidthPercent(100).Shrink(0).AccessHidden(true)
+			})
+		case state == "":
 			name = display.Text(c, label, display.TextProps{FontSize: scaledFont(11), Strong: selected || current}).
 				TextColor(color).SingleLine().Grow(1).Basis(0).MinWidth(0).AccessHidden(true)
-		} else {
+		default:
 			// State gets its own line so a narrow sidebar keeps the module name.
 			ui.Column(c).Grow(1).Basis(0).MinWidth(0).Children(func() {
 				name = display.Text(c, label, display.TextProps{FontSize: scaledFont(11), Strong: selected || current}).
@@ -583,11 +602,16 @@ func (a *app) sidebarRefRowWithState(c *ui.Context, icon *ui.SVG, label, state s
 					TextColor(tk.TextSecondary).SingleLine().FillWidth().MinWidth(0).AccessHidden(true)
 			})
 		}
+		if trailing != "" {
+			ui.Text(c, trailing).TextColor(tk.TextSecondary).FontSize(scaledFont(10)).SingleLine().
+				MinWidth(0).MaxWidthPercent(48).Shrink(0).Padding(1, 4).
+				Radius(tk.BorderRadiusSM).Background(tk.FillSecondary).AccessHidden(true)
+		}
 		if current {
 			ui.Icon(c, lucide.Check()).FontSize(scaledFont(11)).TextColor(tk.Green).Shrink(0).AccessHidden(true)
 		}
 	})
-	// The checkmark, indent, font and sidebar split all affect the space
+	// The trailing label, checkmark, indent, font and sidebar split all affect the space
 	// left for the name. Use the label's laid-out width for both row styles.
 	if width := name.Bounds().W; width > 0 {
 		span := ui.Span{Text: label, Size: scaledFont(11)}
