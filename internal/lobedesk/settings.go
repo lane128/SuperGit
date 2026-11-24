@@ -17,6 +17,7 @@ type persistedSettings struct {
 	HiddenBranches       map[string][]string `json:"hiddenBranches,omitempty"`
 	Theme                string              `json:"theme,omitempty"`
 	Palette              string              `json:"palette,omitempty"`
+	DiffPalette          string              `json:"diffPalette,omitempty"`
 	Language             string              `json:"language,omitempty"`
 	ShowGraph            *bool               `json:"showGraph,omitempty"`
 	AutoFetch            *bool               `json:"autoFetch,omitempty"`
@@ -80,7 +81,7 @@ func defaultSettings() persistedSettings {
 	hide := false
 	autoCheckUpdates, autoDownloadUpdates := true, false
 	return persistedSettings{
-		Theme: "system", Palette: themePaletteSuperGit, Language: string(localeChinese), CodeFontSize: new(float32),
+		Theme: "system", Palette: themePaletteSuperGit, DiffPalette: diffPaletteDelta, Language: string(localeChinese), CodeFontSize: new(float32),
 		ShowGraph: &showGraph, AutoFetch: &autoFetch, AutoFetchPrune: &prune, AutoFetchEvery: &every,
 		DetailsInfo: &info, DetailsChanges: &changes, DetailsDiff: &diff,
 		HistoryLine: "standard", HistoryNode: "standard",
@@ -213,6 +214,7 @@ func legacyDesktopPreferencesPath(configFile string) string {
 }
 
 func (a *app) applySettings(settings persistedSettings) {
+	a.diffPalette = diffPaletteOptionFor(settings.DiffPalette).key
 	a.sidebarHidden = settings.SidebarHidden
 	a.expandMerges = settings.ExpandMerges
 	a.setIgnoreDiffWhitespace(settings.IgnoreDiffWhitespace)
@@ -534,7 +536,7 @@ func (a *app) saveSettingsFor(owner toastOwner) bool {
 		}
 		settings = persistedSettings{
 			SidebarHidden: a.sidebarHidden, IgnoreDiffWhitespace: a.ignoreDiffWhitespace, ExpandMerges: a.expandMerges, HiddenBranches: a.hiddenBranches,
-			Theme: a.themeMode, Palette: a.palette, Language: string(a.locale),
+			Theme: a.themeMode, Palette: a.palette, DiffPalette: a.diffPaletteKey(), Language: string(a.locale),
 			ShowGraph: &showGraph, AutoFetch: &autoFetch, AutoFetchPrune: &autoFetchPrune,
 			AutoFetchEvery:       fetchIntervalSetting(a.autoFetchEvery),
 			SidebarSplit:         splitSetting(a.sidebarSplit.share),

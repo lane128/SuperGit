@@ -1,6 +1,6 @@
 # Settings redesign acceptance — 2026-11-24
 
-Also on this date: [Detail tabs redesign acceptance](detail-tabs.md) and [Files state markers acceptance](files-state-markers.md), recorded separately to preserve this Settings evidence.
+Also on this date: [Detail tabs redesign acceptance](detail-tabs.md), [Files state markers acceptance](files-state-markers.md), and [Diff palettes acceptance](diff-palettes.md), recorded separately to preserve this Settings evidence.
 
 Status: implementation and automated acceptance complete; final human acceptance pending. No commit, push, installation, or release was performed for this redesign.
 

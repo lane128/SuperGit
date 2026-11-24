@@ -259,25 +259,12 @@ func TestPaletteTextTokensStayReadable(t *testing.T) {
 
 func TestDiffMetaTextReadsOnItsRow(t *testing.T) {
 	light := theme.Light()
-	meta := light.FillQuaternary.Over(light.BgContainer)
-	for name, ground := range map[string]ui.Color{
-		"meta row":       meta,
-		"cursor on meta": light.Blue.Alpha(0.24).Over(meta),
-		"hovered meta":   light.FillTertiary.Over(meta),
-	} {
-		if ratio := contrastRatio(lineTextColor(light, "meta"), ground); ratio < 4.5 {
-			t.Errorf("%s: hunk header = %.2f; want at least 4.5:1", name, ratio)
+	a := &app{}
+	for _, kind := range []string{"meta", "hunk"} {
+		colors := a.diffColors(light, kind)
+		if ratio := contrastRatio(colors.text, colors.background); ratio < 4.5 {
+			t.Errorf("%s: text = %.2f; want at least 4.5:1", kind, ratio)
 		}
-	}
-	if got := lineTextColor(light, "meta"); got != light.TextSecondary {
-		t.Errorf("meta text = %v; want the secondary token", got)
-	}
-	// Added and removed lines keep their own roles.
-	if got := lineTextColor(light, "del"); got != light.TextSecondary {
-		t.Errorf("removed text = %v; want the secondary token", got)
-	}
-	if got := lineTextColor(light, "add"); got != light.Text {
-		t.Errorf("added text = %v; want the primary token", got)
 	}
 }
 

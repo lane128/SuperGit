@@ -688,14 +688,11 @@ func TestBlameGutterInkClearsRows(t *testing.T) {
 
 func TestGutterInkClearsDiffRows(t *testing.T) {
 	light := theme.Light()
-	add := light.Success.Alpha(0.075).Over(light.BgContainer)
-	del := light.Error.Alpha(0.065).Over(light.BgContainer)
+	a := &app{}
 	rows := map[string]ui.Color{
-		"plain":         light.BgContainer,
-		"added":         add,
-		"removed":       del,
-		"cursor on add": light.Blue.Alpha(0.24).Over(add),
-		"cursor on del": light.Blue.Alpha(0.24).Over(del),
+		"plain":   light.BgContainer,
+		"added":   a.diffColors(light, "add").background,
+		"removed": a.diffColors(light, "del").background,
 	}
 	for name, bg := range rows {
 		if ratio := contrastRatio(gutterInk(light, bg), bg); ratio < 4.5 {

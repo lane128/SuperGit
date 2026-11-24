@@ -36,6 +36,7 @@ func (a *app) openSettingsWindow() {
 	}
 	// The closed panel's dropdown state does not belong to the new one.
 	a.paletteOpen = false
+	a.diffPaletteOpen = false
 	a.settingsIntervalOpen = false
 	a.uiFontOpen = false
 	a.codeFontOpen = false

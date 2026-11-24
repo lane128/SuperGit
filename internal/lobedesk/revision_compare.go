@@ -284,8 +284,11 @@ func (a *app) comparisonPatch(c *ui.Context, v *comparisonView) {
 			}
 			virtualPatchRows(c, v.patchViewport, &v.patchScroll, heights, v.find.revealLine(detailFileKey{}), func(c *ui.Context, i int) {
 				line := v.patch.Lines[i]
-				v.find.lineText(c, diffFindLine{index: i}, diffFindText(line), a.patchFontSize()).
-					Height(heights[i]).Shrink(0).TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
+				colors := a.diffColors(tk, line.Kind)
+				ui.Row(c).Width(max(width, v.patchViewport.W)).Height(heights[i]).Shrink(0).Background(colors.background).Children(func() {
+					v.find.lineText(c, diffFindLine{index: i}, diffFindText(line), a.patchFontSize()).
+						Height(heights[i]).Shrink(0).TextColor(colors.text).Role(diffCodeRole(line.Kind))
+				})
 			})
 		})
 	}).Fill()

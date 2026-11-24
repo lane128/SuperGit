@@ -700,27 +700,13 @@ func (a *app) diffLineForSide(c *ui.Context, line gitrepo.DiffLine, width float3
 		}
 		return
 	}
-	bg := tk.BgContainer
-	switch line.Kind {
-	case "add":
-		bg = tk.Success.Alpha(0.075).Over(tk.BgContainer)
-	case "del":
-		bg = tk.Error.Alpha(0.065).Over(tk.BgContainer)
-	case "meta":
-		bg = tk.FillQuaternary.Over(tk.BgContainer)
-	}
+	colors := a.diffColors(tk, line.Kind)
+	bg, gutter := colors.background, colors.gutter
 	change := interactive && (line.Kind == "add" || line.Kind == "del") && index >= 0 && a.lineActionsAllowed()
-	if change && a.lineSelected(index) {
-		alpha := float32(0.16)
-		if index == a.lineCursor {
-			alpha = 0.24
-		}
-		bg = tk.Blue.Alpha(alpha).Over(bg)
-	}
-	gutter := gutterInk(tk, bg)
 	if !interactive {
 		plain := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0).Padding(0, 8, 0, 12).Gap(8).AlignItems(ui.Center).
 			Background(bg)
+		a.paintDiffLine(plain, tk, line.Kind, false, false)
 		plain.Children(func() {
 			font := a.patchFontFamily()
 			ui.Text(c, lineNumber(line.Old)).Font(font).FontSize(scaledFont(10)).Width(34).Shrink(0).
@@ -728,7 +714,7 @@ func (a *app) diffLineForSide(c *ui.Context, line gitrepo.DiffLine, width float3
 			ui.Text(c, lineNumber(line.New)).Font(font).FontSize(scaledFont(10)).Width(34).Shrink(0).
 				TextAlign(ui.End).TextColor(gutter)
 			ui.Text(c, strings.ReplaceAll(line.Text, "\t", "    ")).Font(font).FontSize(a.patchFontSize()).
-				SingleLine().TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
+				SingleLine().TextColor(colors.text).Role(diffCodeRole(line.Kind))
 		})
 		return
 	}
@@ -738,7 +724,8 @@ func (a *app) diffLineForSide(c *ui.Context, line gitrepo.DiffLine, width float3
 	// paragraph a drag can select from. MyGo only lets a paragraph be selected
 	// when no clickable element owns it, so the paragraph sits in the row's
 	// content container instead of inside the numbers' button.
-	row := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0).AlignItems(ui.Center).Background(bg)
+	row := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0).AlignItems(ui.Center)
+	a.paintDiffLine(row, tk, line.Kind, change && a.lineSelected(index), index == a.lineCursor)
 	var numbers ui.Element
 	row.Children(func() {
 		inner := ui.Row(c).Height(a.patchRowHeight()).Width(width-diffHoverActionReserve).Shrink(0).
@@ -746,7 +733,7 @@ func (a *app) diffLineForSide(c *ui.Context, line gitrepo.DiffLine, width float3
 		inner.Children(func() {
 			numbers = a.patchGutter(c, line, side, gutter)
 			markDiffGutter(numbers, change && a.lineSelected(index), gutter)
-			a.diffFind.lineText(c, diffFindLine{index: index}, diffFindText(line), a.patchFontSize(), side == patchNew && line.Kind == "context").TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
+			a.diffFind.lineText(c, diffFindLine{index: index}, diffFindText(line), a.patchFontSize(), side == patchNew && line.Kind == "context").TextColor(colors.text).Role(diffCodeRole(line.Kind))
 		})
 		if !change || !row.Hovered() {
 			return
@@ -840,9 +827,9 @@ func (a *app) lineGutterLabel(line gitrepo.DiffLine) string {
 func (a *app) plainHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32) {
 	tk := theme.TokensOf(c)
 	ui.Row(c).Width(width).Height(24).Shrink(0).Padding(0, 12).AlignItems(ui.Center).
-		Background(tk.Info.Alpha(0.06).Over(tk.BgContainer)).Children(func() {
+		Background(a.diffColors(tk, "hunk").background).Children(func() {
 		ui.Text(c, line.Text).Font(a.patchFontFamily()).FontSize(scaledFont(10.5)).SingleLine().
-			TextColor(tk.Info)
+			TextColor(a.diffColors(tk, "hunk").text)
 	})
 }
 
@@ -854,14 +841,14 @@ func (a *app) diffHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32, 
 	// header and the hover button never fight over the same pixels.
 	row := ui.ButtonBase(c.Key(a.hunkFocusKey(line.Hunk))).Label(line.Text).Row().Width(width).Height(24).Shrink(0).AlignItems(ui.Center).
 		Justify(ui.Start).
-		Background(tk.Info.Alpha(0.06).Over(tk.BgContainer))
+		Background(a.diffColors(tk, "hunk").background)
 	a.wireHunkEnter(row, line.Hunk)
 	row.Children(func() {
 		inner := ui.Row(c).Height(24).Width(width-diffHoverActionReserve).Shrink(0).
 			Padding(0, 8, 0, 12).AlignItems(ui.Center)
 		inner.Children(func() {
 			a.diffFind.lineText(c, diffFindLine{index: index}, line.Text, scaledFont(10.5)).
-				TextColor(tk.Info)
+				TextColor(a.diffColors(tk, "hunk").text)
 		})
 		ready := a.hunkActionsAllowed() &&
 			line.Hunk >= 0 && line.Hunk < len(a.diff.Hunks)
@@ -977,22 +964,6 @@ func lineNumber(n int) string {
 		return ""
 	}
 	return fmt.Sprint(n)
-}
-
-func lineTextColor(tk *theme.Tokens, kind string) ui.Color {
-	switch kind {
-	case "add":
-		return tk.Text
-	case "del":
-		return tk.TextSecondary
-	case "meta":
-		// Hunk headers are read like any other diff line, so they take the
-		// secondary text token: TextDescription sits at 3.2:1 on the meta
-		// row's fill in the light theme. The tone stays recessive by size and
-		// position rather than by contrast.
-		return tk.TextSecondary
-	}
-	return tk.Text
 }
 
 func (a *app) operationCard(c *ui.Context) {

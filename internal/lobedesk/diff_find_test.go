@@ -77,7 +77,7 @@ func TestDiffFindInFocusedPatch(t *testing.T) {
 					for y := int(r.Bounds.Y); y < int(r.Bounds.Y+r.Bounds.H); y++ {
 						for x := int(viewport.X); x < int(viewport.X+viewport.W); x++ {
 							color := pixels.RGBAAt(x, y)
-							if color.R > 230 && color.G > 145 && color.G < 210 && color.B < 85 {
+							if color.R == 255 && color.G == 224 && color.B == 138 {
 								left = min(left, x)
 								right = max(right, x)
 							}
