@@ -16,6 +16,7 @@ func TestSidebarBranchMenuKeepsHistoryScope(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			scope := historyRef{Kind: historyRefLocal, Name: "main"}
 			a := &app{locale: localeEnglish, page: "history", repo: &gitrepo.Repository{Root: t.TempDir()}, historyRef: scope, branchSel: "local:main", branches: []gitrepo.Branch{{Name: "main", Current: true}, {Name: "topic", SHA: "bbbbbbbb"}}}
+			a.toggleSidebarGroup("branches")
 			tt := sidebarTester(a)
 			row, ok := tt.AccessByRole(ui.RoleButton, "topic")
 			if !ok {
@@ -70,6 +71,7 @@ func TestSidebarBranchMenuKeepsHistoryScope(t *testing.T) {
 func TestSidebarBranchMenuDisablesWritesWhileLoading(t *testing.T) {
 	for _, busy := range []bool{false, true} {
 		a := &app{locale: localeEnglish, page: "history", repo: &gitrepo.Repository{Root: t.TempDir()}, busy: busy, loading: !busy, branches: []gitrepo.Branch{{Name: "topic"}}}
+		a.toggleSidebarGroup("branches")
 		tt := sidebarTester(a)
 		row, ok := tt.AccessByRole(ui.RoleButton, "topic")
 		if !ok || row.Disabled {

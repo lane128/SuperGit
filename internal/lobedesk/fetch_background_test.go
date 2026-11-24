@@ -229,8 +229,8 @@ func TestFetchAllowsTabSwitchButKeepsFetchingTabUnclosable(t *testing.T) {
 	if tabs.canClose(b) {
 		t.Fatal("closing the active fetching tab must stay blocked")
 	}
-	if tabs.canClose(a) {
-		t.Fatal("a close affordance that its confirmation would disable must stay blocked")
+	if !tabs.canClose(a) {
+		t.Fatal("idle background tab must remain closable")
 	}
 	clickRepositoryTabsControl(t, tt, ui.RoleTab, filepath.Base(a.repo.Root))
 	for tabs.active.loading {
@@ -258,6 +258,45 @@ func TestFetchAllowsTabSwitchButKeepsFetchingTabUnclosable(t *testing.T) {
 	}
 	b.busy, b.fetching = false, false
 	b.activationRefresh = false
+}
+
+func TestFetchRefRefreshAllowsSwitchAndFinishesOnInactiveTab(t *testing.T) {
+	tabs, other, origin, view, callbacks := repositoryTabsSafetyFixture(t)
+	origin.refreshRefs()
+	view.Frame()
+	if !origin.loading || tabs.canChange() || tabs.canClose(origin) {
+		t.Fatal("reference reconciliation must still block structural changes")
+	}
+	clickRepositoryTabsControl(t, view, ui.RoleTab, filepath.Base(other.repo.Root))
+	if tabs.active != other {
+		t.Fatal("reference reconciliation blocked switching checkouts")
+	}
+	for origin.loading || other.loading {
+		runContinuation(t, callbacks)
+	}
+	if tabs.active != other || origin.loadErr != "" {
+		t.Fatal("background completion disrupted active checkout")
+	}
+}
+
+func TestSwitchBackWhileDestinationIsStillReadingDuringFetch(t *testing.T) {
+	for _, restored := range []bool{false, true} {
+		tabs, destination, fetching, view, callbacks := repositoryTabsSafetyFixture(t)
+		destination.restoredCheckout = restored
+		fetching.busy, fetching.fetching = true, true
+		view.Frame()
+		clickRepositoryTabsControl(t, view, ui.RoleTab, filepath.Base(destination.repo.Root))
+		if tabs.active != destination || !destination.loading || tabs.canChange() {
+			t.Fatal("destination should be reading with structural changes blocked")
+		}
+		clickRepositoryTabsControl(t, view, ui.RoleTab, filepath.Base(fetching.repo.Root))
+		for destination.loading {
+			runContinuation(t, callbacks)
+		}
+		if tabs.active != fetching || !fetching.fetching || tabs.canClose(fetching) {
+			t.Fatal("background read disrupted the active Fetch")
+		}
+	}
 }
 
 func TestFetchPruneAndTagsCommandsUseTheirMode(t *testing.T) {
@@ -396,5 +435,31 @@ func TestFetchKeepsWriteCommandsWaiting(t *testing.T) {
 		if why := a.commandPaletteUnavailable(id); why != "" {
 			t.Fatalf("%s during fetch: %q; want available", id, why)
 		}
+	}
+}
+
+func TestCloseInactiveTabWithoutActivatingWhileFetching(t *testing.T) {
+	tabs, target, active, view, _ := repositoryTabsSafetyFixture(t)
+	active.busy, active.fetching = true, true
+	target.commitText = "unsent draft"
+	view.Frame()
+	clickRepositoryTabsControl(t, view, ui.RoleButton, active.t("close")+" "+target.repo.Root)
+	if tabs.active != active || !active.confirm.open {
+		t.Fatal("close should confirm the other tab's draft without selecting it")
+	}
+	clickRepositoryTabsControl(t, view, ui.RoleButton, active.t("close"))
+	if len(tabs.sessions) != 1 || tabs.active != active || !active.fetching {
+		t.Fatal("closing inactive tab disrupted active fetch")
+	}
+}
+func TestTabRevalidationDoesNotAdvertiseSync(t *testing.T) {
+	_, target, _, view, callbacks := repositoryTabsSafetyFixture(t)
+	clickRepositoryTabsControl(t, view, ui.RoleTab, filepath.Base(target.repo.Root))
+	target.loadSince = time.Now().Add(-time.Minute)
+	if !target.loading || target.progressText() != "" {
+		t.Fatal("local tab validation should be silent")
+	}
+	for target.loading {
+		runContinuation(t, callbacks)
 	}
 }

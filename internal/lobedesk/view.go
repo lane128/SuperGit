@@ -179,12 +179,10 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 					display.Text(c, progress, display.TextProps{
 						Type: display.TextSecondary, FontSize: scaledFont(11),
 					}).SingleLine().MinWidth(0).MaxWidth(110).Shrink(1).Tooltip(progress)
-					// A git command can hang on a network that stopped answering;
-					// without this the only way out is the three-minute timeout.
-					if a.busy || a.fetching {
-						if cancel := workbenchIconButton(c, lucide.X(), a.t("cancel"), buttonNormal, false); cancel.Clicked() {
-							a.cancelOperation()
-						}
+				}
+				if progress != "" && (a.fetching || (!showBranch && a.busy)) {
+					if cancel := workbenchIconButton(c, lucide.X(), a.t("cancel"), buttonNormal, false); cancel.Clicked() {
+						a.cancelOperation()
 					}
 				}
 			})
@@ -266,7 +264,7 @@ func (a *app) progressText() string {
 		}
 		return a.t("busyNow")
 	}
-	if a.loading && a.repo != nil && !a.restoredCheckout && progressVisible(a.loadSince, time.Now()) {
+	if a.loading && !a.checkingTab && a.repo != nil && !a.restoredCheckout && progressVisible(a.loadSince, time.Now()) {
 		return a.t("loadingRepo")
 	}
 	return ""
@@ -444,6 +442,10 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 			key := "submodule:" + module.Path
 			state, refLabel, fullRef := "", "", ""
 			switch {
+			case module.Error != "":
+				state = a.t("submoduleError")
+			case module.Pending:
+				state = a.t("loadingRepo")
 			case !module.Initialized:
 				state = a.t("notInitialized")
 			case module.Branch != "":
@@ -660,18 +662,13 @@ func (a *app) sidebarBranchItems(c *ui.Context) {
 }
 
 func (a *app) sidebarGroupOpen(key string) bool {
-	if open, ok := a.sidebarOpen[key]; ok {
-		return open
-	}
-	return key == "branches"
+	return a.sidebarOpen[key]
 }
 
 func (a *app) toggleSidebarGroup(key string) {
 	if a.sidebarOpen == nil {
 		a.sidebarOpen = map[string]bool{}
 	}
-	// Read the default first: the first click on an untouched group folds the
-	// open default rather than opening what is already open.
 	a.sidebarOpen[key] = !a.sidebarGroupOpen(key)
 	a.invalidate()
 }

@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"supergit/internal/gitrepo"
@@ -18,6 +20,8 @@ const localProbeInterval = 3 * time.Second
 const localBackgroundInterval = 15 * time.Second
 
 type localRepositoryWatch struct {
+	initializing             bool
+	refStamp                 string
 	stamp                    string
 	seq                      uint64
 	reading, focused, closed bool
@@ -53,10 +57,13 @@ func readLocalWatchStamp(parent context.Context, repo *gitrepo.Repository, entri
 func readLocalWatchStampWithStatus(parent context.Context, repo *gitrepo.Repository, entries []gitrepo.Entry, status string) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, localBackgroundInterval)
 	defer cancel()
-	stamp, err := repo.ChangeStampFromStatus(ctx, status)
+	stamp, err := repo.LocalStampFromStatus(ctx, status)
 	if err != nil {
 		return "", err
 	}
+	return watchFileStamp(ctx, repo, entries, stamp)
+}
+func watchFileStamp(ctx context.Context, repo *gitrepo.Repository, entries []gitrepo.Entry, stamp string) (string, error) {
 	hash := sha256.New()
 	enc := json.NewEncoder(hash)
 	if err := enc.Encode(stamp); err != nil {
@@ -124,7 +131,7 @@ func (a *app) nextSubmoduleProbes() []gitrepo.Submodule {
 	var priority, clean []gitrepo.Submodule
 	seen := make(map[string]bool)
 	for _, module := range a.submodules {
-		if (!module.Initialized && module.Error == "") || seen[module.Path] {
+		if module.Pending || seen[module.Path] {
 			continue
 		}
 		seen[module.Path] = true
@@ -151,37 +158,31 @@ func readSubmoduleUpdates(ctx context.Context, repo *gitrepo.Repository, modules
 	}
 	ctx, cancel := context.WithTimeout(ctx, submoduleProbeTimeout)
 	defer cancel()
-	results := make(chan gitrepo.Submodule, len(modules))
-	for _, module := range modules {
-		go func() {
-			after := repo.SubmoduleCheckout(ctx, module.Path)
-			if ctx.Err() != nil {
-				after = gitrepo.Submodule{}
-			}
-			results <- after
-		}()
-	}
+	var mu sync.Mutex
 	var updates []gitrepo.Submodule
-	for range modules {
-		// Prefer completed observations even if another child timed out.
-		select {
-		case after := <-results:
-			if after.Path != "" {
-				updates = append(updates, after)
-			}
-			continue
-		default:
+	repo.InspectSubmodules(ctx, probeInventory(modules), func(after gitrepo.Submodule) { mu.Lock(); updates = append(updates, after); mu.Unlock() })
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		seen := map[string]bool{}
+		for _, m := range updates {
+			seen[m.Path] = true
 		}
-		select {
-		case after := <-results:
-			if after.Path != "" {
-				updates = append(updates, after)
+		for _, m := range modules {
+			if !seen[m.Path] {
+				updates = append(updates, gitrepo.Submodule{Path: m.Path, Error: ctx.Err().Error()})
+				seen[m.Path] = true
 			}
-		case <-ctx.Done():
-			return updates
 		}
 	}
 	return updates
+}
+
+// A previous checkout error is precisely the row a periodic probe should retry.
+func probeInventory(modules []gitrepo.Submodule) []gitrepo.Submodule {
+	rows := slices.Clone(modules)
+	for i := range rows {
+		rows[i].Error = ""
+	}
+	return rows
 }
 
 // A count or branch label can change while the parent snapshot stays valid.
@@ -193,13 +194,22 @@ func (a *app) applySubmoduleUpdates(updates []gitrepo.Submodule) (reload bool) {
 			if before.Path != after.Path {
 				continue
 			}
-			if before.Initialized != after.Initialized || before.Current != after.Current {
+			if after.Error != "" {
+				before.Error = after.Error
+				before.Pending = false
+				a.submodules[i] = before
+				changed = true
+				continue
+			}
+			known := before.CheckoutKnown || before.Initialized || before.Current != "" || (!before.Pending && before.Error == "")
+			if !before.Pending && known && (before.Initialized != after.Initialized || before.Current != after.Current) {
 				return true
 			}
-			if before.ChangedFiles == after.ChangedFiles && before.Branch == after.Branch && before.Dirty == after.Dirty &&
+			if !before.Pending && before.ChangedFiles == after.ChangedFiles && before.Branch == after.Branch && before.Dirty == after.Dirty &&
 				(before.Error == "") == (after.Error == "") {
 				continue
 			}
+			after.CheckoutKnown = true
 			after.Name, after.Recorded, after.Index = before.Name, before.Recorded, before.Index
 			a.submodules[i] = after
 			changed = true
@@ -222,7 +232,7 @@ func (a *app) cancelLocalProbe() {
 
 func (a *app) beginLocalProbe(now time.Time) (localWatchRequest, bool) {
 	w := &a.localWatch
-	if w.closed || a.repo == nil || a.loading || a.busy || a.repositoryChooserOpen || w.reading || now.Before(w.next) ||
+	if w.initializing || w.closed || a.repo == nil || a.loading || a.busy || a.repositoryChooserOpen || w.reading || now.Before(w.next) ||
 		(a.repositoryTabs != nil && (a.repositoryTabs.active != a || a.repositoryTabs.opening != nil)) ||
 		a.hasPendingDialog(toastMain) {
 		return localWatchRequest{}, false
@@ -279,13 +289,23 @@ func (a *app) pollLocalChanges(now time.Time) {
 	go func() {
 		defer cancel()
 		stamp, err := readLocalWatchStamp(ctx, req.repo, req.entries)
+		var refs string
+		if err == nil {
+			refs, err = req.repo.RefStamp(ctx)
+		}
 		var updates []gitrepo.Submodule
 		if err == nil && stamp == req.baseline {
 			updates = readSubmoduleUpdates(ctx, req.repo, req.submodules)
 		}
 		a.hopToMain(func() {
 			if a.acceptLocalProbe(req, stamp, err, time.Now(), updates) {
-				a.openRepository(req.repo.Root, false)
+				affected := map[string]bool{}
+				for _, m := range updates {
+					affected[m.Path] = true
+				}
+				a.readRepositoryScope(req.repo.Root, false, "", affected)
+			} else if err == nil && req.seq == a.localWatch.seq && req.epoch == a.loadSeq && !a.busy && !a.loading && !a.localWatch.closed && refs != a.localWatch.refStamp && !a.hasPendingDialog(toastMain) && !a.repositoryChooserOpen {
+				a.refreshRefs()
 			}
 		})
 	}()
@@ -338,4 +358,61 @@ func (a *app) startLocalWatching() {
 			}
 		}
 	}()
+}
+
+func (a *app) installWatchBaseline(seq uint64, repo *gitrepo.Repository, baseline <-chan string) {
+	a.localWatch.stamp = ""
+	a.localWatch.initializing = true
+	installBaseline := func(stamp string) {
+		if seq == a.loadSeq && a.repo == repo && !a.localWatch.closed {
+			a.localWatch.stamp = stamp
+			a.localWatch.initializing = false
+			a.localWatch.next = time.Time{}
+			if stamp != "" {
+				a.localWatch.lastError = ""
+			}
+		}
+	}
+	select {
+	case stamp := <-baseline:
+		installBaseline(stamp)
+	default:
+		go func() { stamp := <-baseline; a.hopToMain(func() { installBaseline(stamp) }) }()
+	}
+}
+
+func (a *app) publishSubmoduleInventory(ctx context.Context, seq uint64, repo *gitrepo.Repository, submodules []gitrepo.Submodule, reset, localChange bool, affected map[string]bool) {
+	if !reset {
+		previous := map[string]gitrepo.Submodule{}
+		for _, m := range a.submodules {
+			previous[m.Path] = m
+		}
+		for i, m := range submodules {
+			if old, ok := previous[m.Path]; ok && m.Pending {
+				if localChange && !old.Pending && !affected[m.Path] && m.Index == old.Index && m.Recorded == old.Recorded && old.Error == "" {
+					old.Name = m.Name
+					submodules[i] = old
+					continue
+				}
+				old.Name, old.Index, old.Recorded, old.Pending, old.Error = m.Name, m.Index, m.Recorded, true, ""
+				submodules[i] = old
+			}
+		}
+	}
+	a.submodules = submodules
+	if len(submodules) > 0 {
+		var inventory []gitrepo.Submodule
+		for _, m := range submodules {
+			if m.Pending {
+				inventory = append(inventory, m)
+			}
+		}
+		go repo.InspectSubmodules(ctx, inventory, func(m gitrepo.Submodule) {
+			a.hopToMain(func() {
+				if a.repo == repo && a.loadSeq == seq && !a.localWatch.closed {
+					a.applySubmoduleUpdates([]gitrepo.Submodule{m})
+				}
+			})
+		})
+	}
 }

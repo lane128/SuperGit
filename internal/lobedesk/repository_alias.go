@@ -41,7 +41,7 @@ func readRepositoryAlias(root string) string {
 }
 
 func (tabs *repositoryTabs) askAlias(target *app) {
-	if !tabs.canClose(target) || target.repo == nil {
+	if !tabs.canChange() || !tabs.canClose(target) || target.loading || target.repo == nil {
 		return
 	}
 	tabs.activate(target, false)

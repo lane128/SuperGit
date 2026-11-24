@@ -97,8 +97,8 @@ func TestWithoutARepositoryTheSidebarOpensNoPage(t *testing.T) {
 	if a.page != "worktrees" {
 		t.Errorf("a group heading opened %q with no repository", a.page)
 	}
-	if a.sidebarGroupOpen("branches") {
-		t.Error("a group heading did not fold its list with no repository")
+	if !a.sidebarGroupOpen("branches") {
+		t.Error("a group heading did not expand its list with no repository")
 	}
 }
 
@@ -137,6 +137,7 @@ func TestABranchInTheSidebarLocatesItsTip(t *testing.T) {
 		ctx:       canceledContext(),
 		runOnMain: func(func()) {},
 	}
+	a.toggleSidebarGroup("branches")
 	tt := sidebarTester(a)
 	row, ok := tt.AccessByRole(ui.RoleButton, "feat")
 	if !ok {
@@ -162,6 +163,7 @@ func TestTheCurrentBranchMarkIsNotPartOfItsName(t *testing.T) {
 		repo:     &gitrepo.Repository{Root: t.TempDir()},
 		branches: []gitrepo.Branch{{Name: long, Current: true}, {Name: "feat"}},
 	}
+	a.toggleSidebarGroup("branches")
 	tt := sidebarTester(a)
 	tt.Frame() // The tooltip follows the allocated text width.
 	if _, ok := tt.Find(long + " ·"); ok {
@@ -222,8 +224,13 @@ func TestTheWholeGroupHeadingFoldsItsList(t *testing.T) {
 	if !ok {
 		t.Fatal("the branches group has no disclosure heading")
 	}
-	if !heading.Expanded {
-		t.Error("the open branches group does not say it is expanded")
+	if heading.Expanded {
+		t.Fatal("branches expanded automatically on a fresh repository")
+	}
+	tt.ClickAt(heading.Bounds.X+heading.Bounds.W/2, heading.Bounds.Y+heading.Bounds.H/2)
+	tt.Frame()
+	if _, ok := tt.Find("feat"); !ok {
+		t.Fatal("manual expansion did not show branches")
 	}
 	tt.ClickAt(heading.Bounds.X+heading.Bounds.W/2, heading.Bounds.Y+heading.Bounds.H/2)
 	tt.Frame()

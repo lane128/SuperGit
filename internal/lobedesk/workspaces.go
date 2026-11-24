@@ -262,7 +262,18 @@ func (a *app) submoduleRow(c *ui.Context, module gitrepo.Submodule, pos, size in
 	key := "submodule:" + module.Path
 	selected := a.worktreeSel == key
 	// As with the worktree rows: focusable, named, and selected for readers.
-	row := ui.ButtonBase(c).Label(module.Name).Description(module.Path).
+	description := module.Path
+	switch {
+	case module.Pending:
+		description += " · " + a.t("loadingRepo")
+	case module.Error != "":
+		description += " · " + module.Error
+	case !module.Initialized:
+		description += " · " + a.t("notInitialized")
+	case module.ChangedFiles > 0:
+		description += " · " + a.changedFilesLabel(module.ChangedFiles)
+	}
+	row := ui.ButtonBase(c).Label(module.Name).Description(description).
 		Row().FillWidth().MinHeight(46).Padding(5, 8).Gap(10).AlignItems(ui.Center).
 		Radius(tk.BorderRadius).Border(1, ui.Transparent).
 		Role(ui.RoleOption).AccessSelected(selected).PositionInSet(pos, size)
@@ -286,6 +297,8 @@ func (a *app) submoduleRow(c *ui.Context, module gitrepo.Submodule, pos, size in
 					a.statusTag(c, a.t("submoduleError"), display.TagProps{
 						Variant: display.TagFilled, Color: display.TagError, Size: theme.Small, Round: true,
 					})
+				case module.Pending:
+					display.Tag(c, a.t("loadingRepo"), display.TagProps{Variant: display.TagBorderless, Size: theme.Small})
 				case !module.Initialized:
 					display.Tag(c, a.t("notInitialized"), display.TagProps{Variant: display.TagBorderless, Size: theme.Small})
 				case module.Dirty:
@@ -441,7 +454,7 @@ func (a *app) submoduleMenu(c *ui.Context, row ui.Element, module gitrepo.Submod
 		)
 	}
 	items = append(items,
-		overlay.MenuItem{Key: "update", Label: updateLabel, Icon: lucide.RefreshCw(), Disabled: a.busy || a.loading},
+		overlay.MenuItem{Key: "update", Label: updateLabel, Icon: lucide.RefreshCw(), Disabled: module.Pending || a.busy || a.loading},
 		overlay.MenuItem{Divider: true},
 		overlay.MenuItem{Key: "reveal", Label: a.t("revealInFinder"), Icon: lucide.FolderOpen()},
 		overlay.MenuItem{Key: "copy", Label: a.t("copyAbsolutePath"), Icon: lucide.Copy()},

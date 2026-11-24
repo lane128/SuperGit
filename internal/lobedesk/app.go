@@ -122,6 +122,7 @@ type app struct {
 	newRepoOpeningRoot string
 	loading            bool
 	activationRefresh  bool
+	checkingTab        bool
 	restoredCheckout   bool      // Restored tab awaiting its first verified snapshot.
 	loadSince          time.Time // used to delay repository-read progress in the title bar
 	busy               bool
@@ -505,6 +506,11 @@ type app struct {
 	// shownNoticeRoot scopes the main UI engine's already-flushed toasts.
 	shownNoticeRoot string
 
+	refCancel         context.CancelFunc
+	refSeq            uint64
+	fullReadRoot      string
+	loadCancel        context.CancelFunc
+	checkoutIdentity  gitrepo.CheckoutIdentity
 	loadSeq           uint64
 	discardPrepareSeq uint64
 	diffSeq           uint64
@@ -719,8 +725,20 @@ func (a *app) readRepository(path string, reset bool) {
 }
 
 func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string) {
+	a.readRepositoryScope(path, reset, previousRoot, nil)
+}
+func (a *app) readRepositoryScope(path string, reset bool, previousRoot string, affected map[string]bool) {
 	if a.busy || strings.TrimSpace(path) == "" {
 		return
+	}
+	// Concurrent manual refresh requests share the same full reconciliation.
+	localChange := affected != nil
+	if !reset && !localChange && a.fullReadRoot == path {
+		return
+	}
+	a.fullReadRoot = ""
+	if !localChange && !reset {
+		a.fullReadRoot = path
 	}
 	restoring := a.restoredCheckout
 	reset = reset || restoring
@@ -734,6 +752,16 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 		// must not silently open the repository that now contains its path.
 		previousRoot = switchTarget
 	}
+	if a.refCancel != nil {
+		a.refCancel()
+		a.refCancel = nil
+	}
+	if a.loadCancel != nil {
+		a.loadCancel()
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.loadCancel = cancel
+	a.localWatch.initializing = false
 	a.cancelLocalProbe()
 	a.resetHistoryTraversal()
 	a.resetFileHistory()
@@ -741,6 +769,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 	// fact visible if opening/status fails before replacement reads can start.
 	a.historyPaused = a.historyMore
 	a.fileHistoryPaused = a.fileFilter != "" && (a.fileHistoryTips == nil || a.fileHistoryMore)
+	a.checkingTab = false
 	a.loadSeq++
 	seq := a.loadSeq
 	// This read replaces whatever the last one was doing. A history walk still
@@ -773,7 +802,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 	// The first page belongs to the repository refresh, like status and refs.
 	// Scope changes may cancel pagination while this snapshot is still loading.
 	// Its loadSeq guard already rejects superseded repository snapshots.
-	historyCtx := a.ctx
+	historyCtx := ctx
 	hiddenBranches := a.hiddenBranches
 	// A reload keeps a ref filter's walk pinned to that ref instead of
 	// swapping the list back to every ref behind the filter.
@@ -794,7 +823,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 		createdPath = path
 	}
 	a.newRepoOpeningRoot = ""
-	var watchEntries []gitrepo.Entry
+
 	aliasRoot := ""
 	if a.repositoryTabs != nil && a.repo != nil {
 		aliasRoot = a.repo.Root
@@ -803,18 +832,17 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 	if (!reset || restoring) && a.repositoryTabs != nil && a.repo != nil {
 		previousRoot = a.repo.Root
 	}
-	if !reset {
-		watchEntries = append(watchEntries, a.status.Entries...)
-	}
 
 	go func() {
-		repo, openErr := gitrepo.Open(a.ctx, path)
+		repo, openErr := gitrepo.Open(ctx, path)
 		if openErr == nil && previousRoot != "" && repo.Root != previousRoot {
 			openErr = fmt.Errorf("checkout root changed from %q to %q", previousRoot, repo.Root)
 		}
 		var status gitrepo.Status
 		var statusText string
-		var localStamp string
+		var baseline <-chan string
+		var refStamp string
+		var checkout gitrepo.CheckoutIdentity
 		var headMessage string
 		var identity commitIdentityState
 		var history gitrepo.HistoryPage
@@ -828,7 +856,21 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 		var operation gitrepo.Operation
 		var operationMessage string
 		var statusErr, historyErr, branchesErr, remoteBranchesErr, stashesErr, tagsErr, worktreesErr, submodulesErr error
-		if openErr == nil {
+		for attempt := 0; openErr == nil && attempt < 3; attempt++ {
+			checkout, statusErr = repo.CheckoutIdentity(ctx)
+			if statusErr != nil {
+				break
+			}
+			refStamp, statusErr = repo.RefStamp(ctx)
+			if statusErr != nil {
+				break
+			}
+			headMessage, operationMessage = "", ""
+			metadata, e := repo.LocalMetadataStamp(ctx, checkout)
+			if e != nil {
+				statusErr = e
+				break
+			}
 			var reads sync.WaitGroup
 			// The commit list does not depend on the working tree, so it starts
 			// beside the status read rather than after it. On a repository whose
@@ -844,12 +886,17 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 			// The displayed rows and the watcher's baseline are read from one
 			// porcelain status. Reading it twice made a large open pay for the
 			// slowest command twice.
-			status, statusText, statusErr = repo.StatusWithText(a.ctx)
+			status, statusText, statusErr = repo.StatusWithText(ctx)
 			if statusErr == nil {
 				// Establish the baseline from the same observation the window
 				// shows. A save after it is newer than the baseline and wakes
 				// the watcher; a save before it is already on screen.
-				localStamp, _ = readLocalWatchStampWithStatus(a.ctx, repo, watchEntries, statusText)
+				stampResult := make(chan string, 1)
+				baseline = stampResult
+				go func(entries []gitrepo.Entry, text string) {
+					stamp, _ := watchFileStamp(ctx, repo, entries, gitrepo.LocalStatusStamp(metadata, text))
+					stampResult <- stamp
+				}(status.Entries, statusText)
 				// The remaining reads are independent of each other: run them
 				// together so opening a large repository waits for the slowest
 				// one instead of their sum.
@@ -857,26 +904,38 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 					// Read apart from the page: the amend box acts on HEAD even
 					// when the list is showing another branch.
 					if status.Head != "" {
-						headMessage, _ = repo.CommitMessage(a.ctx, status.Head)
+						headMessage, _ = repo.CommitMessage(ctx, status.Head)
 						headMessage = strings.TrimSuffix(headMessage, "\n")
 					}
 				})
-				reads.Go(func() { identity = readCommitIdentity(a.ctx, repo, status.Head != "") })
-				reads.Go(func() { branches, branchesErr = repo.Branches(a.ctx) })
-				reads.Go(func() { remoteBranches, remoteBranchesErr = repo.RemoteBranches(a.ctx) })
-				reads.Go(func() { remotes, _ = repo.Remotes(a.ctx) })
-				reads.Go(func() { stashes, stashesErr = repo.Stashes(a.ctx) })
-				reads.Go(func() { tags, tagsErr = repo.Tags(a.ctx) })
-				reads.Go(func() { worktrees, worktreesErr = repo.Worktrees(a.ctx) })
-				reads.Go(func() { submodules, submodulesErr = repo.Submodules(a.ctx) })
+				reads.Go(func() { identity = readCommitIdentity(ctx, repo, status.Head != "") })
+				reads.Go(func() { branches, branchesErr = repo.Branches(ctx) })
+				reads.Go(func() { remoteBranches, remoteBranchesErr = repo.RemoteBranches(ctx) })
+				reads.Go(func() { remotes, _ = repo.Remotes(ctx) })
+				reads.Go(func() { stashes, stashesErr = repo.Stashes(ctx) })
+				reads.Go(func() { tags, tagsErr = repo.Tags(ctx) })
+				reads.Go(func() { worktrees, worktreesErr = repo.Worktrees(ctx) })
+				reads.Go(func() { submodules, submodulesErr = repo.SubmoduleInventory(ctx) })
 				reads.Go(func() {
-					operation, _ = repo.Operation(a.ctx)
+					operation = checkout.Operation
 					if commitOperation(operation.Kind) {
-						operationMessage, _ = repo.OperationMessage(a.ctx)
+						operationMessage, _ = repo.OperationMessage(ctx)
 					}
 				})
 			}
 			reads.Wait()
+			if statusErr != nil {
+				break
+			}
+			after, e := repo.CheckoutIdentity(ctx)
+			if e != nil {
+				statusErr = e
+				break
+			}
+			if checkout == after && checkout.Head == status.Head && checkout.Operation == operation && strings.TrimPrefix(checkout.Symbolic, "refs/heads/") == status.Branch {
+				break
+			}
+			statusErr = errors.New("Repository changed while reading the snapshot. Retry refresh.")
 		}
 
 		var alias string
@@ -888,6 +947,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 				return
 			}
 			a.loading = false
+			a.fullReadRoot = ""
 			pendingTab := a.repositoryTabs != nil && a.repositoryTabs.opening == a
 			if pendingTab {
 				defer a.repositoryTabs.opened(a)
@@ -958,11 +1018,25 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 				// Keep the text so the reader can choose what to do with the draft.
 				a.amend = false
 			}
-			a.status = status
-			a.localWatch.stamp = localStamp
-			if localStamp != "" {
-				a.localWatch.lastError = ""
+			if localChange {
+				for _, entries := range [][]gitrepo.Entry{a.status.Entries, status.Entries} {
+					for _, e := range entries {
+						if e.Path == ".gitmodules" {
+							localChange = false
+						}
+						if e.IsSubmodule() {
+							affected[e.Path] = true
+						}
+					}
+				}
+				if checkout.Head != a.checkoutIdentity.Head || checkout.Operation != a.checkoutIdentity.Operation {
+					localChange = false
+				}
 			}
+			a.status = status
+			a.checkoutIdentity = checkout
+			a.localWatch.refStamp = refStamp
+			a.installWatchBaseline(seq, repo, baseline)
 			a.invalidateWorktreeOverview()
 			a.headMessage = headMessage
 			a.applyCommitIdentity(seq, repo.Root, identity)
@@ -980,7 +1054,7 @@ func (a *app) readRepositoryAtRoot(path string, reset bool, previousRoot string)
 			a.stashes = stashes
 			a.tags = tags
 			a.worktrees = worktrees
-			a.submodules = submodules
+			a.publishSubmoduleInventory(ctx, seq, repo, submodules, reset, localChange, affected)
 			a.operation = operation
 			a.loadErr = ""
 			a.activationRefresh = false
@@ -1638,6 +1712,9 @@ func (a *app) performDone(label, success string, done func(error), fn func(conte
 // reports whether the work started: a caller that keeps state for a retry
 // needs to know when nothing was launched.
 func (a *app) performDoneAs(busy busyLabel, label, success string, done func(error), fn func(context.Context, *gitrepo.Repository) error) bool {
+	return a.performAndRefresh(busy, label, success, done, fn, a.reload)
+}
+func (a *app) performAndRefresh(busy busyLabel, label, success string, done func(error), fn func(context.Context, *gitrepo.Repository) error, refresh func()) bool {
 	if a.repo == nil || a.busy || a.loading || a.tabSnapshotUnavailable() {
 		return false
 	}
@@ -1678,7 +1755,7 @@ func (a *app) performDoneAs(busy busyLabel, label, success string, done func(err
 				// path and branch in its form.
 				done(err)
 			}
-			a.reload()
+			refresh()
 			a.invalidate()
 		})
 	}()
@@ -1810,13 +1887,17 @@ func (a *app) fetchRemotes(targets []gitrepo.Remote, mode gitrepo.FetchMode, lab
 	remotes := append([]gitrepo.Remote(nil), targets...)
 	a.lastAutoFetch = time.Now()
 	a.fetching = true
-	started := a.performDoneAs("", label, success, func(error) {
+	expected := a.checkoutIdentity
+	var needsFull bool
+	started := a.performAndRefresh("", label, success, func(error) {
 		a.fetching = false
 		// A fetch can finish after HEAD moved in another process or tab.
 		// Treat its reload like a tab activation so Amend is dropped for a
 		// commit the draft no longer belongs to.
 		a.activationRefresh = true
 	}, func(ctx context.Context, repo *gitrepo.Repository) error {
+		before, e := repo.CheckoutIdentity(ctx)
+		needsFull = e != nil || before != expected
 		for i, remote := range remotes {
 			remoteCtx := ctx
 			if len(remotes) > 1 {
@@ -1827,6 +1908,12 @@ func (a *app) fetchRemotes(targets []gitrepo.Remote, mode gitrepo.FetchMode, lab
 			}
 		}
 		return nil
+	}, func() {
+		if needsFull {
+			a.reload()
+		} else {
+			a.refreshRefs()
+		}
 	})
 	if !started {
 		a.fetching = false

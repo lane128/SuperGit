@@ -116,7 +116,10 @@ func (a *app) copyWindowPreferences(source *app) {
 // use canChange.
 func (tabs *repositoryTabs) canSwitch() bool {
 	a := tabs.active
-	return !a.repositoryOpenPending() && !a.localWatch.closed && !a.loading && !a.exclusiveBusy() && !a.repositoryChooserOpen &&
+	// An existing checkout owns its reads. Navigating away need not wait for
+	// them, unlike startup restoration which is still assembling the tab list.
+	readAllowsSwitch := !a.loading || (a.repo != nil && !tabs.sessionState.restoring)
+	return !a.repositoryOpenPending() && !a.localWatch.closed && readAllowsSwitch && !a.exclusiveBusy() && !a.repositoryChooserOpen &&
 		!a.hasPendingDialog(toastMain) && !a.hasPendingDialog(toastSettings)
 }
 
@@ -302,15 +305,18 @@ func (tabs *repositoryTabs) activate(next *app, fresh bool) {
 // unchanged snapshot keeps its selection, pagination and History navigation.
 func (a *app) revalidateActivatedRepository() {
 	repo, seq, baseline := a.repo, a.loadSeq, a.localWatch.stamp
+	expectedRefs := a.localWatch.refStamp
 	entries := slices.Clone(a.status.Entries)
 	submodules := a.nextSubmoduleProbes()
 	forceReload := a.loadErr != "" || baseline == ""
 	a.activationRefresh = true
+	a.checkingTab = true
 	a.loading, a.loadSince = true, time.Now()
 	go func() {
 		ctx, cancel := context.WithTimeout(a.ctx, localBackgroundInterval)
 		defer cancel()
 		unchanged := false
+		var refs string
 		var updates []gitrepo.Submodule
 		if !forceReload {
 			current, err := gitrepo.Open(ctx, repo.Root)
@@ -318,15 +324,29 @@ func (a *app) revalidateActivatedRepository() {
 				stamp, err := readLocalWatchStamp(ctx, current, entries)
 				unchanged = err == nil && stamp == baseline
 				if unchanged {
-					updates = readSubmoduleUpdates(a.ctx, current, submodules)
+					refs, err = current.RefStamp(ctx)
+					unchanged = err == nil
+					updates = readSubmoduleUpdates(ctx, repo, submodules)
 				}
 			}
 		}
 		a.hopToMain(func() {
-			if a.localWatch.closed || a.loadSeq != seq || a.repo != repo || a.activeRepositorySession() != a {
+			if a.localWatch.closed || a.loadSeq != seq || a.repo != repo {
+				return
+			}
+			a.checkingTab = false
+			if a.activeRepositorySession() != a {
+				// No writes can be initiated here. Revalidate on the next visit
+				// instead of leaving this inactive tab stuck in its loading state.
+				a.activationRefresh, a.loading = false, false
+				a.invalidate()
 				return
 			}
 			if unchanged && !a.applySubmoduleUpdates(updates) {
+				if refs != expectedRefs {
+					a.refreshRefs()
+					return
+				}
 				a.activationRefresh, a.loading = false, false
 				a.localWatch.next = time.Now().Add(localProbeInterval)
 				a.invalidate()
@@ -343,7 +363,7 @@ func (a *app) tabSnapshotUnavailable() bool {
 
 func (tabs *repositoryTabs) canClose(target *app) bool {
 	return slices.Contains(tabs.sessions, target) && (target.repo != nil || len(tabs.sessions) > 1) &&
-		tabs.canChange() && !target.busy && !target.fetching && !target.loading
+		tabs.canSwitch() && !target.busy && !target.fetching && (!target.loading || target != tabs.active)
 }
 
 func (tabs *repositoryTabs) askClose(target *app) {
@@ -355,7 +375,7 @@ func (tabs *repositoryTabs) askClose(target *app) {
 		return
 	}
 	a := tabs.active
-	a.askConfirm(a.t("closeRepositoryTab"), a.tf("closeRepositoryDraft", target.repo.Root), a.t("close"), false, func() {
+	a.askConfirmInWindow(toastMain, "", a.t("closeRepositoryTab"), a.tf("closeRepositoryDraft", target.repo.Root), a.t("close"), false, func() {
 		if tabs.canClose(target) {
 			tabs.close(target)
 		}
@@ -711,9 +731,23 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 		if !blocked && len(tabs.sessions) > 1 {
 			tab.Drag(repositoryTabDrag{session: session})
 		}
+		canClose := tabs.canClose(session)
+		// When close is unavailable, keep its space inside the selectable tab
+		// instead of leaving a disabled button over part of an inactive tab.
+		wholeTab := !selected && !blocked && !canClose
+		dirty := session.repo != nil && session.status.HasWorkspaceChanges()
+		if wholeTab && dirty {
+			tab.Description(tip + " · " + a.t("repositoryTabUncommitted"))
+		}
 		tab.Children(func() {
 			ui.Icon(c, icon).FontSize(scaledFont(12)).TextColor(ink).Shrink(0)
 			display.Text(c, caption, display.TextProps{Strong: selected, FontSize: scaledFont(11.5)}).TextColor(ink).SingleLine().MaxWidth(repositoryTabCaptionWidth)
+			if wholeTab {
+				slot := ui.Box(c).Width(max(0, scaledFont(workbenchButtonBaseHeight)-6)).AlignItems(ui.Center).Justify(ui.Center)
+				if dirty {
+					slot.Children(func() { size := scaledFont(6); ui.Box(c).Size(size, size).Radius(size / 2).Background(ink) })
+				}
+			}
 		})
 		if tabs.focusTab == session {
 			tab.Focus()
@@ -737,10 +771,12 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 			}
 		}
 		activate = tab.Clicked() && !blocked
-		canClose := tabs.canClose(session)
+		if wholeTab {
+			return
+		}
 		if canClose {
 			items := []overlay.MenuItem{{Key: "close", Label: a.t("closeTab"), Icon: lucide.X()}}
-			if session.repo != nil {
+			if session.repo != nil && tabs.canChange() && !session.loading {
 				items = append(items, overlay.MenuItem{Key: "alias", Label: a.t("setRepositoryAlias"), Icon: lucide.Pencil()})
 			}
 			choice := overlay.ContextMenu(c.Key("tab-menu"), tab, overlay.DropdownMenuProps{Items: items})
@@ -772,7 +808,6 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 		close := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, !canClose || clipped, false).
 			Width(scaledFont(workbenchButtonBaseHeight)).PaddingX(0).Label(closeLabel).Tooltip(closeLabel)
 		styleTabClose(close, tk, ink)
-		dirty := session.repo != nil && session.status.HasWorkspaceChanges()
 		if dirty {
 			close.Description(a.t("repositoryTabUncommitted"))
 		}
