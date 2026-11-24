@@ -278,6 +278,7 @@ type app struct {
 	// Tab identity includes repository, SHA and the file's Index/worktree version.
 	detailContexts              detailContextsState
 	detailTabStrip              ui.ScrollState
+	detailTabViewport           float32
 	detailReveal                bool
 	commitMessageFocusRoot      string
 	commitMessageFocusSeq       uint64

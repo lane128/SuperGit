@@ -45,7 +45,7 @@ func TestHistoryDetailTabOverflowStaysVisibleAndDraggable(t *testing.T) {
 	// Find the painted thumb with the pointer away from any of the tabs.
 	thumbX, thumbY := -1, -1
 	paint := view.Image()
-	for y := 28; y < 38 && thumbX < 0; y++ {
+	for y := 36; y < 42 && thumbX < 0; y++ {
 		for x := 8; x < int(paneWidth)-8; x++ {
 			p := paint.RGBAAt(x, y)
 			if p.R == 0 && p.G == 160 && p.B == 80 {
@@ -77,7 +77,7 @@ func TestHistoryDetailTabOverflowStaysVisibleAndDraggable(t *testing.T) {
 		t.Fatalf("all tabs should fit in the wider pane: %+v", a.detailTabStrip)
 	}
 	paint = view.Image()
-	for y := 28; y < 38; y++ {
+	for y := 36; y < 42; y++ {
 		for x := range int(paneWidth) {
 			p := paint.RGBAAt(x, y)
 			if p.R == 0 && p.G == 160 && p.B == 80 {

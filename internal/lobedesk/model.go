@@ -6,8 +6,44 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-text/typesetting/segmenter"
+
 	"supergit/internal/gitrepo"
 )
+
+// elideDetailName measures the final caption with the same weight used for
+// layout. Segmenter is already shipped by our text stack and implements UAX29,
+// so combining marks, flags and ZWJ emoji survive as complete graphemes.
+func elideDetailName(text string, width float32, measure func(string) float32) string {
+	if measure(text) <= width {
+		return text
+	}
+	if width <= 0 || measure("…") > width {
+		return ""
+	}
+	var seg segmenter.Segmenter
+	seg.Init([]rune(text))
+	iter := seg.GraphemeIterator()
+	var clusters []string
+	for iter.Next() {
+		clusters = append(clusters, string(iter.Grapheme().Text))
+	}
+	candidate := func(n int) string {
+		left := (n + 1) / 2
+		right := n / 2
+		return strings.Join(clusters[:left], "") + "…" + strings.Join(clusters[len(clusters)-right:], "")
+	}
+	low, high := 0, len(clusters)-1
+	for low < high {
+		mid := (low + high + 1) / 2
+		if measure(candidate(mid)) <= width {
+			low = mid
+		} else {
+			high = mid - 1
+		}
+	}
+	return candidate(low)
+}
 
 func splitRepoPath(value string) (name, dir string) {
 	value = strings.TrimSuffix(value, "/")

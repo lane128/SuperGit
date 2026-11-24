@@ -5,6 +5,34 @@ import (
 	"testing"
 )
 
+func TestDetailTabTrackPreservesKeyboardFocus(t *testing.T) {
+	a := &app{page: "history", locale: localeEnglish, detailReveal: true}
+	for _, path := range []string{"first-long-configuration-file.go", "second-long-configuration-file.go"} {
+		a.detailTabs().Open(detailFileKey{Path: path})
+	}
+	view := pageTester(a, func(c *ui.Context) {
+		ui.Column(c).Width(230).Height(200).Children(func() { a.historyDiffPane(c) })
+	})
+	view.Frame()
+	tab, ok := view.AccessByRole(ui.RoleTab, "second-long-configuration-file.go")
+	if !ok {
+		t.Fatal("missing tab")
+	}
+	view.ClickAt(tab.Bounds.X+tab.Bounds.W/2, tab.Bounds.Y+tab.Bounds.H/2)
+	view.Press(110, 36.5)
+	view.Move(2, 36.5)
+	view.Release(2, 36.5)
+	view.Frame()
+	tab, _ = view.AccessByRole(ui.RoleTab, "second-long-configuration-file.go")
+	if !tab.Focused {
+		t.Fatal("scroll track cleared the tab focus")
+	}
+	view.Key(0, ui.KeyHome)
+	if !a.detailTabs().Active.Summary {
+		t.Fatal("Home stopped navigating after dragging the track")
+	}
+}
+
 func TestDetailTabStripHasOneTabStop(t *testing.T) {
 	a := &app{page: "history"}
 	a.detailTabs().Open(detailFileKey{Path: "a.go"})

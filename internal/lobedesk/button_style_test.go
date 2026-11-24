@@ -99,7 +99,7 @@ func TestFileTabSelectionPaintsThroughCloseTarget(t *testing.T) {
 		view := ui.NewTester(func(c *ui.Context) {
 			c.SetTheme(config.Theme(dark))
 			tk := theme.TokensOf(c)
-			ui.Row(c).FillWidth().Height(32).Background(tk.BgLayout).Children(func() {
+			ui.Row(c).FillWidth().Height(36).Background(tk.BgLayout).Children(func() {
 				for _, f := range []detailFileKey{first, second} {
 					a.detailTabButton(c, tk, detailTabKey{File: f})
 				}
@@ -114,7 +114,7 @@ func TestFileTabSelectionPaintsThroughCloseTarget(t *testing.T) {
 			for _, f := range []detailFileKey{first, second} {
 				want := tk.BgLayout
 				if f == active {
-					want, _ = workbenchButtonColors(tk, buttonNormal, false, false, false, true)
+					want = tk.BgContainer
 				}
 				for role, name := range map[ui.Role]string{ui.RoleTab: f.Path, ui.RoleButton: a.t("close") + " " + f.Path} {
 					node, ok := view.AccessByRole(role, name)

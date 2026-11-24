@@ -37,6 +37,7 @@ app: build
 	$(GO) run ./tools/appversion -in packaging/Info.plist -out "$(APP)/Contents/Info.plist"
 	plutil -insert CFBundleDocumentTypes -json '$(FOLDER_DOCUMENT_TYPES)' "$(APP)/Contents/Info.plist"
 	cp packaging/SuperGit.icns "$(APP)/Contents/Resources/SuperGit.icns"
+	cp internal/lobedesk/fonts/OFL.txt "$(APP)/Contents/Resources/Font-Licenses.txt"
 	codesign --force --sign - "$(APP)"
 	codesign --verify --verbose=2 "$(APP)"
 

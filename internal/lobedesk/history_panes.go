@@ -406,12 +406,16 @@ func (a *app) historyDiffPane(c *ui.Context) {
 	pane := ui.Column(c).Grow(1).Basis(0).MinWidth(0).MinHeight(0).AlignSelf(ui.Stretch)
 	a.wireDiffFind(c, pane).
 		Children(func() {
-			// Keep the thumb visible on overflow so a clipped tab can be reached
-			// with a mouse even before the pointer enters the strip.
-			strip := ui.ScrollHorizontal(c).Height(32).Shrink(0).FillWidth().Background(tk.BgLayout).
-				KeepScrollbars(true).TrackScroll(&a.detailTabStrip)
+			strip := ui.ScrollHorizontal(c).Height(scaledFont(36)).Shrink(0).FillWidth().Background(tk.BgLayout).
+				Scrollbars(false).TrackScroll(&a.detailTabStrip)
+			width := strip.Bounds().W
+			if width > 0 && width != a.detailTabViewport {
+				a.detailTabViewport = width
+				a.detailReveal = true
+				c.Invalidate()
+			}
 			strip.Children(func() {
-				ui.Row(c).Height(32).AlignItems(ui.Center).
+				ui.Row(c).Height(scaledFont(36)).AlignItems(ui.Center).
 					Role(ui.RoleTabList).Label(a.t("detailTabs")).FocusGroup(ui.Horizontal).Children(func() {
 					a.detailTabButton(c, tk, detailTabKey{Summary: true})
 					if a.detailFileShown() {
@@ -423,15 +427,7 @@ func (a *app) historyDiffPane(c *ui.Context) {
 					}
 				})
 			})
-			previousWidth := ui.Local(strip, "detail-tab-strip-width", func() float32 { return 0 })
-			width := strip.Bounds().W
-			if width > 0 && *previousWidth > 0 && width < *previousWidth-0.5 {
-				// Existing horizontal offset can leave the active tab outside a
-				// narrower viewport. Reveal it again once new bounds are known.
-				a.detailReveal = true
-				a.invalidate()
-			}
-			*previousWidth = width
+			a.detailTabTrack(c.Key("detail-track"), tk)
 			if a.worktreeSelected && !a.conflictEditorTakesThePane() {
 				a.worktreeCommitPane(c.Key("composer"))
 			}
@@ -480,39 +476,68 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 	}
 	c = c.Key(key)
 	active := a.detailTabs().Active == key
-	wrapper := ui.Row(c).Height(32).Shrink(0).MaxWidth(260).AlignItems(ui.Center).Padding(0, 1, 2, 0)
-	if active {
-		wrapper.Padding(0, 0, 2, 0)
+	code := ""
+	if !key.Summary {
+		code = a.detailTabStatus(key.File)
 	}
-	ink := paintWorkbenchTab(wrapper, tk, active, 2)
-	var close ui.Element
+	measure := func(text string) float32 {
+		width, _ := c.MeasureText(0, ui.Span{Text: text, Size: scaledFont(12), Weight: 600})
+		return width
+	}
+	limit := scaledFont(240)
+	if a.worktreeSelected {
+		limit = scaledFont(280)
+	}
+	if a.detailTabViewport > 0 {
+		limit = min(limit, a.detailTabViewport)
+	}
+	closeWidth := float32(0)
+	if !key.Summary {
+		closeWidth = 24
+	}
+	badgeWidth := float32(0)
+	if code != "" {
+		badgeWidth = scaledFont(18) + 6
+	}
+	suffixWidth := measure(suffix)
+	nameWidth := max(0, min(measure(name), limit-closeWidth-20-badgeWidth-suffixWidth))
+	width := 20 + badgeWidth + nameWidth + suffixWidth + closeWidth
+	wrapper := ui.Row(c).Height(scaledFont(36)).Width(width).Shrink(0).AlignItems(ui.Center)
+	ink := paintDetailTab(wrapper, tk, active)
 	wrapper.Children(func() {
-		const tabPadding, captionWidth = 10, 204
-		tab := ui.ButtonBase(c).Label(name+suffix).Row().Height(30).Padding(0, tabPadding).
-			MinWidth(0).MaxWidth(captionWidth + 2*tabPadding).AlignItems(ui.Center).
+		tab := ui.ButtonBase(c).Label(name+suffix).Row().Height(scaledFont(36)).Padding(0, 10).
+			Width(width - closeWidth).Shrink(0).AlignItems(ui.Center).
+			FocusRing(true).FocusRingColor(tk.Blue).FocusRingOffset(-2).
 			Role(ui.RoleTab).AccessSelected(active)
 		a.wireDetailTabKeys(tab, key)
 		if path != "" {
-			tab.Tooltip(path + suffix)
+			description := path + suffix
+			if code != "" {
+				description += " · " + a.detailStatusMeaning(code)
+			}
+			tab.Tooltip(description)
 		}
 		tab.Children(func() {
-			props := display.TextProps{FontSize: scaledFont(11.5), Strong: active}
-			if path != "" {
-				if code := a.detailTabStatus(key.File); code != "" {
-					display.Text(c, code, display.TextProps{Code: true, FontSize: scaledFont(10), Type: display.TextSecondary}).Font(a.patchFontFamily()).Shrink(0).Padding(0, 4).AccessHidden(true)
-				}
+			weight := 400
+			if active {
+				weight = 600
 			}
-			// The file name can shorten, but the two versions must stay distinct.
-			display.Text(c, name, props).TextColor(ink).SingleLine().MinWidth(0).Shrink(1)
+			if code != "" {
+				a.detailStatusBadge(c, tk, code)
+				ui.Box(c).Width(6).Shrink(0)
+			}
+			ui.Text(c, elideDetailName(name, nameWidth, measure)).FontSize(scaledFont(12)).FontWeight(weight).
+				TextColor(ink).SingleLine().Width(nameWidth).Shrink(0).AccessHidden(true)
 			if suffix != "" {
-				display.Text(c, suffix, props).TextColor(ink).SingleLine().Shrink(0)
+				ui.Text(c, suffix).FontSize(scaledFont(12)).FontWeight(weight).TextColor(ink).
+					SingleLine().Width(suffixWidth).Shrink(0).AccessHidden(true)
 			}
 		})
 		if tab.Clicked() {
 			a.activateDetailTab(key)
 		}
 		if !key.Summary {
-			close = ui.ButtonBase(c).Label(a.t("close") + " " + path).Width(22).Height(26).Shrink(0).Center()
+			close := ui.ButtonBase(c).Label(a.t("close") + " " + path).Width(24).Height(scaledFont(30)).Shrink(0).Center()
 			a.wireDetailTabKeys(close, key)
 			styleTabClose(close, tk, ink)
 			close.Children(func() { ui.Icon(c, lucide.X()).FontSize(scaledFont(12)) })
@@ -524,15 +549,10 @@ func (a *app) detailTabButton(c *ui.Context, tk *theme.Tokens, key detailTabKey)
 		a.focusRequestedDetailTab(tab, key)
 	})
 	// A click inside the wrapper can change the active tab mid-frame.
-	// Only the resulting selection may consume the pending reveal. Reveal the
-	// Close action, not just the wrapper: on a narrow strip the wrapper can be
-	// visible while its trailing Close button is clipped by the viewport.
+	// Only the resulting selection may consume the pending reveal. The full
+	// wrapper now fits the viewport, including its fixed close slot.
 	if a.detailTabs().Active == key && a.detailReveal {
-		if key.Summary {
-			wrapper.ScrollIntoView()
-		} else {
-			close.ScrollIntoView()
-		}
+		wrapper.ScrollIntoView()
 		a.detailReveal = false
 	}
 }
