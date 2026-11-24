@@ -160,6 +160,33 @@ func TestInitialWatcherRetainsEditAfterStatus(t *testing.T) {
 	}
 }
 
+// Working-tree details can be read before the watcher baseline finishes
+// observing already-dirty files. Those reads must be repeated after the
+// baseline lands, or the save between them becomes invisible to polling.
+func TestLateWatcherBaselineReconcilesWorkingTreeDetails(t *testing.T) {
+	a, cbs, _ := worktreeApp(t)
+	a.selectedPath = "base.txt"
+	baseline := make(chan string, 1)
+	a.installWatchBaseline(a.loadSeq, a.repo, baseline)
+	a.loadDiff()
+	if !a.localWatch.detailsPending {
+		t.Fatal("diff read before the baseline was not remembered")
+	}
+	if a.diffSeq != 1 {
+		t.Fatalf("diff read did not start: %d", a.diffSeq)
+	}
+	baseline <- "baseline"
+	for a.localWatch.initializing {
+		runContinuation(t, cbs)
+	}
+	if a.diffSeq != 2 {
+		t.Fatalf("late baseline did not re-read working-tree details: %d", a.diffSeq)
+	}
+	for a.diffLoading {
+		runContinuation(t, cbs)
+	}
+}
+
 func TestExternalCheckoutMutationDuringFetch(t *testing.T) {
 	for _, kind := range []string{"head", "index", "operation"} {
 		t.Run(kind, func(t *testing.T) {

@@ -762,6 +762,7 @@ func (a *app) readRepositoryScope(path string, reset bool, previousRoot string, 
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.loadCancel = cancel
 	a.localWatch.initializing = false
+	a.localWatch.detailsPending = false
 	a.cancelLocalProbe()
 	a.resetHistoryTraversal()
 	a.resetFileHistory()
@@ -1383,9 +1384,25 @@ func (a *app) previewWorkspaceFile(path string, staged bool) {
 	a.invalidate()
 }
 
+// reloadWorkingTreeDetails re-reads the working-tree content shown in the
+// detail pane when a stale read must be replaced without a new parent snapshot.
+func (a *app) reloadWorkingTreeDetails() {
+	if a.worktreeSelected {
+		a.loadWorktreeOverview()
+	}
+	if a.selectedPath != "" {
+		a.loadDiff()
+	}
+}
+
 func (a *app) loadDiff() {
 	if a.repo == nil || a.selectedPath == "" {
 		return
+	}
+	if a.localWatch.initializing {
+		// The watcher baseline still being established may already include a
+		// save this read will miss. Re-read the content once it lands.
+		a.localWatch.detailsPending = true
 	}
 	a.diffSeq++
 	seq := a.diffSeq

@@ -21,6 +21,7 @@ const localBackgroundInterval = 15 * time.Second
 
 type localRepositoryWatch struct {
 	initializing             bool
+	detailsPending           bool
 	refStamp                 string
 	stamp                    string
 	seq                      uint64
@@ -201,11 +202,12 @@ func (a *app) applySubmoduleUpdates(updates []gitrepo.Submodule) (reload bool) {
 				changed = true
 				continue
 			}
+			// A refresh marks rows pending but keeps their last known detail.
+			// A moved checkout still needs reconciliation then: the parent
+			// gitlink diff was read before this observation landed.
 			known := before.CheckoutKnown || before.Initialized || before.Current != "" || (!before.Pending && before.Error == "")
-			if !before.Pending && known && (before.Initialized != after.Initialized || before.Current != after.Current) {
-				return true
-			}
-			if !before.Pending && before.ChangedFiles == after.ChangedFiles && before.Branch == after.Branch && before.Dirty == after.Dirty &&
+			reconcile := known && (before.Initialized != after.Initialized || before.Current != after.Current)
+			if !reconcile && !before.Pending && before.ChangedFiles == after.ChangedFiles && before.Branch == after.Branch && before.Dirty == after.Dirty &&
 				(before.Error == "") == (after.Error == "") {
 				continue
 			}
@@ -213,12 +215,25 @@ func (a *app) applySubmoduleUpdates(updates []gitrepo.Submodule) (reload bool) {
 			after.Name, after.Recorded, after.Index = before.Name, before.Recorded, before.Index
 			a.submodules[i] = after
 			changed = true
+			reload = reload || reconcile
 		}
 	}
 	if changed {
 		a.invalidate()
 	}
-	return false
+	return reload
+}
+
+// applySubmoduleDetail publishes one asynchronous child observation from a
+// parent snapshot. A moved checkout keeps the parent snapshot valid but makes
+// any displayed gitlink diff stale, so re-read the working-tree details.
+func (a *app) applySubmoduleDetail(seq uint64, repo *gitrepo.Repository, m gitrepo.Submodule) {
+	if a.repo != repo || a.loadSeq != seq || a.localWatch.closed {
+		return
+	}
+	if a.applySubmoduleUpdates([]gitrepo.Submodule{m}) {
+		a.reloadWorkingTreeDetails()
+	}
 }
 
 func (a *app) cancelLocalProbe() {
@@ -363,7 +378,7 @@ func (a *app) startLocalWatching() {
 func (a *app) installWatchBaseline(seq uint64, repo *gitrepo.Repository, baseline <-chan string) {
 	a.localWatch.stamp = ""
 	a.localWatch.initializing = true
-	installBaseline := func(stamp string) {
+	installBaseline := func(stamp string) bool {
 		if seq == a.loadSeq && a.repo == repo && !a.localWatch.closed {
 			a.localWatch.stamp = stamp
 			a.localWatch.initializing = false
@@ -371,13 +386,26 @@ func (a *app) installWatchBaseline(seq uint64, repo *gitrepo.Repository, baselin
 			if stamp != "" {
 				a.localWatch.lastError = ""
 			}
+			return true
 		}
+		return false
 	}
 	select {
 	case stamp := <-baseline:
 		installBaseline(stamp)
 	default:
-		go func() { stamp := <-baseline; a.hopToMain(func() { installBaseline(stamp) }) }()
+		go func() {
+			stamp := <-baseline
+			a.hopToMain(func() {
+				if installBaseline(stamp) && a.localWatch.detailsPending {
+					// Working-tree details were read before this baseline
+					// existed. A save between those reads and this observation
+					// would match the installed baseline, so read them again.
+					a.localWatch.detailsPending = false
+					a.reloadWorkingTreeDetails()
+				}
+			})
+		}()
 	}
 }
 
@@ -408,11 +436,7 @@ func (a *app) publishSubmoduleInventory(ctx context.Context, seq uint64, repo *g
 			}
 		}
 		go repo.InspectSubmodules(ctx, inventory, func(m gitrepo.Submodule) {
-			a.hopToMain(func() {
-				if a.repo == repo && a.loadSeq == seq && !a.localWatch.closed {
-					a.applySubmoduleUpdates([]gitrepo.Submodule{m})
-				}
-			})
+			a.hopToMain(func() { a.applySubmoduleDetail(seq, repo, m) })
 		})
 	}
 }

@@ -7,6 +7,36 @@ import (
 	"time"
 )
 
+// A refresh marks known rows pending while their detail read is queued. A
+// child checkout that moves in that window must still reconcile the parent
+// gitlink diff, which was read before the new observation landed.
+func TestPendingChildHeadChangeReconcilesParent(t *testing.T) {
+	a := &app{submodules: []gitrepo.Submodule{{Path: "child", CheckoutKnown: true, Initialized: true, Current: "B", Index: "A", Recorded: "A", Pending: true}}}
+	if !a.applySubmoduleUpdates([]gitrepo.Submodule{{Path: "child", Initialized: true, Current: "C"}}) {
+		t.Fatal("pending known child moved B to C without parent reconciliation")
+	}
+	if got := a.submodules[0].Current; got != "C" {
+		t.Fatalf("reconciled row kept stale checkout %q", got)
+	}
+}
+
+func TestPendingChildDetailReadReconcilesParentDiff(t *testing.T) {
+	a, cbs, _ := worktreeApp(t)
+	a.selectedPath = "base.txt"
+	a.loadSeq = 3
+	a.submodules = []gitrepo.Submodule{{
+		Path: "module", Initialized: true, CheckoutKnown: true,
+		Current: "B", Index: "A", Recorded: "A", Pending: true,
+	}}
+	a.applySubmoduleDetail(3, a.repo, gitrepo.Submodule{Path: "module", Initialized: true, Current: "C"})
+	if a.diffSeq != 1 {
+		t.Fatalf("moved pending child did not re-read working-tree details: %d", a.diffSeq)
+	}
+	for a.diffLoading {
+		runContinuation(t, cbs)
+	}
+}
+
 func TestChildErrorRecoveryReconcilesMovedKnownHead(t *testing.T) {
 	a := &app{submodules: []gitrepo.Submodule{{Path: "child", Initialized: true, Current: "B", Index: "A", Recorded: "A", Error: "temporarily unavailable"}}}
 	if !a.applySubmoduleUpdates([]gitrepo.Submodule{{Path: "child", Initialized: true, Current: "C"}}) {
