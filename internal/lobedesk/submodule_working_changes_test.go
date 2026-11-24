@@ -167,7 +167,7 @@ func TestLocalWatchRefreshesSubmoduleCountWithUnchangedParentStatus(t *testing.T
 		t.Fatal(err)
 	}
 	a.openRepository(a.repo.Root, false)
-	for a.loading {
+	for a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	if a.localWatch.stamp == "" || len(a.submodules) != 1 {
@@ -185,7 +185,7 @@ func TestLocalWatchRefreshesSubmoduleCountWithUnchangedParentStatus(t *testing.T
 	epoch := a.loadSeq
 	a.lineSel = map[int]bool{4: true}
 	a.pollLocalChanges(time.Now().Add(time.Minute))
-	for a.localWatch.reading || a.loading {
+	for a.localWatch.reading || a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	if a.loadSeq != epoch || !a.lineSel[4] {
@@ -197,7 +197,7 @@ func TestLocalWatchRefreshesSubmoduleCountWithUnchangedParentStatus(t *testing.T
 	}
 	writeSubmoduleFixtureFile(t, child, "another-new.txt", "one more untracked file\n")
 	a.pollLocalChanges(a.localWatch.next.Add(time.Second))
-	for a.localWatch.reading || a.loading {
+	for a.localWatch.reading || a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	if n := a.submodules[0].ChangedFiles; n != 4 || a.loadSeq != epoch || !a.lineSel[4] {
@@ -208,7 +208,7 @@ func TestLocalWatchRefreshesSubmoduleCountWithUnchangedParentStatus(t *testing.T
 	}
 	submoduleFixtureGit(t, child, "restore", "second.txt")
 	a.revalidateActivatedRepository()
-	for a.loading {
+	for a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	if n := a.submodules[0].ChangedFiles; n != 2 {
@@ -219,7 +219,7 @@ func TestLocalWatchRefreshesSubmoduleCountWithUnchangedParentStatus(t *testing.T
 		t.Fatal(err)
 	}
 	a.pollLocalChanges(a.localWatch.next.Add(time.Second))
-	for a.localWatch.reading || a.loading {
+	for a.localWatch.reading || a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	row, _ = sidebarTester(a).AccessByRole(ui.RoleButton, "module")
@@ -246,7 +246,7 @@ func TestSubmoduleWatchClearsBadgeWhenParentSnapshotWasClean(t *testing.T) {
 		t.Fatalf("fixture changed the parent stamp: %v", err)
 	}
 	a.pollLocalChanges(time.Now())
-	for a.localWatch.reading || a.loading {
+	for a.localWatch.reading || a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	if a.submodules[0].ChangedFiles != 0 {
@@ -263,7 +263,7 @@ func TestSubmoduleWatchChecksEntriesHiddenByNestedIgnore(t *testing.T) {
 	submoduleFixtureGit(t, middle, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "Add leaf")
 	submoduleFixtureGit(t, a.repo.Root, "commit", "-am", "Update middle gitlink")
 	a.openRepository(a.repo.Root, false)
-	for a.loading {
+	for a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	if len(a.submodules) != 1 || a.submodules[0].ChangedFiles != 0 {
@@ -276,7 +276,7 @@ func TestSubmoduleWatchChecksEntriesHiddenByNestedIgnore(t *testing.T) {
 		t.Fatalf("parent should not have child flags for this fixture: %+v, %v", status.Entries, err)
 	}
 	a.pollLocalChanges(time.Now().Add(time.Minute))
-	for a.localWatch.reading || a.loading {
+	for a.localWatch.reading || a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	if n := a.submodules[0].ChangedFiles; n != 1 {
@@ -293,7 +293,7 @@ func TestSubmoduleWatchSynchronizesRowsForOneCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.openRepository(a.repo.Root, false)
-	for a.loading {
+	for a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	module := a.submodules[0]
@@ -301,7 +301,7 @@ func TestSubmoduleWatchSynchronizesRowsForOneCheckout(t *testing.T) {
 	module.Name, module.ChangedFiles = "alias", 2
 	a.submodules = append(a.submodules, module)
 	a.pollLocalChanges(a.localWatch.next.Add(time.Second))
-	for a.localWatch.reading || a.loading {
+	for a.localWatch.reading || a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	if n := a.submodules[1].ChangedFiles; n != 1 || a.submodules[1].Name != "alias" {
@@ -376,7 +376,7 @@ func TestSubmoduleWatchRecoversFromChildStatusError(t *testing.T) {
 	fault := setupSubmoduleStatusFault(t, child, a.repo.Root)
 	writeSubmoduleFixtureFile(t, filepath.Dir(fault), filepath.Base(fault), "child-error\n")
 	a.openRepository(a.repo.Root, false)
-	for a.loading {
+	for a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	if a.loadErr != "" || len(a.submodules) != 1 || a.submodules[0].Error == "" || a.submodules[0].ChangedFiles != 0 {
@@ -384,7 +384,7 @@ func TestSubmoduleWatchRecoversFromChildStatusError(t *testing.T) {
 	}
 	writeSubmoduleFixtureFile(t, filepath.Dir(fault), filepath.Base(fault), "\n")
 	a.pollLocalChanges(a.localWatch.next.Add(time.Second))
-	for a.localWatch.reading || a.loading {
+	for a.localWatch.reading || a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	if a.submodules[0].Error != "" || a.submodules[0].ChangedFiles != 1 {
@@ -392,7 +392,7 @@ func TestSubmoduleWatchRecoversFromChildStatusError(t *testing.T) {
 	}
 	writeSubmoduleFixtureFile(t, filepath.Dir(fault), filepath.Base(fault), "parent-error\n")
 	a.openRepository(a.repo.Root, false)
-	for a.loading {
+	for a.loading || a.localWatch.initializing || pendingChildDetails(a) {
 		runContinuation(t, callbacks)
 	}
 	if a.loadErr == "" || a.canCommit() {
@@ -413,8 +413,12 @@ func TestSlowSubmoduleProbeKeepsOtherCompletedResults(t *testing.T) {
 	fault := setupSubmoduleStatusFault(t, child, a.repo.Root)
 	writeSubmoduleFixtureFile(t, filepath.Dir(fault), filepath.Base(fault), "child-timeout\n")
 	updates := readSubmoduleUpdates(t.Context(), a.repo, modules)
-	if len(updates) != 1 || updates[0].Path != "second-module" || updates[0].ChangedFiles != 1 {
-		t.Fatalf("timed-out child lost a completed result or replaced its last known state: %+v", updates)
+	results := map[string]gitrepo.Submodule{}
+	for _, m := range updates {
+		results[m.Path] = m
+	}
+	if len(results) != 2 || results["module"].Error == "" || results["second-module"].ChangedFiles != 1 {
+		t.Fatalf("deadline lost completed result or failed to mark unavailable: %+v", updates)
 	}
 }
 
@@ -426,4 +430,13 @@ func TestWorkspaceKeepsGitlinkDeletionAndTypeChange(t *testing.T) {
 	if entries := a.unstagedEntries(); len(entries) != 2 {
 		t.Fatalf("real gitlink changes disappeared: %+v", entries)
 	}
+}
+
+func pendingChildDetails(a *app) bool {
+	for _, m := range a.submodules {
+		if m.Pending {
+			return true
+		}
+	}
+	return false
 }

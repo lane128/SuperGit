@@ -78,7 +78,9 @@ type Worktree struct {
 }
 type Submodule struct {
 	Name, Path, Recorded, Index, Current, Branch string
-	Initialized, Dirty                           bool
-	ChangedFiles                                 int
-	Error                                        string
+	Pending, Initialized, Dirty                  bool
+	// CheckoutKnown distinguishes a successful uninitialized observation from a failed first read.
+	CheckoutKnown bool
+	ChangedFiles  int
+	Error         string
 }

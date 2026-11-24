@@ -48,6 +48,11 @@ func (a *app) loadWorktreeOverview() {
 	if a.repo == nil || a.ctx == nil {
 		return
 	}
+	if a.localWatch.initializing {
+		// A baseline still being established may already include a save these
+		// reads will miss; re-read the overview once it lands.
+		a.localWatch.detailsPending = true
+	}
 	if a.overviewCancel != nil {
 		a.overviewCancel()
 	}

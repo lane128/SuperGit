@@ -585,6 +585,14 @@ func (a *app) reloadHistoryFromTip(tip string) {
 			a.historyTips = page.Tips
 			a.historyMore = page.HasMore
 			a.historyErr = ""
+			if !page.HasMore {
+				previous := a.selectedSHA
+				a.reconcileHistorySelection()
+				a.refreshSelectedCommit = gitrepo.Commit{}
+				if a.selectedSHA != previous && a.selectedSHA != "" {
+					a.loadCommitDetail(true)
+				}
+			}
 			if !page.HasMore && len(page.Commits) == 0 && a.fileFilter == "" && a.selectedStash == "" && a.pendingJumpSHA == "" {
 				a.selectWorktree()
 			}

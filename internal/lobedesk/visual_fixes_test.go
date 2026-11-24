@@ -177,6 +177,7 @@ func TestCollapsibleSectionsUseFullBleedHeadersWithoutChildIndent(t *testing.T) 
 			t.Fatalf("dark=%v clicking file section header did not collapse it: %+v", dark, collapsedHeader)
 		}
 
+		a.toggleSidebarGroup("branches")
 		// 2. Sidebar collapsible section: full-bleed band + flush branch row (no 22px indent).
 		var sidebarW float32
 		sb := ui.NewTester(func(c *ui.Context) {
