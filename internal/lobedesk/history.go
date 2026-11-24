@@ -1648,32 +1648,16 @@ func (a *app) commitDiffLine(c *ui.Context, line gitrepo.DiffLine, path string, 
 
 func (a *app) commitDiffLineForSide(c *ui.Context, line gitrepo.DiffLine, path string, width float32, index int, side patchSide) {
 	tk := theme.TokensOf(c)
-	bg := tk.BgContainer
-	switch line.Kind {
-	case "add":
-		bg = tk.Success.Alpha(0.075).Over(tk.BgContainer)
-	case "del":
-		bg = tk.Error.Alpha(0.065).Over(tk.BgContainer)
-	case "meta":
-		bg = tk.FillQuaternary.Over(tk.BgContainer)
-	}
 	selectable := commitSelectable(line.Kind)
-	if selectable && a.commitSel[index] {
-		alpha := float32(0.16)
-		if index == a.commitCursor {
-			alpha = 0.24
-		}
-		bg = tk.Blue.Alpha(alpha).Over(bg)
-	}
-	row := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0).Padding(0, 12, 0, 0).Background(bg)
-	if row.Hovered() {
-		row.Background(tk.FillTertiary.Alpha(0.35).Over(bg))
-	}
-	gutter := gutterInk(tk, bg)
+	selected := selectable && a.commitSel[index]
+	row := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0).Padding(0, 12, 0, 0)
+	colors := a.paintDiffLine(row, tk, line.Kind, selected, index == a.commitCursor)
+	gutter := colors.gutter
 	var numbers ui.Element
 	row.Children(func() {
 		numbers = a.patchGutter(c, line, side, gutter)
-		a.diffFind.lineText(c, diffFindLine{index: index}, diffFindText(line), a.patchFontSize(), side == patchNew && line.Kind == "context").TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
+		markDiffGutter(numbers, selected, gutter)
+		a.diffFind.lineText(c, diffFindLine{index: index}, diffFindText(line), a.patchFontSize(), side == patchNew && line.Kind == "context").TextColor(colors.text).Role(diffCodeRole(line.Kind))
 	})
 	items := []overlay.MenuItem{{Key: "copy-line", Label: a.t("copyLine"), Icon: lucide.Copy()}}
 	if selectable {
@@ -2063,10 +2047,10 @@ func (a *app) commitHunkLine(c *ui.Context, line gitrepo.DiffLine, width float32
 	tk := theme.TokensOf(c)
 	row := ui.ButtonBase(c).Label(line.Text).Row().Width(width).Height(24).Shrink(0).
 		Padding(0, 12).AlignItems(ui.Center).Justify(ui.Start).
-		Background(tk.Info.Alpha(0.06).Over(tk.BgContainer))
+		Background(a.diffColors(tk, "hunk").background)
 	row.Children(func() {
 		a.diffFind.lineText(c, diffFindLine{index: index}, line.Text, scaledFont(10.5)).
-			TextColor(tk.Info)
+			TextColor(a.diffColors(tk, "hunk").text)
 	})
 	menu := overlay.ContextMenu(c, row, overlay.DropdownMenuProps{Items: []overlay.MenuItem{
 		{Key: "copy", Label: a.t("copyHunk"), Icon: lucide.Copy()},

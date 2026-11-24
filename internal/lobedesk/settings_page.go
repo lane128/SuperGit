@@ -148,6 +148,7 @@ func (a *app) appearanceCard(c *ui.Context) {
 		// The palette is a separate choice from the mode: a scheme supplies a
 		// light and a dark set, and system/light/dark picks which one shows.
 		a.paletteRow(c)
+		a.diffPaletteRow(c)
 		a.choiceRow(c, a.t("language"), []choice.ToggleItem{
 			{Value: string(localeChinese), Label: "中文"},
 			{Value: string(localeEnglish), Label: "English"},

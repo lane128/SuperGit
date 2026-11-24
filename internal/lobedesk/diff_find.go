@@ -259,13 +259,8 @@ func (f *diffFindState) lineText(c *ui.Context, id diffFindLine, text string, si
 		if end < m.start {
 			spans = append(spans, ui.Span{Text: text[end:m.start]})
 		}
-		span := ui.Span{Text: text[m.start:m.end], Background: tk.Warning.Alpha(.35)}
-		if i == f.active {
-			span.Background, span.Color, span.Underline = tk.Warning, ui.RGB(0, 0, 0), true
-			if white := ui.RGB(255, 255, 255); contrastRatio(white, tk.Warning) > contrastRatio(span.Color, tk.Warning) {
-				span.Color = white
-			}
-		}
+		bg, ink := diffSearchColors(tk.Dark, i == f.active)
+		span := ui.Span{Text: text[m.start:m.end], Background: bg, Color: ink, Underline: i == f.active}
 		spans = append(spans, span)
 		end = m.end
 	}

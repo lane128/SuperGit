@@ -107,26 +107,17 @@ func (a *app) overviewPatchLineForSide(c *ui.Context, target overviewPatchTarget
 		return
 	}
 	tk := theme.TokensOf(c)
-	bg := tk.BgContainer
-	if line.Kind == "add" {
-		bg = tk.Success.Alpha(0.075).Over(bg)
-	}
-	if line.Kind == "del" {
-		bg = tk.Error.Alpha(0.065).Over(bg)
-	}
 	changed := line.Kind == "add" || line.Kind == "del"
 	selected := a.overviewSelectionMatches(target)
-	if selected && a.lineSel[index] {
-		bg = tk.Blue.Alpha(0.16).Over(bg)
-	}
-	row := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0).Background(bg)
+	row := ui.Row(c).Width(width).Height(a.patchRowHeight()).Shrink(0)
+	colors := a.paintDiffLine(row, tk, line.Kind, changed && selected && a.lineSel[index], index == a.lineCursor)
 	row.Children(func() {
-		numbers := a.patchGutter(c, line, side, gutterInk(tk, bg))
-		markDiffGutter(numbers, changed && selected && a.lineSel[index], gutterInk(tk, bg))
+		numbers := a.patchGutter(c, line, side, colors.gutter)
+		markDiffGutter(numbers, changed && selected && a.lineSel[index], colors.gutter)
 		if changed && numbers.Clicked() {
 			a.selectOverviewLine(target, index, numbers.ClickModifiers())
 		}
-		a.diffFind.lineText(c, diffFindLine{target.File, index}, diffFindText(line), a.patchFontSize(), side == patchNew && line.Kind == "context").TextColor(lineTextColor(tk, line.Kind)).Role(diffCodeRole(line.Kind))
+		a.diffFind.lineText(c, diffFindLine{target.File, index}, diffFindText(line), a.patchFontSize(), side == patchNew && line.Kind == "context").TextColor(colors.text).Role(diffCodeRole(line.Kind))
 	})
 	choice := []int{index}
 	if selected && a.lineSel[index] {
@@ -166,9 +157,9 @@ func (a *app) overviewPatchLineForSide(c *ui.Context, target overviewPatchTarget
 
 func (a *app) overviewHunkLine(c *ui.Context, target overviewPatchTarget, line gitrepo.DiffLine, width float32, index int) {
 	tk := theme.TokensOf(c)
-	row := ui.Row(c).Width(width).Height(diffHunkH).Shrink(0).Padding(0, 12).AlignItems(ui.Center).Background(tk.Blue.Alpha(0.05).Over(tk.BgContainer))
+	row := ui.Row(c).Width(width).Height(diffHunkH).Shrink(0).Padding(0, 12).AlignItems(ui.Center).Background(a.diffColors(tk, "hunk").background)
 	row.Children(func() {
-		a.diffFind.lineText(c, diffFindLine{target.File, index}, line.Text, scaledFont(10)).TextColor(tk.TextSecondary)
+		a.diffFind.lineText(c, diffFindLine{target.File, index}, line.Text, scaledFont(10)).TextColor(a.diffColors(tk, "hunk").text)
 	})
 	key := "stageHunk"
 	if target.File.Staged {

@@ -354,6 +354,10 @@ var messages = map[locale]map[string]string{
 		"fontSizeLarge":                   "大",
 		"themeMode":                       "主题",
 		"palette":                         "配色",
+		"diffPalette":                     "Diff 配色",
+		"diffPaletteClassic":              "Git 经典",
+		"diffPaletteDelta":                "Delta 层次",
+		"diffPaletteVivid":                "鲜明红绿",
 		"paletteSuperGit":                 "SuperGit",
 		"paletteDefault":                  "Lobe 默认",
 		"paletteCatppuccin":               "Catppuccin",
@@ -1343,6 +1347,10 @@ var messages = map[locale]map[string]string{
 		"fontSizeLarge":                   "Large",
 		"themeMode":                       "Theme",
 		"palette":                         "Colors",
+		"diffPalette":                     "Diff colors",
+		"diffPaletteClassic":              "Git classic",
+		"diffPaletteDelta":                "Delta layered",
+		"diffPaletteVivid":                "Vivid",
 		"paletteSuperGit":                 "SuperGit",
 		"paletteDefault":                  "Lobe default",
 		"paletteCatppuccin":               "Catppuccin",
@@ -2021,6 +2029,8 @@ var messages = map[locale]map[string]string{
 var chineseEnglishTerms = []string{
 	// Products and platforms.
 	"Git", "SuperGit", "Sublime", "Text", "LFS", "Flow", "Lobe", "MyGo", "Catppuccin", "Frappe", "Macchiato", "Finder", "UI",
+	// User-approved Diff palette setting and its CLI-inspired scheme name.
+	"Diff", "Delta",
 	// Git objects and flags that the interface names in Git's own words.
 	"Stash", "HEAD", "detached", "SHA", "Ours", "Theirs", "hooks", "force-with-lease", ".gitmodules",
 }

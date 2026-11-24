@@ -186,6 +186,9 @@ type app struct {
 	// palette is the key of the color scheme in appThemes; the theme mode
 	// picks its light or dark half.
 	palette string
+	// Diff palettes are independent of the interface palette and share its mode.
+	diffPalette     string
+	diffPaletteOpen bool
 	// dockIcon remembers the drawing the Dock shows, so the view can ask for
 	// one every frame and the system is only touched when the appearance
 	// changes.

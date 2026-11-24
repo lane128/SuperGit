@@ -22,6 +22,7 @@ Git 的**动作**一律用中文：提交、分支、合并、变基、拣选（
 | SuperGit | 产品 | `openRepoHint` | 应用名 |
 | Lobe / MyGo / UI | 产品 / 平台 | `paletteDefault`、`settingsAboutText`、`previewNote` | 组件库与界面栈的名字 |
 | Catppuccin / Frappe / Macchiato | 配色方案名 | `paletteCatppuccin*` | 方案原名；译名无法对上社区文档 |
+| Diff / Delta | 用户指定的设置与配色方案名 | `diffPalette`、`diffPaletteDelta` | 保留本次批准的“Diff 配色”和“Delta 层次”，便于对应 CLI diff 与方案预览；其他差异操作仍使用中文 |
 | Finder | 平台 | `openInFinder`、`revealInFinder` | macOS 菜单里的固定叫法 |
 | Stash | Git 对象 | `stashes`、`saveStashTitle`、`stashFileAction` | 既是对象名也是功能名；「贮藏」没有通行度 |
 | HEAD / detached HEAD | Git 引用 | `detached`、`checkoutCommitMessage`、`undoCommitMessage` | 与 `git` 输出一致；「分离头指针」反而更难认 |
