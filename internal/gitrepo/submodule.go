@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -62,6 +63,16 @@ func (r *Repository) Submodules(ctx context.Context) ([]Submodule, error) {
 		r.readSubmoduleCheckout(ctx, &m)
 		result = append(result, m)
 	}
+	// .gitmodules keeps the order modules were added, and the config read
+	// returns that order. Every list the app shows (sidebar, Workspaces,
+	// command palette) reads this slice, so sort it once here instead of in
+	// each renderer.
+	slices.SortStableFunc(result, func(a, b Submodule) int {
+		if lowA, lowB := strings.ToLower(a.Name), strings.ToLower(b.Name); lowA != lowB {
+			return strings.Compare(lowA, lowB)
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
 	return result, nil
 }
 
