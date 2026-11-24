@@ -303,6 +303,7 @@ func (a *app) fileSection(c *ui.Context, key, title string, entries []gitrepo.En
 				ui.Column(rowContext).FillWidth().Height(heights[i]).Shrink(0).Children(func() {
 					row := a.fileRow(rowContext, entries[i], staged)
 					// Keep full group positions and the Index/worktree identity.
+					// The badge names the change type; the tooltip stays the path.
 					row.PositionInSet(i+1, len(entries)).Description(title).Tooltip(entries[i].Path)
 					wasFocused := ui.Local(row, "file-was-focused", func() bool { return false })
 					if row.Focused() {
@@ -440,10 +441,9 @@ func (a *app) fileRow(c *ui.Context, entry gitrepo.Entry, staged bool) ui.Elemen
 	row.OnShortcut(ui.Cmd, ui.KeyA, func() { a.selectWorkspaceGroup(fileRef{entry.Path, staged}) })
 	a.revealIfSelected(row, primary)
 	row.Children(func() {
+		a.fileStatusMarker(c, tk, statusCode(entry, staged))
 		fileRowPath(c, entry.Path, primary)
-		if entry.Conflict {
-			a.statusTag(c, "!", display.TagProps{Variant: display.TagFilled, Color: display.TagError, Size: theme.Small, Round: true})
-		} else {
+		if !entry.Conflict {
 			icon, state := lucide.Square(), "unstaged"
 			if entry.Staged() {
 				icon, state = lucide.SquareCheck(), "staged"

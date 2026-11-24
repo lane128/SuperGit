@@ -1388,6 +1388,8 @@ func (a *app) commitFileRows(c *ui.Context, files []gitrepo.ChangedFile) {
 				primary := a.detailTabShown() == detailTabFile && a.detailTabs().Active.File.Path == file.Path
 				selected := a.historicalFileSelected(file.Path)
 				// The original position and full raw path survive virtualization.
+				// The badge carries the change type; the tooltip stays the path.
+				code := statusMarkerCode(changedFileCode(file.Status))
 				row := fileRowShell(rowContext, tk, file.Path, selected).
 					PositionInSet(i+1, len(files)).Tooltip(file.Path)
 				if compact {
@@ -1405,6 +1407,7 @@ func (a *app) commitFileRows(c *ui.Context, files []gitrepo.ChangedFile) {
 				}
 				*wasFocused = row.Focused()
 				row.Children(func() {
+					a.fileStatusMarker(rowContext, tk, code)
 					fileRowPath(rowContext, file.Path, primary)
 				})
 				a.fileDetailMenu(rowContext, row, file.Path)

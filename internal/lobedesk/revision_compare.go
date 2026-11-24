@@ -258,8 +258,10 @@ func (a *app) comparisonFileList(c *ui.Context, v *comparisonView) {
 			virtualPatchRows(c, v.fileViewport, &v.fileScroll, heights, v.selected, func(c *ui.Context, i int) {
 				file := v.files[i]
 				selected := v.selected == i
+				code := statusMarkerCode(changedFileCode(file.Status))
 				row := fileRowShell(c, tk, file.Path, selected).PositionInSet(i+1, len(v.files)).Tooltip(file.Path)
 				row.Children(func() {
+					a.fileStatusMarker(c, tk, code)
 					fileRowPath(c, file.Path, selected)
 				})
 				if row.Clicked() && !selected {

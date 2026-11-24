@@ -36,8 +36,17 @@ func TestFileRowSeparatesStagingStateFromVersionAction(t *testing.T) {
 			if !ok || !strings.Contains(action.Description, test.state) {
 				t.Fatalf("%s lost separate staging state %q: %+v", test.action, test.state, action)
 			}
-			if tt.HasText(test.code) || !tt.HasText(entry.Path) {
-				t.Fatalf("file row must show its path without a separate %s badge", test.code)
+			if !tt.HasText(entry.Path) {
+				t.Fatalf("file row lost its path text")
+			}
+			// The change type is its own leading marker; staging state stays on
+			// the trailing action, so neither overrides the other.
+			marker, ok := tt.AccessByRole(ui.RoleImage, a.detailStatusMeaning(test.code))
+			if !ok {
+				t.Fatalf("file row lost its %s change-type marker", test.code)
+			}
+			if marker.Bounds.X < 0 || marker.Bounds.X >= action.Bounds.X {
+				t.Fatalf("marker %+v is not ahead of the staging action %+v", marker.Bounds, action.Bounds)
 			}
 			if action.Bounds.X < 0 || action.Bounds.X+action.Bounds.W > 280 {
 				t.Fatalf("staging action outside narrow file pane: %+v", action.Bounds)
