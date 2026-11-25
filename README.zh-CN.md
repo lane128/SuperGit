@@ -6,6 +6,10 @@
 
 > 当前在 **macOS（Apple Silicon）** 上构建与验证，支持中英文界面。
 
+## 下载安装
+
+最新版本为 [SuperGit 1.0.0](https://github.com/lane128/SuperGit/releases/latest)，适用于 macOS（Apple Silicon）。应用目前采用 ad-hoc 签名、未公证，下载后可能被 macOS 拦截；详见[打包与发布签名](docs/packaging.md)。
+
 ## 核心功能
 
 - **多仓库工作台**：单窗口多仓库标签页，支持拖拽排序、未提交改动圆点提示、重新打开已关闭标签页（`⌘⇧T`）、重启自动恢复与本地变更自动检测。

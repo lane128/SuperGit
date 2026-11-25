@@ -6,6 +6,10 @@ A fast, native GPU-accelerated Git desktop client built with Go, [MyGo](https://
 
 > Built and verified on **macOS (Apple Silicon)**. Supports English and Simplified Chinese.
 
+## Download
+
+The latest release for macOS (Apple Silicon) is [SuperGit 1.0.0](https://github.com/lane128/SuperGit/releases/latest). The app is ad-hoc signed rather than notarized, so macOS may block a downloaded copy; see [Packaging & Release Signing](docs/packaging.md).
+
 ## Features
 
 - **Multi-Repository Workbench**: Tabbed repositories in one window with drag reordering, dirty indicators, reopen closed tabs (`⌘⇧T`), session restore, and live local change detection.
