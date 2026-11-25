@@ -152,13 +152,20 @@ assert (repo / "draft.txt").read_text() == "draft kept by Stash\n"
 assert git("stash", "list").strip()
 print("PASS native stash apply preserves entry", flush=True)
 
+# Untracked draft.txt can safely travel across branches. Exercise Git's
+# overwrite guard with a tracked file that differs from the target branch.
+conflict_file = repo / "conflict.txt"
+committed_conflict = conflict_file.read_bytes()
+conflict_file.write_text("uncommitted conflict edit\n")
 route("branches")
 press("切换", nth=0)
 execute()
-wait("工作区或暂存区有改动")
+wait("would be overwritten by checkout")
 assert git("branch", "--show-current").strip() == "native/test"
+assert conflict_file.read_text() == "uncommitted conflict edit\n"
 assert (repo / "draft.txt").read_text() == "draft kept by Stash\n"
-print("PASS native dirty checkout refusal preserves files", flush=True)
+conflict_file.write_bytes(committed_conflict)
+print("PASS native conflicting dirty checkout refusal preserves files", flush=True)
 
 hook = repo / ".git" / "hooks" / "pre-push"
 assert not hook.exists(), "test must not overwrite an existing hook"
