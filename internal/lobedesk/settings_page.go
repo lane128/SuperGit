@@ -357,6 +357,15 @@ func (a *app) graphCard(c *ui.Context) {
 			a.saveSettingsFor(toastSettings)
 			a.invalidate()
 		}
+		a.choiceRow(c, a.t("historyGraphStyle"), []choice.ToggleItem{
+			{Value: "rounded", Label: a.t("historyGraphRounded")},
+			{Value: "chamfer", Label: a.t("historyGraphChamfer")},
+			{Value: "compact", Label: a.t("historyGraphCompact")},
+		}, historyGraphStyleKey(a.historyGraphStyle), func(key string) {
+			a.historyGraphStyle = historyGraphStyleKey(key)
+			a.saveSettingsFor(toastSettings)
+			a.invalidate()
+		})
 		line, node := a.graphStyle()
 		a.choiceRow(c, a.t("graphLineWidth"), []choice.ToggleItem{
 			{Value: "thin", Label: a.t("graphLineThin")},
@@ -384,6 +393,14 @@ func (a *app) graphCard(c *ui.Context) {
 // stays the same height so the graph keeps its alignment.
 func (a *app) historyColumnsCard(c *ui.Context) {
 	a.settingsCard(c, a.t("historyList"), func() {
+		a.choiceRow(c, a.t("historyRefStyle"), []choice.ToggleItem{
+			{Value: "segmented", Label: a.t("historyRefSegmented")},
+			{Value: "stripe", Label: a.t("historyRefStripe")},
+		}, historyRefStyleKey(a.historyRefStyle), func(key string) {
+			a.historyRefStyle = historyRefStyleKey(key)
+			a.saveSettingsFor(toastSettings)
+			a.invalidate()
+		})
 		showAuthor := !a.hideAuthor
 		showTime := !a.hideTime
 		wasAuthor, wasTime := showAuthor, showTime

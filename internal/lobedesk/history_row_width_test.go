@@ -27,20 +27,13 @@ func TestRefSlotsFollowTheColumnWidth(t *testing.T) {
 	}
 }
 
-// A narrow row also caps the capsule earlier and drops the separate "HEAD"
-// word: the branch capsule wears the check instead, which is where a long
-// name would otherwise push the subject out.
-func TestANarrowRowCapsItsRefs(t *testing.T) {
+// A narrow row is still recognized so the row can use its compact title gap.
+// The capsule itself has no fixed point cap; its budget is what limits it.
+func TestANarrowRowIsRecognized(t *testing.T) {
 	if !rowRefsNarrow(309) {
 		t.Error("a 309-point row is not treated as narrow")
 	}
 	if rowRefsNarrow(508) {
 		t.Error("a 508-point row is treated as narrow")
-	}
-	if got := rowCapsuleWidthForList(309); got > 80 {
-		t.Errorf("a 309-point row caps a capsule at %v; want about 76", got)
-	}
-	if got, want := rowCapsuleWidthForList(1200), float32(refCapsuleRowWidth); got != want {
-		t.Errorf("a wide row caps a capsule at %v; want %v", got, want)
 	}
 }

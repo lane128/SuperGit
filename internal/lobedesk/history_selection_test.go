@@ -67,13 +67,10 @@ func TestDetailsPlaceholderOnlyClaimsThereAreNoCommitsWhenThereAreNone(t *testin
 	}
 }
 
-// The details pane has the width for a longer label than a row, but it still
-// has to keep the tail: two dependabot refs that share a prefix are only told
-// apart by the end of the name.
+// The details pane has the width for a longer label, but it still has to keep
+// the tail: two dependabot refs that share a prefix are only told apart by the
+// end of the name.
 func TestDetailRefBadgesKeepTheirTails(t *testing.T) {
-	if refCapsuleDetailRunes <= refBadgeRunes {
-		t.Fatalf("details budget %d is not longer than the row's %d", refCapsuleDetailRunes, refBadgeRunes)
-	}
 	long := "origin/dependabot/go_modules/create-pull-request-8.1.2"
 	elided := elideMiddle(long, refCapsuleDetailRunes)
 	if !strings.HasSuffix(elided, "8.1.2") {

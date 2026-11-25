@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/overlay"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
@@ -120,10 +119,6 @@ func stashCommit(s gitrepo.Stash) gitrepo.Commit {
 // The same row can be rendered independently of a full History graph.
 func (a *app) stashRow(c *ui.Context, stash gitrepo.Stash, pos, size int) {
 	a.historyEntryRow(c, stashCommit(stash), &stash, 0, pos, size, nil)
-}
-
-func (a *app) stashBadge(c *ui.Context, stash gitrepo.Stash) {
-	display.Tag(c, "stash", display.TagProps{Size: theme.Small, Color: display.TagWarning}).Shrink(0).Tooltip(stash.Ref)
 }
 
 func (a *app) selectedStashObject() (gitrepo.Stash, bool) {

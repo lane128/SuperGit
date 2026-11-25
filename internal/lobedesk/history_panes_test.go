@@ -569,18 +569,13 @@ func TestTheNarrowCommitRowKeepsRoomForTheSubject(t *testing.T) {
 	if !ok {
 		t.Fatal("the crowded row is not in the list")
 	}
-	for _, label := range []string{"main", "+3"} {
-		pill, ok := tt.Find(label)
-		if !ok {
-			t.Fatalf("the row does not show %q", label)
-		}
-		if pill.X+pill.W > row.Bounds.X+row.Bounds.W+0.5 {
-			t.Errorf("the %q capsule ends at %v, past the row's %v", label, pill.X+pill.W, row.Bounds.X+row.Bounds.W)
-		}
-	}
-	if head, ok := tt.Find("HEAD"); ok && head.X < row.Bounds.X+row.Bounds.W {
-		// The details pane has room for the word; the row does not.
-		t.Error("the narrow row still spends a chip on the word HEAD")
+	// The HEAD segment keeps its name now that a capsule grows with the ref
+	// budget; the remaining tags fold into the overflow.
+	pill, ok := tt.AccessByRole(ui.RoleText, "+3")
+	if !ok || pill.Offscreen || pill.Bounds.Y < row.Bounds.Y ||
+		pill.Bounds.Y+pill.Bounds.H > row.Bounds.Y+row.Bounds.H ||
+		pill.Bounds.X+pill.Bounds.W > row.Bounds.X+row.Bounds.W+0.5 {
+		t.Fatalf("crowded metadata lost its three-tag overflow: %+v", pill)
 	}
 	graphWidth := a.historyGraph.Width
 	a.historyDetailsHidden = true

@@ -307,10 +307,12 @@ type app struct {
 	// for the graph, and whether the second line shows the author and the
 	// commit time. Zero values mean the standard style; hidden columns are
 	// stored as "hidden" so a fresh app shows them.
-	historyLine float32
-	historyNode float32
-	hideAuthor  bool
-	hideTime    bool
+	historyLine       float32
+	historyNode       float32
+	historyGraphStyle string
+	historyRefStyle   string
+	hideAuthor        bool
+	hideTime          bool
 	// The other page lists keep their place the same way: each page unmounts
 	// on a switch, so the position has to live in the app.
 	branchesScroll ui.ScrollState

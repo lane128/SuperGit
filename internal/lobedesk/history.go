@@ -760,14 +760,13 @@ func (a *app) clearFileFilter() {
 	a.invalidate()
 }
 
-// refBadgeRunes is how many runes a row's ref badge shows before it is elided
-// in the middle. A badge is capped at 150 points; this keeps the label inside
-// that cap while leaving room for its icon. The details pane has a 320-point
-// capsule, so its badges get a longer budget -- enough that most names survive
-// whole, still elided in the middle so two refs sharing a prefix stay apart by
-// their tails.
+// refCapsuleDetailRunes is how many runes the details pane's ref badge shows
+// before it is elided in the middle. Its capsule is capped at 320 points, so
+// this keeps most names whole while leaving room for the icon; names still
+// elide in the middle so two refs sharing a prefix stay apart by their tails.
+// History rows have no rune budget: their capsule grows with the row's ref
+// budget, so the name is shortened only when the width runs out.
 const (
-	refBadgeRunes         = 20
 	refCapsuleDetailRunes = 40
 )
 
@@ -801,20 +800,10 @@ func refSlotsForWidth(width float32) int {
 }
 
 // rowRefsNarrow reports whether the column is too narrow for the full HEAD
-// chip and the wide capsule cap. At 980 the commit column is under 310, where
-// the word "HEAD" alone costs the subject a word of its title.
+// chip. At 980 the commit column is under 310, where the word "HEAD" alone
+// costs the subject a word of its title.
 func rowRefsNarrow(width float32) bool {
 	return width > 0 && width < 480
-}
-
-// rowCapsuleWidthForList caps one row capsule by the column's width. The
-// 150-point cap suits a wide list; at 300 it would leave the subject a few
-// characters.
-func rowCapsuleWidthForList(width float32) float32 {
-	if width <= 0 {
-		return refCapsuleRowWidth
-	}
-	return min(refCapsuleRowWidth, max(76, width*0.24))
 }
 
 // historyRowHeight is shared by rendered rows, virtual spacers and graph
@@ -919,7 +908,7 @@ func (a *app) historyEntryRow(c *ui.Context, commit gitrepo.Commit, stash *gitre
 						// number of rows above and below this row's own centre.
 						sourceY := center - float32(index-span.Start)*r.H
 						parentY := center + float32(span.End-index)*r.H
-						points := graphEdgePoints(sourceX, sourceY, viaX, parentX, parentY, r.H, rowTop, rowBottom)
+						points := historyGraphEdgePoints(a.historyGraphStyle, sourceX, sourceY, viaX, parentX, parentY, r.H, rowTop, rowBottom)
 						if len(points) > 0 {
 							p.StrokePolyline(points, line, col)
 						}
@@ -930,10 +919,10 @@ func (a *app) historyEntryRow(c *ui.Context, commit gitrepo.Commit, stash *gitre
 					x := laneXGap(x0, graphRow.Lane, gap)
 					col := graphInk(tk, graph.LaneColor(graphRow.Color))
 					shape := graphNodeShape(commit, a.status.Head, graphRow)
-					inner, ring := graphNodeRing(node, line)
+					inner, _ := graphNodeRing(node, line)
 					mergeSize, dot := graphNodeMerge(node, line), graphNodeDot(node, line)
 					if selected {
-						p.Fill(ui.Rect{X: x - ring, Y: center - ring, W: ring * 2, H: ring * 2}, rowBg, ring)
+						// Keep the connecting edge visible through the selection ring.
 						p.Stroke(ui.Rect{X: x - inner, Y: center - inner, W: inner * 2, H: inner * 2}, col, inner, 2)
 					}
 					if stash != nil {
@@ -986,8 +975,29 @@ func (a *app) historyEntryRow(c *ui.Context, commit gitrepo.Commit, stash *gitre
 			date = formatDateTimeLayout(commit.Date, "01-02 15:04")
 		}
 		refs := commitRefs(commit.Refs)
+		stashOnTitle := a.hideTime && a.hideAuthor
+		stashWidth := refCapsuleWidth(refCapsuleRowWidth)
 		if stash != nil {
 			refs = nil
+			if listWidth > 0 {
+				budget := contentWidth
+				if !a.hideTime {
+					dateWidth, _ := c.MeasureText(0, ui.Span{Text: date, Size: dateSize})
+					budget -= min(dateWidth, max(0, contentWidth-metadataGap)) + 2*metadataGap
+				}
+				if !a.hideAuthor {
+					authorWidth, _ := c.MeasureText(0, ui.Span{Text: commit.Author, Size: dateSize})
+					budget -= min(authorWidth, scaledFont(24)) + metadataGap
+				}
+				if budget < a.historyNamedRefWidth(c, stash.Ref, true, false) {
+					stashOnTitle = true
+				}
+				if stashOnTitle {
+					// Preserve the full date; use spare title space for the badge.
+					budget = contentWidth - scaledFont(24) - titleGap
+				}
+				stashWidth = max(0, budget)
+			}
 		}
 		head := headBranch(commit.Refs)
 		var refLayout historyRefLayout
@@ -1041,7 +1051,13 @@ func (a *app) historyEntryRow(c *ui.Context, commit gitrepo.Commit, stash *gitre
 					layoutTitle := title
 					layoutTitle.Weight = 700
 					titleWidth, _ := c.MeasureText(0, layoutTitle)
-					titleBudget -= min(scaledFont(84), titleWidth)
+					reservedTitle := scaledFont(84)
+					if rowRefsNarrow(listWidth) {
+						// A complete HEAD segment needs more room than the old
+						// name-only chip. Keep a readable title and the current ref.
+						reservedTitle = scaledFont(56)
+					}
+					titleBudget -= min(reservedTitle, titleWidth)
 				}
 				refLayout = a.fitHistoryRefs(c, refs, head, listWidth, titleBudget, titleGap, false)
 			}
@@ -1063,8 +1079,8 @@ func (a *app) historyEntryRow(c *ui.Context, commit gitrepo.Commit, stash *gitre
 							Tooltip(a.changedFilesLabel(n))
 					}
 				}
-				if stash != nil && a.hideTime && a.hideAuthor {
-					a.stashBadge(c, *stash)
+				if stash != nil && stashOnTitle {
+					a.historyStashBadge(c, *stash, rowBg, stashWidth)
 				}
 				if refsOnTitle || overflowOnTitle {
 					a.commitRowRefs(c, commit, graph, index, rowBg, head, refLayout)
@@ -1084,8 +1100,8 @@ func (a *app) historyEntryRow(c *ui.Context, commit gitrepo.Commit, stash *gitre
 						display.Text(c, commit.Author, display.TextProps{Type: display.TextSecondary, FontSize: scaledFont(11.5)}).SingleLine().
 							Grow(1).Basis(0).MinWidth(0)
 					}
-					if stash != nil {
-						a.stashBadge(c, *stash)
+					if stash != nil && !stashOnTitle {
+						a.historyStashBadge(c, *stash, rowBg, stashWidth)
 					}
 					if !overflowOnTitle && (len(refLayout.shown) > 0 || len(refLayout.folded) > 0) {
 						a.commitRowRefs(c, commit, graph, index, rowBg, head, refLayout)

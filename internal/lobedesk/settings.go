@@ -43,10 +43,12 @@ type persistedSettings struct {
 	// The history list's display preferences. The two presets persist as their
 	// names; the columns persist as "hidden" so the defaults stay out of the
 	// file.
-	HistoryLine string `json:"historyLine,omitempty"`
-	HistoryNode string `json:"historyNode,omitempty"`
-	HideAuthor  *bool  `json:"hideAuthor,omitempty"`
-	HideTime    *bool  `json:"hideTime,omitempty"`
+	HistoryGraphStyle string `json:"historyGraphStyle,omitempty"`
+	HistoryRefStyle   string `json:"historyRefStyle,omitempty"`
+	HistoryLine       string `json:"historyLine,omitempty"`
+	HistoryNode       string `json:"historyNode,omitempty"`
+	HideAuthor        *bool  `json:"hideAuthor,omitempty"`
+	HideTime          *bool  `json:"hideTime,omitempty"`
 	// WorkspaceFolded remembers which workspace sections are folded, per
 	// repository root. A reader who puts a long staged list aside expects it
 	// to stay aside after a restart; the recency list keeps the file from
@@ -85,6 +87,7 @@ func defaultSettings() persistedSettings {
 		ShowGraph: &showGraph, AutoFetch: &autoFetch, AutoFetchPrune: &prune, AutoFetchEvery: &every,
 		DetailsInfo: &info, DetailsChanges: &changes, DetailsDiff: &diff,
 		HistoryLine: "standard", HistoryNode: "standard",
+		HistoryGraphStyle: "rounded", HistoryRefStyle: "segmented",
 		HideAuthor: &hide, HideTime: &hide,
 		AutoCheckUpdates: &autoCheckUpdates, AutoDownloadUpdates: &autoDownloadUpdates,
 	}
@@ -140,6 +143,8 @@ func (a *app) resetLayout() {
 	a.detailsChangesHidden = false
 	a.detailsDiffHidden = false
 	// The graph and the history row columns have defaults too.
+	a.historyGraphStyle = "rounded"
+	a.historyRefStyle = "segmented"
 	a.historyLine = graphLineStandard
 	a.historyNode = graphNodeStandard
 	a.hideAuthor = false
@@ -275,6 +280,8 @@ func (a *app) applySettings(settings persistedSettings) {
 		a.detailsDiffHidden = !*settings.DetailsDiff
 	}
 	a.normalizeDetailVisibility()
+	a.historyGraphStyle = historyGraphStyleKey(settings.HistoryGraphStyle)
+	a.historyRefStyle = historyRefStyleKey(settings.HistoryRefStyle)
 	if settings.HistoryLine != "" {
 		a.historyLine = graphLineOf(settings.HistoryLine)
 	}
@@ -552,6 +559,8 @@ func (a *app) saveSettingsFor(owner toastOwner) bool {
 			DetailsInfo:          showSetting(!a.detailsInfoHidden),
 			DetailsChanges:       showSetting(!a.detailsChangesHidden),
 			DetailsDiff:          showSetting(!a.detailsDiffHidden),
+			HistoryGraphStyle:    historyGraphStyleKey(a.historyGraphStyle),
+			HistoryRefStyle:      historyRefStyleKey(a.historyRefStyle),
 			HistoryLine:          graphLineKey(a.historyLine),
 			HistoryNode:          graphNodeKey(a.historyNode),
 			HideAuthor:           hideSetting(a.hideAuthor),

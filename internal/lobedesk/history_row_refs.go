@@ -18,10 +18,6 @@ func historyRefPillWidth(c *ui.Context, label string, icon bool, gap float32) fl
 	return w + gap
 }
 
-func historyRefPillLabel(c *ui.Context, label string, icon bool, limit float32) string {
-	return measuredRefPillLabel(c, label, icon, limit, refBadgeRunes)
-}
-
 // Shorten the actual text before painting so the label keeps the end of the
 // name instead of relying on the text control's trailing ellipsis.
 func measuredRefPillLabel(c *ui.Context, label string, icon bool, limit float32, maxRunes int) string {
@@ -43,15 +39,18 @@ type historyRefLayout struct {
 // fitHistoryRefs tries the existing ref priority order at each slot count.
 // Each pill costs its measured width and one gap from the preceding element.
 func (a *app) fitHistoryRefs(c *ui.Context, refs []string, head string, listWidth, budget, gap float32, metadata bool) historyRefLayout {
-	layout := historyRefLayout{maxWidth: rowCapsuleWidthForList(listWidth), compactHead: true}
-	if metadata {
-		layout.maxWidth = min(layout.maxWidth, max(64, listWidth*0.24))
-	}
+	// The ref budget is the only width limit: it already leaves the author
+	// and the date their room, so one long name may use every point left.
+	layout := historyRefLayout{maxWidth: budget, compactHead: true}
 	slots := min(len(refs), refSlotsForWidth(listWidth))
 	if listWidth <= 0 {
 		if metadata {
 			slots = 1 // Use the compact layout until the list has been measured.
 		}
+		// The first frame has no column width, so its budget says nothing.
+		// Lay the capsule out at the old provisional width; the next frame
+		// measures against the real budget.
+		layout.maxWidth = max(budget, refCapsuleWidth(refCapsuleRowWidth))
 		layout.shown, layout.folded = rowRefsLimit(refs, a.historyRef, head, slots)
 		layout.compactHead = metadata
 		return layout
@@ -66,9 +65,11 @@ func (a *app) fitHistoryRefs(c *ui.Context, refs []string, head string, listWidt
 		for _, ref := range shown {
 			badge := a.refBadge(ref)
 			icon := badge.Icon != nil
-			minimum := historyRefPillWidth(c, elideMiddle(badge.Label, 7), icon, 0)
+			minimum := a.historyNamedRefWidth(c, historyRefCandidate(badge.Label, 7), icon, ref == head)
 			readable = readable && minimum <= layout.maxWidth
-			width += min(layout.maxWidth+gap, historyRefPillWidth(c, elideMiddle(badge.Label, refBadgeRunes), icon, gap))
+			// Fit the name as it can be drawn; a shortened estimate would let
+			// two long names each pass the budget and overflow the row.
+			width += a.historyNamedRefWidth(c, badge.Label, icon, ref == head) + gap
 		}
 		if readable && width <= budget {
 			layout.shown, layout.folded = shown, folded
@@ -81,10 +82,10 @@ func (a *app) fitHistoryRefs(c *ui.Context, refs []string, head string, listWidt
 			ref := shown[0]
 			badge := a.refBadge(ref)
 			width := budget - overflow - gap
-			minimum := historyRefPillWidth(c, elideMiddle(badge.Label, 7), badge.Icon != nil, 0)
-			if min(layout.maxWidth, width) >= minimum {
+			minimum := a.historyNamedRefWidth(c, historyRefCandidate(badge.Label, 7), badge.Icon != nil, ref == head)
+			if width >= minimum {
 				layout.shown, layout.folded = shown, folded
-				layout.maxWidth = min(layout.maxWidth, width)
+				layout.maxWidth = width
 				return layout
 			}
 		}
@@ -100,12 +101,7 @@ func (a *app) commitRowRefs(c *ui.Context, commit gitrepo.Commit, graph *commitG
 		// A ref can change position as more pills fit. Keep its open menu
 		// attached to the ref rather than to that position.
 		key := "history-ref:" + ref
-		label := historyRefPillLabel(c, badge.Label, badge.Icon != nil, layout.maxWidth)
-		if ref == head {
-			pill := refPill(c.Key(key), headCapsuleColors(tk, rowBg), nil, label).MaxWidth(layout.maxWidth).Tooltip(a.tf("headBadgeTip", head))
-			a.refBadgeMenu(c, pill, ref, commit.SHA)
-			continue
-		}
+		label := a.historyNamedRefLabel(c, badge.Label, badge.Icon != nil, ref == head, layout.maxWidth)
 		kind, name, filterable := a.parseCommitRef(ref)
 		color := tk.TextSecondary
 		if filterable {
@@ -113,7 +109,10 @@ func (a *app) commitRowRefs(c *ui.Context, commit gitrepo.Commit, graph *commitG
 		} else if family, ok := refColor(tk, badge.Color); ok {
 			color = family
 		}
-		pill := refPill(c.Key(key), refCapsuleColors(color, rowBg), badge.Icon, label).MaxWidth(layout.maxWidth).Tooltip(badge.Label)
+		pill := a.historyNamedRefPill(c.Key(key), label, badge.Icon, ref == head, color, rowBg).MaxWidth(layout.maxWidth).Tooltip(badge.Label)
+		if ref == head {
+			pill.Tooltip(a.tf("headBadgeTip", head))
+		}
 		a.refBadgeMenu(c, pill, ref, commit.SHA)
 	}
 	if len(layout.folded) > 0 {

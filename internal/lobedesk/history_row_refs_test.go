@@ -330,9 +330,10 @@ func TestHistoryMetadataExpandsRefsAcrossResize(t *testing.T) {
 		shown []string
 	}{
 		{800, []string{"feature-a", "main", "v2", "+1"}},
-		{510, []string{"main", "v2", "+2"}},
-		{480, []string{"v2", "+3"}}, // Same slot limit as 510, with less actual room.
-		{310, []string{"+4"}},       // The selected tag remains available in the overflow.
+		{550, []string{"main", "v2", "+2"}},
+		{510, []string{"v2", "+3"}}, // The full HEAD segment needs more room; retain the active tag.
+		{480, []string{"v2", "+3"}},
+		{310, []string{"+4"}}, // The selected tag remains available in the overflow.
 		{800, []string{"feature-a", "main", "v2", "+1"}},
 	} {
 		tt.SetSize(tc.width, 100)

@@ -76,11 +76,9 @@ func xAtY(points [][2]float32, y float32) float32 {
 	return points[len(points)-1][0]
 }
 
-// The commit row draws that swoop: a few pixels below the merge node the
-// branch line is still near the node's lane, not already out at its own. A
-// horizontal jump at the node would put it at the far lane at once, which is
-// the staircase the reference graph does not have.
-func TestABranchLineBendsOutOfTheNodeInsteadOfStepping(t *testing.T) {
+// The default R1 treatment turns beside the node and reaches the vertical
+// lane within the source row, matching the approved local-turn preview.
+func TestHistoryDefaultBranchLineTurnsWithinSourceRow(t *testing.T) {
 	commits := []gitrepo.Commit{
 		{SHA: "a", Subject: "merge", Parents: []string{"b", "c"}},
 		{SHA: "b", Subject: "side", Parents: []string{"d"}},
@@ -123,16 +121,9 @@ func TestABranchLineBendsOutOfTheNodeInsteadOfStepping(t *testing.T) {
 		t.Fatal("the test reads no line under the node; it cannot tell a bend from a step")
 	}
 	viaX := x0 + int(laneX(0, span.ViaLane))
-	if lineAt(img, viaX, center+3, background) {
-		t.Errorf("the branch line is already at lane %d only 3 DIP below the node; the bend is a step, not a curve", span.ViaLane)
-	}
-	// The bend is spread over the whole row: even at the row's bottom edge the
-	// line has crossed only about half the gap to its lane. A bend squeezed
-	// into the source row would be at the lane by then, which is the diagonal
-	// that read as a straight line.
 	bottomEdge := int(row.Bounds.Y+row.Bounds.H) - 2
-	if lineAt(img, viaX, bottomEdge, background) {
-		t.Errorf("the bend reaches lane %d by the bottom of the source row; it should still be crossing", span.ViaLane)
+	if !lineAt(img, viaX, bottomEdge, background) {
+		t.Errorf("the local turn has not reached lane %d by the bottom of the source row", span.ViaLane)
 	}
 }
 
