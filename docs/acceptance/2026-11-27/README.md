@@ -43,6 +43,14 @@ The daily workflow initially failed twice because its snapshot reads could refre
 
 ## Release
 
-Pending all verification gates. Version 1.0.1 did not exist on GitHub during preflight. Existing Ed25519 key pair is available; private key permissions are 600. Key bytes are not recorded here or in logs. Release uses existing tools and does not modify signing or update behavior.
+Released 2026-11-27: commit `8ec5f27` is remote `main`; annotated tag `v1.0.1` points at it. GitHub Release: https://github.com/lane128/SuperGit/releases/tag/v1.0.1 (marked latest).
 
-Rollback: revert the feature commit; code rollback cannot restore explicitly discarded user changes. Removing a release/tag or replacing the published binary is a separate operation, not an automatic rollback step.
+| Asset | Value |
+| --- | --- |
+| `SuperGit-1.0.1-darwin-arm64.zip` | 15,441,386 bytes |
+| SHA-256 | `f7492bf9c22a926dd2a6676b8309ffc18da82f2a61e8b3ca6f3080eba0ea48aa` |
+| Bundle version | 1.0.1 (build 63) |
+
+The archive was built without the e2e tag, embedded the existing update public key, passed `codesign --verify --deep --strict`, and `verify-release.go` validated the manifest URL, size, SHA-256 and Ed25519 signature. The existing public key also verifies the published 1.0.0 manifest, confirming key continuity. Private key permissions were checked (600); key bytes are not recorded here or in logs. A fresh download from `releases/latest` is verified in the release log.
+
+Rollback: revert `8ec5f27`; code rollback cannot restore explicitly discarded user changes. Removing a release/tag or replacing the published binary is a separate destructive operation.
