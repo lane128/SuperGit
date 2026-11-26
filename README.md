@@ -24,13 +24,25 @@ SuperGit brings commit history, working changes, staging, and repository navigat
 
 ## Download and install
 
+### Homebrew
+
+On Apple Silicon with macOS 13 or later, install from the project's tap. On Homebrew versions that require third-party trust, run `brew trust --cask lane128/tap/supergit` first.
+
+```sh
+brew install --cask lane128/tap/supergit
+```
+
+If you installed SuperGit manually, quit it and move the existing `SuperGit.app` out of Applications before installing the cask. Use the in-app updater or run `brew upgrade --cask --greedy supergit` to upgrade. To uninstall the Homebrew copy, run `brew uninstall --cask supergit`.
+
+### Manual download
+
 1. Open the [latest GitHub Release](https://github.com/lane128/SuperGit/releases/latest).
 2. Download the `SuperGit-<version>-darwin-arm64.zip` asset and extract it.
 3. Move `SuperGit.app` to **Applications**, then launch it and open a local Git repository.
 
 The download includes the application; **Go is only needed to build from source**. System Git must be available. The current release provides an Apple Silicon binary; Intel macOS, Windows, and Linux binaries are not provided.
 
-> **macOS signing:** the app is ad-hoc signed and is not Apple Developer ID signed or notarized. Gatekeeper may block a downloaded copy. Releases include `SHA256SUMS.txt` for checking the download and `update.json` for in-app updates. Update archives are verified with Ed25519; this does not replace Apple notarization. See [Packaging & Release Signing](docs/packaging.md).
+> **macOS signing:** the app is ad-hoc signed and is not Apple Developer ID signed or notarized. If Gatekeeper blocks the first launch and you trust the download, open **System Settings → Privacy & Security → Open Anyway** and confirm. Releases include `SHA256SUMS.txt` for checking the download and `update.json` for in-app updates. Update archives are verified with Ed25519; this does not replace Apple notarization. See [Packaging & Release Signing](docs/packaging.md).
 
 ## Features
 

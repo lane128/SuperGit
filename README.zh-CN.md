@@ -24,13 +24,25 @@ SuperGit 把提交历史、工作区改动、暂存与仓库导航放在同一�
 
 ## 下载安装
 
+### Homebrew 安装
+
+在搭载 Apple Silicon 且运行 macOS 13 或更高版本的 Mac 上，可以通过项目的 tap 安装。如果 Homebrew 版本要求信任第三方来源，首次安装前运行 `brew trust --cask lane128/tap/supergit`。
+
+```sh
+brew install --cask lane128/tap/supergit
+```
+
+如果此前手动安装过 SuperGit，请先退出应用，将原有的 `SuperGit.app` 移出「应用程序」再安装。后续可以使用应用内更新，也可以运行 `brew upgrade --cask --greedy supergit` 升级。要卸载通过 Homebrew 安装的副本，运行 `brew uninstall --cask supergit`。
+
+### 手动下载
+
 1. 打开 [GitHub 最新发布页](https://github.com/lane128/SuperGit/releases/latest)。
 2. 下载 `SuperGit-<版本号>-darwin-arm64.zip` 并解压。
 3. 将 `SuperGit.app` 拖入「应用程序」，启动后打开本地 Git 仓库。
 
 下载包已包含应用，**仅从源码构建时才需要 Go**。运行时需要系统 Git。目前提供 Apple Silicon 安装包，未提供 Intel macOS、Windows 或 Linux 安装包。
 
-> **macOS 签名说明：** 应用目前采用 ad-hoc 签名，没有 Apple Developer ID 签名与公证，下载后可能被 Gatekeeper 拦截。发布页提供 `SHA256SUMS.txt` 用于校验下载文件，`update.json` 用于应用内更新；更新包使用 Ed25519 验签，该机制不等同于 Apple 公证。详见[打包与发布签名](docs/packaging.md)。
+> **macOS 签名说明：** 应用目前采用 ad-hoc 签名，没有 Apple Developer ID 签名与公证，如果 Gatekeeper 拦截首次启动，且你信任此次下载，可以打开「系统设置 → 隐私与安全性」，选择「仍要打开」并确认。发布页提供 `SHA256SUMS.txt` 用于校验下载文件，`update.json` 用于应用内更新；更新包使用 Ed25519 验签，该机制不等同于 Apple 公证。详见[打包与发布签名](docs/packaging.md)。
 
 ## 核心功能
 
