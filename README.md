@@ -42,7 +42,17 @@ If you installed SuperGit manually, quit it and move the existing `SuperGit.app`
 
 The download includes the application; **Go is only needed to build from source**. System Git must be available. The current release provides an Apple Silicon binary; Intel macOS, Windows, and Linux binaries are not provided.
 
-> **macOS signing:** the app is ad-hoc signed and is not Apple Developer ID signed or notarized. If Gatekeeper blocks the first launch and you trust the download, open **System Settings → Privacy & Security → Open Anyway** and confirm. Releases include `SHA256SUMS.txt` for checking the download and `update.json` for in-app updates. Update archives are verified with Ed25519; this does not replace Apple notarization. See [Packaging & Release Signing](docs/packaging.md).
+### First launch on macOS
+
+SuperGit is currently ad-hoc signed, without Apple Developer ID signing or notarization. If macOS blocks the first launch after a Homebrew or manual installation, and you trust the copy downloaded from this project's release, run:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/SuperGit.app" && open "/Applications/SuperGit.app"
+```
+
+This removes the download quarantine attribute only from SuperGit and its bundled files, then opens the app. It does not disable Gatekeeper system-wide or add Apple signing or notarization. If you installed the app elsewhere, replace both paths with its actual location. Alternatively, use **System Settings → Privacy & Security → Open Anyway**.
+
+Releases include `SHA256SUMS.txt` for checking manual downloads; Homebrew checks the archive against the cask's SHA256 automatically. The `update.json` manifest supports in-app updates, whose archives are verified with Ed25519. This does not replace Apple notarization. See [Packaging & Release Signing](docs/packaging.md).
 
 ## Features
 

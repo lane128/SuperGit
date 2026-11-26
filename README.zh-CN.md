@@ -42,7 +42,17 @@ brew install --cask lane128/tap/supergit
 
 下载包已包含应用，**仅从源码构建时才需要 Go**。运行时需要系统 Git。目前提供 Apple Silicon 安装包，未提供 Intel macOS、Windows 或 Linux 安装包。
 
-> **macOS 签名说明：** 应用目前采用 ad-hoc 签名，没有 Apple Developer ID 签名与公证，如果 Gatekeeper 拦截首次启动，且你信任此次下载，可以打开「系统设置 → 隐私与安全性」，选择「仍要打开」并确认。发布页提供 `SHA256SUMS.txt` 用于校验下载文件，`update.json` 用于应用内更新；更新包使用 Ed25519 验签，该机制不等同于 Apple 公证。详见[打包与发布签名](docs/packaging.md)。
+### macOS 首次启动
+
+SuperGit 目前采用 ad-hoc 签名，尚无 Apple Developer ID 签名与公证。通过 Homebrew 或手动安装后，如果 macOS 拦截首次启动，且你信任从本项目发布页下载的副本，可运行：
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/SuperGit.app" && open "/Applications/SuperGit.app"
+```
+
+该命令仅移除 SuperGit 及其内部文件的下载隔离标记，然后打开应用，不会关闭系统整体的 Gatekeeper 检查，也不会为应用添加 Apple 签名或公证。如果安装在其他位置，请将两处路径都替换为实际安装路径。也可以使用「系统设置 → 隐私与安全性 → 仍要打开」。
+
+发布页提供 `SHA256SUMS.txt` 用于校验手动下载的文件；Homebrew 会自动使用 Cask 中的 SHA256 校验安装包。`update.json` 用于应用内更新，更新包使用 Ed25519 验签，该机制不等同于 Apple 公证。详见[打包与发布签名](docs/packaging.md)。
 
 ## 核心功能
 
