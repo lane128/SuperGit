@@ -2,6 +2,7 @@ package gitrepo
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -14,20 +15,31 @@ func TestCommitAuthorIdentitySurvivesAllHistoryReaders(t *testing.T) {
 	t.Setenv("GIT_AUTHOR_EMAIL", email)
 	t.Setenv("GIT_COMMITTER_NAME", "Different Committer")
 	t.Setenv("GIT_COMMITTER_EMAIL", "committer@example.invalid")
+	// Equal-second timestamps can make Git --follow visit the common root
+	// through the side branch before following the rename on main.
+	// This fixture tests identity parsing, so give its graph an unambiguous clock.
+	stamp := int64(1700000000)
+	record := func(args ...string) {
+		stamp++
+		date := fmt.Sprintf("%d +0000", stamp)
+		t.Setenv("GIT_AUTHOR_DATE", date)
+		t.Setenv("GIT_COMMITTER_DATE", date)
+		git(t, root, args...)
+	}
 	write(t, root, "selected.txt", "base\n")
 	git(t, root, "add", "--all")
-	git(t, root, "commit", "-m", "root")
+	record("commit", "-m", "root")
 	git(t, root, "branch", "side")
 	git(t, root, "mv", "selected.txt", "moved.txt")
-	git(t, root, "commit", "-m", "rename")
+	record("commit", "-m", "rename")
 	write(t, root, "moved.txt", "later\n")
-	git(t, root, "commit", "-am", "later")
+	record("commit", "-am", "later")
 	git(t, root, "checkout", "side")
 	write(t, root, "side.txt", "side\n")
 	git(t, root, "add", "--all")
-	git(t, root, "commit", "-m", "side")
+	record("commit", "-m", "side")
 	git(t, root, "checkout", "main")
-	git(t, root, "merge", "--no-ff", "side", "-m", "merge")
+	record("merge", "--no-ff", "side", "-m", "merge")
 	r := openTest(t, root)
 	ctx := context.Background()
 	check := func(commits []Commit) {
@@ -64,7 +76,7 @@ func TestCommitAuthorIdentitySurvivesAllHistoryReaders(t *testing.T) {
 	}
 	check(file)
 	if len(file) != 3 {
-		t.Fatalf("rename-following fixture has %d commits", len(file))
+		t.Fatalf("rename-following fixture has %d commits: %+v\n%s", len(file), file, git(t, root, "log", "--all", "--graph", "--format=%h %at %s", "--name-status"))
 	}
 	var tips []string
 	var paged []Commit

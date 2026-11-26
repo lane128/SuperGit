@@ -415,6 +415,7 @@ func (tabs *repositoryTabs) close(target *app) {
 }
 
 func (a *app) stopRepositorySession() {
+	a.closeWorkspaceClean()
 	a.localWatch.closed = true
 	a.loadSeq++
 	a.cancelLocalProbe()

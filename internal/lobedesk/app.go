@@ -67,15 +67,16 @@ const (
 	// stage-all over thousands of files, a stash that rewrites the whole
 	// worktree, a submodule that fetches. They get a name so the title bar says
 	// what is running instead of the general line.
-	busyStageAll     busyLabel = "busyStageAll"
-	busyStageTracked busyLabel = "busyStageTracked"
-	busyUnstageAll   busyLabel = "busyUnstageAll"
-	busyDiscard      busyLabel = "busyDiscard"
-	busySaveStash    busyLabel = "busySaveStash"
-	busyApplyStash   busyLabel = "busyApplyStash"
-	busyPopStash     busyLabel = "busyPopStash"
-	busyDropStash    busyLabel = "busyDropStash"
-	busySubmodule    busyLabel = "busySubmodule"
+	busyStageAll       busyLabel = "busyStageAll"
+	busyStageTracked   busyLabel = "busyStageTracked"
+	busyUnstageAll     busyLabel = "busyUnstageAll"
+	busyDiscard        busyLabel = "busyDiscard"
+	busySaveStash      busyLabel = "busySaveStash"
+	busyWorkspaceClean busyLabel = "busyWorkspaceClean"
+	busyApplyStash     busyLabel = "busyApplyStash"
+	busyPopStash       busyLabel = "busyPopStash"
+	busyDropStash      busyLabel = "busyDropStash"
+	busySubmodule      busyLabel = "busySubmodule"
 	// The rest of the actions an operation can wait on: the network ones (a
 	// tag push, a remote branch delete), the ones that rewrite a working tree
 	// (a worktree added or removed, an undone commit, a deleted file), and
@@ -487,6 +488,7 @@ type app struct {
 	confirm                         confirmState
 	prompt                          promptState
 	reset                           resetState
+	workspaceClean                  *workspaceCleanState
 	checkoutBranch                  checkoutBranchState
 	commandPalette                  commandPaletteState
 	commandPaletteGeneration        uint64

@@ -8,7 +8,7 @@ func (a *app) detailPaneVisible() bool {
 
 func (a *app) detailNavigationAllowed() bool {
 	return a.detailPaneVisible() && !a.historyRefOpen && !a.loading &&
-		!a.confirm.open && !a.prompt.open && !a.blameOpen && !a.worktreeForm.open && !a.reset.open
+		!a.confirm.open && !a.prompt.open && !a.blameOpen && !a.worktreeForm.open && !a.reset.open && !a.workspaceCleanOpen()
 }
 
 func (a *app) requestDetailTabFocus() {

@@ -1,0 +1,23 @@
+{
+  "application": "build/SuperGit.app",
+  "sourceBase": "fe2604e",
+  "sourceState": "uncommitted workspace quick actions implementation",
+  "automationBuild": true,
+  "scenarios": [
+    "one-click Stash saves all changes and preserves ignored files and HEAD",
+    "existing Apply restores staged/unstaged bytes and additions exactly",
+    "cancel does not change index or files",
+    "default cleanup restores HEAD and unstages while retaining additions",
+    "opt-in deletion leaves clean status and preserves ignored files and symlink targets",
+    "reopening resets deletion; changed bytes invalidate old confirmation without writes"
+  ],
+  "runs": [
+    {"theme": "light", "size": "1320x840", "language": "en", "passed": 6, "complete": true},
+    {"theme": "dark", "size": "900x640", "language": "en", "passed": 6, "complete": true},
+    {"theme": "light", "size": "900x640", "language": "zh", "passed": 6, "complete": true}
+  ],
+  "passed": 18,
+  "failed": 0,
+  "humanAcceptance": false,
+  "destructiveTargets": "Fresh disposable fixture repositories created by the script"
+}

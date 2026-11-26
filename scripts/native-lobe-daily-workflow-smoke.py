@@ -33,7 +33,8 @@ automation = build / 'mygo-automation'
 (root / 'binary.txt').write_text(str(binary) + '\nsha256=' + hashlib.sha256(binary.read_bytes()).hexdigest() + '\nmtime=' + str(binary.stat().st_mtime) + '\n')
 (root / 'script.py').write_bytes(pathlib.Path(__file__).read_bytes())
 env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
-env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1', GIT_TERMINAL_PROMPT='0', GIT_ALLOW_PROTOCOL='file')
+# Snapshot reads must not rewrite index stat caches and trigger the app's watcher.
+env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1', GIT_TERMINAL_PROMPT='0', GIT_ALLOW_PROTOCOL='file', GIT_OPTIONAL_LOCKS='0')
 bootstrap = True
 results = []
 step = 'bootstrap'
@@ -73,13 +74,20 @@ def note(text):
 
 
 def state(directory=repo):
+    index_path = directory / '.git/index'
+    before_index = index_path.stat()
     files = {p: (directory / p).read_bytes().hex() for p in ('daily.txt', 'protected.txt', 'peer.txt') if (directory / p).exists()}
-    return {'head': git('rev-parse', 'HEAD', directory=directory).decode().strip(),
-            'symbolic': git('symbolic-ref', 'HEAD', directory=directory).decode().strip(),
-            'index': git('ls-files', '--stage', directory=directory).decode(),
-            'status': git('status', '--porcelain=v1', '-z', directory=directory).hex(),
-            'refs': git('for-each-ref', '--format=%(refname) %(objectname)', directory=directory).decode(),
-            'files': files}
+    result = {'head': git('rev-parse', 'HEAD', directory=directory).decode().strip(),
+              'symbolic': git('symbolic-ref', 'HEAD', directory=directory).decode().strip(),
+              'index': git('ls-files', '--stage', directory=directory).decode(),
+              'status': git('status', '--porcelain=v1', '-z', directory=directory).hex(),
+              'refs': git('for-each-ref', '--format=%(refname) %(objectname)', directory=directory).decode(),
+              'files': files}
+    after_index = index_path.stat()
+    same((after_index.st_ino, after_index.st_mtime_ns),
+         (before_index.st_ino, before_index.st_mtime_ns),
+         'Snapshot reads rewrote the index and can invalidate UI selections')
+    return result
 
 
 def save_state(name):

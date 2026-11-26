@@ -92,7 +92,8 @@ xattr -dr com.apple.quarantine "/Applications/SuperGit.app" && open "/Applicatio
 | 远端同步 | Fetch、仅快进 Pull、Push、显式执行 Force-with-lease；查看领先／落后提交数和传输进度。 |
 | 历史操作 | 在应用中执行 Merge、Rebase、Cherry-pick、Revert 和 Reset。 |
 | 冲突处理 | 使用内置三方文本编辑器对比 Base／Ours／Theirs 并编辑结果；标记解决前检查残留冲突标记。 |
-| 暂存工作 | 保存、预览、应用、弹出和删除 Stash。 |
+| 暂存工作 | 点击顶部分支旁的归档按钮，一键保存全部已暂存、未暂存和未跟踪改动；箭头保留填写说明的保存选项。支持预览、应用、弹出和删除 Stash。 |
+| 工作区清理 | 先预览范围，再恢复已有文件到 HEAD 并撤销暂存；默认保留新增文件，可勾选删除。保留被 Git 忽略的未跟踪文件。 |
 | 多检出与子模块 | 管理额外的 Worktree，查看、打开或更新子模块。 |
 
 远端认证沿用系统 Git 凭据助手与 SSH Agent，SuperGit 不保存远端访问令牌。
@@ -112,7 +113,7 @@ xattr -dr com.apple.quarantine "/Applications/SuperGit.app" && open "/Applicatio
 3. **整理暂存内容**：按文件、片段或选中行暂存，核对已暂存版本。
 4. **提交与同步**：填写提交信息并提交，再通过 **Sync** 获取、拉取或推送远端改动。
 
-未完成的工作可以先存入 Stash；需要同时处理另一个分支时，可以使用 Worktree。
+未完成的工作可以先存入 Stash；需要同时处理另一个分支时，可以使用 Worktree。顶部分支旁的清理按钮作用于整个工作区，执行前会展示影响范围。丢弃的修改及删除的文件无法通过该操作撤销，需要保留时请先 Stash。
 
 ## 常用快捷键
 

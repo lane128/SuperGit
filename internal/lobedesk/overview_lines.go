@@ -35,7 +35,7 @@ func (a *app) overviewTargetVisible(target overviewPatchTarget) bool {
 
 func (a *app) overviewLineAction(target overviewPatchTarget, indexes []int) func(context.Context, *gitrepo.Repository) error {
 	if !a.overviewTargetVisible(target) || a.loading || a.busy || a.historyRefOpen ||
-		a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open || !target.Diff.CanStageHunks {
+		a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open || a.workspaceCleanOpen() || !target.Diff.CanStageHunks {
 		return nil
 	}
 	for _, entry := range a.status.Entries {

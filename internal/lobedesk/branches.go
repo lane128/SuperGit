@@ -501,7 +501,7 @@ func (a *app) activateBranchSelection() {
 	if a.repo == nil || a.busy || a.loading || a.page != "branches" || a.branchSel == "" {
 		return
 	}
-	if a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open {
+	if a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open || a.workspaceCleanOpen() {
 		return
 	}
 	kind, name, ok := strings.Cut(a.branchSel, ":")

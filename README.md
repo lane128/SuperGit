@@ -92,7 +92,8 @@ Write a commit message, create a commit, or amend the previous one. Image change
 | Sync | Fetch, pull with fast-forward semantics, push, and use force-with-lease when explicitly needed; inspect ahead/behind counts and transfer progress. |
 | History operations | Merge, rebase, cherry-pick, revert, and reset through the application. |
 | Conflicts | Compare Base / Ours / Theirs and edit the result in the built-in three-way text editor. Residual conflict markers are checked before marking a file resolved. |
-| Stashes | Save unfinished work, preview a stash, apply or pop it, and remove entries. |
+| Stashes | Save all staged, unstaged, and untracked changes with the archive button beside the branch. Its arrow keeps named Stash options; preview, apply, pop, or remove saved entries. |
+| Workspace cleanup | Preview restoring tracked files to HEAD and unstaging changes. New files stay by default; opt in to delete them. Ignored untracked files are preserved. |
 | Worktrees & submodules | Work with additional checkouts and inspect, open, or update submodules. |
 
 Remote authentication uses your system Git credential helper and SSH agent. SuperGit does not store remote access tokens.
@@ -112,7 +113,7 @@ Use the command palette (`⌘P`) to find actions, quick checkout (`⌘B`) to swi
 3. **Stage what belongs together**—a file, a hunk, or selected lines—and check the staged diff.
 4. **Commit** with a message describing the change, then use **Sync** to fetch, pull, or push.
 
-For unfinished work, use Stash; for parallel work on another branch, use a worktree.
+For unfinished work, use Stash; for parallel work on another branch, use a worktree. The cleanup button beside the branch acts on the whole workspace and shows its scope before confirmation. Discarded edits and deleted files cannot be undone by this action; Stash first if you may need them later.
 
 ## Common shortcuts
 

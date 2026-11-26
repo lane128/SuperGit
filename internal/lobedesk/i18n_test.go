@@ -161,7 +161,7 @@ func TestEmptyStateHintsPointAtTheRightPlace(t *testing.T) {
 		key, zhMarker, enMarker string
 	}{
 		{"noWorktreesHint", "右上角", "above"},
-		{"noStashesHint", "右上角", "above"},
+		{"noStashesHint", "分支", "branch"},
 	} {
 		if !strings.Contains(zh[test.key], test.zhMarker) {
 			t.Errorf("zh %s = %q no longer points at the top-right button", test.key, zh[test.key])

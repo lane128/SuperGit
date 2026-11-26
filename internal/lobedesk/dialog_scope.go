@@ -28,6 +28,9 @@ func (a *app) hasPendingActionDialog(owner toastOwner) bool {
 	a.discardStaleComparison()
 	a.discardStaleSnapshotFile()
 	a.discardStaleNoticeDetails(owner)
+	if owner == toastMain && a.workspaceCleanOpen() {
+		return true
+	}
 	if a.confirm.open && a.confirm.owner == owner {
 		return true
 	}

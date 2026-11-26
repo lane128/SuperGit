@@ -78,10 +78,16 @@ func TestWorkbenchToolbarButtonsUseStandardSize(t *testing.T) {
 	defer setUIFontScale(fontScaleStandard)
 	a := &app{locale: localeEnglish, repo: &gitrepo.Repository{Root: t.TempDir()}}
 	tt := titleBarTester(a)
-	for _, label := range []string{a.t("saveStashAction"), a.t("syncMenu")} {
-		info, ok := tt.AccessByRole(ui.RoleMenuButton, label)
-		if !ok || info.Bounds.W < 29 || info.Bounds.H != 29 {
-			t.Errorf("%s bounds=%v; want a button at least 29 points wide and 29 points tall", label, info.Bounds)
+	for _, control := range []struct {
+		label string
+		size  float32
+	}{
+		{a.t("saveStashAction"), 24}, // Arrow of the compact titlebar split button.
+		{a.t("syncMenu"), 29},
+	} {
+		info, ok := tt.AccessByRole(ui.RoleMenuButton, control.label)
+		if !ok || info.Bounds.W < control.size || info.Bounds.H != control.size {
+			t.Errorf("%s bounds=%v; want a target at least %v points wide and %v points tall", control.label, info.Bounds, control.size, control.size)
 		}
 	}
 }

@@ -146,7 +146,7 @@ func (a *app) prepareScopedDiscardTargets(targets []fileActionTarget, batch, sel
 	go func() {
 		prepared, err := repo.PrepareDiscard(ctx, requests)
 		a.hopToMain(func() {
-			if request != a.discardPrepareSeq || !a.discardTargetsCurrent(targets, batch) || a.confirm.open || a.prompt.open || a.reset.open ||
+			if request != a.discardPrepareSeq || !a.discardTargetsCurrent(targets, batch) || a.confirm.open || a.prompt.open || a.reset.open || a.workspaceCleanOpen() ||
 				selected && !a.workspaceDiscardSurfaceAllowed() {
 				return
 			}

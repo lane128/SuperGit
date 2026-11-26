@@ -53,18 +53,25 @@ func (a *app) clearStashDetail() {
 func (a *app) stashSaveMenu(c *ui.Context) {
 	tk := theme.TokensOf(c)
 	open := &a.stashSaveOpen
+	blocked := a.workspaceStashBlocked()
+	if blocked {
+		*open = false
+	}
 	chosen := overlay.DropdownMenu(c, open, overlay.DropdownMenuProps{Items: []overlay.MenuItem{
-		{Key: "tracked", Label: a.t("saveStash"), Icon: lucide.Archive()},
-		{Key: "untracked", Label: a.t("saveStashUntracked"), Icon: lucide.Archive()},
+		{Key: "tracked", Label: a.t("saveStash"), Icon: lucide.Archive(), Disabled: blocked},
+		{Key: "untracked", Label: a.t("saveStashUntracked"), Icon: lucide.Archive(), Disabled: blocked},
 	}}, func(trigger ui.Element) {
-		styleWorkbenchButton(c, trigger, buttonNormal, false, *open)
+		styleWorkbenchButton(c, trigger, buttonNormal, blocked, *open).
+			Width(24).Height(24).PaddingX(0).Radius(0, 6, 6, 0).BorderWidth(1, 1, 1, 0)
 		label := a.t("saveStashAction")
-		trigger.Label(label).Tooltip(label).MinWidth(0).Shrink(1)
+		trigger.Label(label).Tooltip(a.t("workspaceStashOptions")).Shrink(0)
 		trigger.Children(func() {
-			ui.Text(c, label).SingleLine().MinWidth(0).Shrink(1)
-			ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(14)).TextColor(tk.TextSecondary).Shrink(0)
+			ui.Icon(c, lucide.ChevronDown()).FontSize(scaledFont(12)).TextColor(tk.TextSecondary).Shrink(0)
 		})
 	})
+	if blocked {
+		return
+	}
 	switch chosen {
 	case "tracked":
 		a.promptSaveStash(false)

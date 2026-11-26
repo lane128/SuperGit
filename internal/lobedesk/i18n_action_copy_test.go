@@ -55,6 +55,9 @@ var actionCopyGroups = []actionCopies{
 		"discardLinesTitle", "discardHunk", "discardHunkTitle", "discardFailed",
 		"discardLinesFailed", "undoDiscardFailed", "busyDiscard",
 	}},
+	{"clean workspace", "清理", "Clean", []string{
+		"workspaceCleanAction", "workspaceCleanTitle", "workspaceCleanConfirm", "workspaceCleanFailed", "busyWorkspaceClean",
+	}},
 	{"delete file", "删除", "Delet", []string{
 		"deleteFile", "deleteFailed", "busyDeleteFile",
 	}},

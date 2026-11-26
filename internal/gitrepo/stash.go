@@ -65,6 +65,10 @@ func (r *Repository) findStash(ctx context.Context, sha string) (Stash, error) {
 func (r *Repository) SaveStash(ctx context.Context, message string, untracked bool) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
+	return r.saveStashLocked(ctx, message, untracked)
+}
+
+func (r *Repository) saveStashLocked(ctx context.Context, message string, untracked bool) error {
 	if err := r.idle(ctx); err != nil {
 		return err
 	}

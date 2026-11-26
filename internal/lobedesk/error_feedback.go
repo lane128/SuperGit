@@ -9,6 +9,14 @@ import (
 // operationErrorDescription keeps original Git output after localized guidance.
 // A failed stash restore is not atomic, even when tracked edits were refused.
 func (a *app) operationErrorDescription(err error) string {
+	var workspace *gitrepo.WorkspaceActionError
+	if errors.As(err, &workspace) && a.locale == localeEnglish && workspace.English != "" {
+		guidance := workspace.English
+		if workspace.Cause != nil {
+			guidance += "\n\n" + a.operationErrorDescription(workspace.Cause)
+		}
+		return guidance
+	}
 	if errors.Is(err, gitrepo.ErrDirtyWorkingTree) {
 		guidance := a.t("dirtyWorkingTreeGuidance")
 		if err != gitrepo.ErrDirtyWorkingTree {

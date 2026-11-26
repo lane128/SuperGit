@@ -394,7 +394,7 @@ func (a *app) activateWorktreeSelection() {
 	if a.page != "worktrees" || a.worktreeSel == "" || a.repo == nil || a.busy || a.loading {
 		return
 	}
-	if a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open {
+	if a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open || a.workspaceCleanOpen() {
 		return
 	}
 	kind, target, ok := strings.Cut(a.worktreeSel, ":")

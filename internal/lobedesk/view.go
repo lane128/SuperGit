@@ -66,6 +66,7 @@ func (a *app) renderWorkbench(c *ui.Context, repositoryStrip func()) {
 		a.noticeDetailsDialog(c, toastMain)
 		a.promptDialog(c)
 		a.resetDialog(c)
+		a.workspaceCleanDialog(c)
 		a.checkoutBranchDialog(c)
 		a.commandPickerDialogs(c)
 		a.childNavigationDialog(c)
@@ -189,8 +190,11 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 		})
 		a.toolbarCommandControl(c, showBranch)
 		ui.Row(c).Grow(1).Basis(0).MinWidth(0).AlignItems(ui.Center).Justify(ui.End).Gap(6).Children(func() {
+			if showBranch {
+				a.titleQuickActions(c)
+			}
+			ui.Box(c).Grow(1).MinWidth(0)
 			if a.repo != nil {
-				a.stashSaveMenu(c)
 				a.syncMenu(c)
 			}
 			if nativeChrome {
@@ -475,7 +479,7 @@ func (a *app) sidebarRefGroups(c *ui.Context) {
 
 // openSidebarWorkspace enters the history of a checkout listed by this repository.
 func (a *app) openSidebarWorkspace(key string) {
-	if a.repo == nil || a.busy || a.loading || a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open {
+	if a.repo == nil || a.busy || a.loading || a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open || a.workspaceCleanOpen() {
 		return
 	}
 	var path string

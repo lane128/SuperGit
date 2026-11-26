@@ -64,7 +64,7 @@ func (a *app) canOpenSelectedFile() bool {
 	if !a.worktreeFilesShown() || a.worktreeDiffShown() || a.selectedPath == "" || len(a.lineSel) > 0 || a.repo == nil || a.loading || a.exclusiveBusy() {
 		return false
 	}
-	return !a.confirm.open && !a.prompt.open && !a.blameOpen && !a.worktreeForm.open && !a.reset.open
+	return !a.confirm.open && !a.prompt.open && !a.blameOpen && !a.worktreeForm.open && !a.reset.open && !a.workspaceCleanOpen()
 }
 
 // The working tree composer stays above the patch on both Summary and file tabs.
@@ -75,7 +75,7 @@ func (a *app) canCommitShortcut() bool {
 	if a.historyDetailsHidden || a.historyRefOpen {
 		return false
 	}
-	if a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open {
+	if a.confirm.open || a.prompt.open || a.blameOpen || a.worktreeForm.open || a.reset.open || a.workspaceCleanOpen() {
 		return false
 	}
 	return a.worktreeFilesShown()
