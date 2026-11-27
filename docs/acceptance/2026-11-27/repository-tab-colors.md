@@ -1,6 +1,6 @@
 # Repository tab colors acceptance
 
-Status: original feature accepted and released as 1.0.2 on 2026-11-27. Subsequent T2 presentation changes are recorded below. The latest Sublime 1A follow-up was installed locally, inspected by the user, and authorized for commit and push; it has not been tagged or released.
+Status: original feature accepted and released as 1.0.2 on 2026-11-27. The later Sublime 1A follow-up was installed locally and accepted, then released as 1.0.3; see [release 1.0.3](release-1.0.3.md).
 
 Source: feature/repository-tab-colors, uncommitted changes on d26d29f. This is a local feature build, not a release. User approved the design with “按这个方案实现”.
 
@@ -156,4 +156,4 @@ Local evidence (gitignored): [results](../../../build/repository-tab-sublime-1a-
 
 An optional combined screenshot sheet was not generated because the local Python environment lacks Pillow; individual native captures were inspected directly. Native VoiceOver narration and titlebar dragging were not separately exercised. Hover background behavior is verified by rendered unit tests; this matrix does not independently compare native hover pixels.
 
-Rollback: restore the scoped tab/toolbar presentation changes; existing repository-color preference identifiers need no migration or deletion. This follow-up is committed and pushed to `main` without a new tag or release.
+Rollback: restore the scoped tab/toolbar presentation changes; existing repository-color preference identifiers need no migration or deletion. This follow-up was committed as `6602a3f`, tagged `v1.0.3`, and published; published assets and tags require separate authorization to change.
