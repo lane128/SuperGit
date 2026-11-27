@@ -96,6 +96,6 @@ User asked for 13px/500 after trying the regular-weight build. Caption type is n
 
 ## Acceptance, release authorization and rollback
 
-After local installation of the final 13 DIP / 500 build, the user requested: “提交改动&push, 然后 merge feature 分支到 main 中，然后发布新版本&打tag”. This closes Stop 2 and authorizes the requested Git and release operations. The next version is 1.0.2, following the latest published 1.0.1. Tagging and packaging must happen only after integration, on clean main matching origin/main; actual release results will be recorded separately.
+After local installation of the final 13 DIP / 500 build, the user requested: “提交改动&push, 然后 merge feature 分支到 main 中，然后发布新版本&打tag”. This closed Stop 2 and authorized the requested Git and release operations. Feature commit `14f811a` was pushed, fast-forwarded into `main` and tagged `v1.0.2`; the version was packaged and published as the latest release. Full verification and publication results are recorded in [release 1.0.2](release-1.0.2.md).
 
 Reverting the feature commit restores the previous tabs; older versions safely ignore repository-colors files. The prior installed application is backed up as recorded above. Published release/tag deletion or replacement requires separate authorization.
