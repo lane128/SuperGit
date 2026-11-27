@@ -46,6 +46,24 @@ Classify each change into one of three tiers before starting, and state the chos
 5. **Secrets**:
    - Never commit private keys, `.env` files, or acceptance credentials; `update.key` must never enter the repository.
 
+### Release packaging order
+
+Feature completion, main integration, and version packaging are separate sequential gates:
+
+1. Finish and verify the feature on its feature branch.
+2. Merge the feature branch into `main` and synchronize `origin/main`.
+3. Create the release tag and build the version **only from a clean `main` checkout** that matches `origin/main`.
+
+Never create a release tag or package a version from a feature worktree or an unmerged/unintegrated branch. Before tagging, confirm all of the following in the build checkout:
+
+```sh
+test "$(git branch --show-current)" = main
+test -z "$(git status --porcelain)"
+test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+```
+
+If local `main` has diverged, reconcile it explicitly first; do not work around it by tagging or building from the feature branch. Record the source commit and these checks in the acceptance/release record.
+
 ### UI changes
 
 - **T3 new pages or major redesigns**: invoke `frontend-design` / `ui-ux-pro-max` as needed, produce an HTML mockup under `design/` (`design-shotgun` / `design-html` when exploring variants), and run `design-review` / `impeccable` (plus `emil-design-eng` if interaction/motion changed) before final acceptance. Record light/dark verification and the UI checklist in the design doc and acceptance record.
