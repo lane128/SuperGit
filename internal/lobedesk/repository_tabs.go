@@ -16,7 +16,6 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
-	"github.com/lobehub/lobe-mygo/pkg/overlay"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 	"golang.org/x/text/unicode/norm"
 )
@@ -469,14 +468,18 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 	}
 	tabs.stripWidth, tabs.stripButtonWidth, tabs.stripTabCount = width, buttonWidth, len(visibleTabs)
 	tabs.stripOverflowSpace, tabs.stripOpening = space, opening
-	windowTitleBar(c).Gap(gap).Children(func() {
+	stripGround := ui.Hex("#E7ECF1")
+	if tk.Dark {
+		stripGround = ui.Hex("#151C25")
+	}
+	windowTitleBar(c).Height(max(float32(52), c.TitleBar().Height)).Background(stripGround).Gap(gap).Children(func() {
 		var activate, close, alias, dragSource, dragTarget *app
-		names := tabs.checkoutTabNames(c, visibleTabs)
-		viewport := ui.Box(c).Grow(1).Basis(0).MinWidth(0).Height(34)
+		viewport := ui.Box(c).Grow(1).Basis(0).MinWidth(0).Height(46).PaddingX(3)
 		clip := viewport.Bounds()
+		names := tabs.checkoutTabNames(c, visibleTabs, repositoryCaptionWidth(repositoryCardWidth(clip.W, len(visibleTabs))))
 		viewport.Children(func() {
 			layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Horizontal, State: &tabs.scroll}, func() {
-				ui.Row(c).Height(32).Gap(4).AlignItems(ui.Center).Role(ui.RoleTabList).Label(a.t("repositoryTabs")).Children(func() {
+				ui.Row(c).Height(44).Gap(6).AlignItems(ui.Center).Role(ui.RoleTabList).Label(a.t("repositoryTabs")).Children(func() {
 					for _, session := range visibleTabs {
 						row, clicked, closed, editAlias := tabs.tab(c.Key(session), a, session, names[session], tabBlocked, clip)
 						if editAlias {
@@ -584,22 +587,20 @@ type checkoutTabName struct {
 	name, caption string
 }
 
-const repositoryTabCaptionWidth = 148
-
 // Equivalent Unicode spellings and zero-width spaces can identify separate
 // checkouts. Compare what the caption displays, while retaining the exact path.
 func checkoutCaptionText(text string) string {
 	return norm.NFC.String(strings.ReplaceAll(text, "​", ""))
 }
 
-func (tabs *repositoryTabs) checkoutTabNames(c *ui.Context, sessions []*app) map[*app]checkoutTabName {
+func (tabs *repositoryTabs) checkoutTabNames(c *ui.Context, sessions []*app, widths ...float32) map[*app]checkoutTabName {
+	captionWidth := repositoryCaptionWidth(168)
+	if len(widths) > 0 {
+		captionWidth = widths[0]
+	}
 	fits := func(text string) bool {
-		// Budget for both weights so switching tabs never hides the distinguishing text.
-		span := ui.Span{Text: text, Size: scaledFont(11.5), Weight: 700}
-		bold, _ := c.MeasureText(0, span)
-		span.Weight = 400
-		regular, _ := c.MeasureText(0, span)
-		return max(bold, regular) <= repositoryTabCaptionWidth
+		width, _ := c.MeasureText(0, ui.Span{Text: text, Size: scaledFont(13), Weight: 500})
+		return width <= captionWidth
 	}
 	fit := func(text string) string {
 		if fits(text) {
@@ -717,18 +718,16 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 	}
 	tk := theme.TokensOf(c)
 	selected := session == a
-	row = ui.Row(c).Shrink(0).Height(28).AlignItems(ui.Center)
-	if selected {
-		row.Padding(0, 0, 2, 0)
-	}
-	ink := paintWorkbenchTab(row, tk, selected, 0)
+	row = ui.Row(c).Shrink(0).Width(repositoryCardWidth(viewport.W, len(tabs.sessions))).Height(36).Padding(0, 5, 0, 0).AlignItems(ui.Center)
+	ink := paintRepositoryTab(row, tk, session.repositoryColor, selected)
 	row.Children(func() {
 		tip := root
 		if session.repositoryAlias != "" {
 			tip = session.repositoryAlias + "\n" + root
 		}
-		tab := ui.ButtonBase(c).Row().Height(28).Padding(0, 8).AlignItems(ui.Center).Gap(6).
+		tab := ui.ButtonBase(c).Row().Grow(1).Basis(0).MinWidth(0).Height(36).Padding(0, 8, 0, 12).AlignItems(ui.Center).Gap(8).
 			Role(ui.RoleTab).Label(name).Description(root).AccessSelected(selected).Tooltip(tip).Disabled(blocked && !selected)
+		styleRepositoryTabTarget(tab, ink)
 		if !blocked && len(tabs.sessions) > 1 {
 			tab.Drag(repositoryTabDrag{session: session})
 		}
@@ -741,10 +740,12 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 			tab.Description(tip + " · " + a.t("repositoryTabUncommitted"))
 		}
 		tab.Children(func() {
-			ui.Icon(c, icon).FontSize(scaledFont(12)).TextColor(ink).Shrink(0)
-			display.Text(c, caption, display.TextProps{Strong: selected, FontSize: scaledFont(11.5)}).TextColor(ink).SingleLine().MaxWidth(repositoryTabCaptionWidth)
+			ui.Icon(c, icon).FontSize(scaledFont(15)).TextColor(ink).Shrink(0)
+			// Selection is carried by the fixed line alone; the label keeps
+			// its normal weight so switching tabs does not reflow the caption.
+			ui.Text(c, caption).FontSize(scaledFont(13)).FontWeight(500).TextColor(ink).SingleLine().Grow(1).Basis(0).MinWidth(0)
 			if wholeTab {
-				slot := ui.Box(c).Width(max(0, scaledFont(workbenchButtonBaseHeight)-6)).AlignItems(ui.Center).Justify(ui.Center)
+				slot := ui.Box(c).Width(24).Shrink(0).AlignItems(ui.Center).Justify(ui.Center)
 				if dirty {
 					slot.Children(func() { size := scaledFont(6); ui.Box(c).Size(size, size).Radius(size / 2).Background(ink) })
 				}
@@ -776,12 +777,6 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 			return
 		}
 		if canClose {
-			items := []overlay.MenuItem{{Key: "close", Label: a.t("closeTab"), Icon: lucide.X()}}
-			if session.repo != nil && tabs.canChange() && !session.loading {
-				items = append(items, overlay.MenuItem{Key: "alias", Label: a.t("setRepositoryAlias"), Icon: lucide.Pencil()})
-			}
-			choice := overlay.ContextMenu(c.Key("tab-menu"), tab, overlay.DropdownMenuProps{Items: items})
-			closeTab, editAlias = choice == "close", choice == "alias"
 			middleClose := ui.Local(tab, "middle-close", func() bool { return false })
 			closeTab = closeTab || *middleClose
 			*middleClose = false
@@ -806,9 +801,8 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 		clipped := bounds.W > 0 && viewport.W > 0 &&
 			(bounds.X < viewport.X-.5 || bounds.X+bounds.W > viewport.X+viewport.W+.5)
 		closeLabel := a.t("close") + " " + closeTarget
-		close := styleWorkbenchButton(c, ui.ButtonBase(c), buttonNormal, !canClose || clipped, false).
-			Width(scaledFont(workbenchButtonBaseHeight)).PaddingX(0).Label(closeLabel).Tooltip(closeLabel)
-		styleTabClose(close, tk, ink)
+		close := ui.ButtonBase(c).Disabled(!canClose || clipped).Shrink(0).Label(closeLabel).Tooltip(closeLabel)
+		styleRepositoryClose(close, ink)
 		if dirty {
 			close.Description(a.t("repositoryTabUncommitted"))
 		}
@@ -825,6 +819,10 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 		}
 		closeTab = closeTab || (canClose && !clipped && close.Clicked())
 	})
+	if tabs.canClose(session) {
+		menuClose, menuAlias := tabs.tabMenu(c.Key("tab-menu"), row, a, session)
+		closeTab, editAlias = closeTab || menuClose, menuAlias
+	}
 	if selected && tabs.reveal {
 		row.ScrollIntoView()
 		tabs.reveal = false

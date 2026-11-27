@@ -203,9 +203,10 @@ func (tabs *repositoryTabs) startSession(path, initialPath string) {
 			recents = legacyRecentRepositories(path)
 		}
 		repos, active, skipped := probeRepositorySession(tabs.ctx, saved)
-		aliases := make([]string, len(repos))
+		aliases, colors := make([]string, len(repos)), make([]string, len(repos))
 		for i, repo := range repos {
 			aliases[i] = readRepositoryAlias(repo.Root)
+			colors[i] = readRepositoryColor(repo.Root)
 		}
 		a.hopToMain(func() {
 			if a.localWatch.closed {
@@ -229,6 +230,7 @@ func (tabs *repositoryTabs) startSession(path, initialPath string) {
 					next.repo, next.restoredCheckout = repo, true
 					next.unrestoredDraft = saved.Drafts[repo.Root]
 					next.repositoryAlias = aliases[i]
+					next.repositoryColor = colors[i]
 					tabs.sessions[i] = next
 				}
 				tabs.reveal = true

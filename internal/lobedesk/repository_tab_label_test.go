@@ -100,6 +100,77 @@ func TestRepositoryTabsKeepLongNamesDistinctAtLargeTextSize(t *testing.T) {
 	}
 }
 
+// A caption must be elided against the size it is drawn at. This name fits a
+// 13 DIP caption but not a 14 DIP one, so measuring the wrong size would hide
+// a name that fits instead of showing it whole.
+func TestRepositoryTabCaptionsMeasureTheCurrentFontSize(t *testing.T) {
+	setUIFontScale(fontScaleStandard)
+	defer setUIFontScale(fontScaleStandard)
+	budget := repositoryCaptionWidth(repositoryCardWidth(300, 1))
+	var checked bool
+	tt := ui.NewTester(func(c *ui.Context) {
+		if checked {
+			return
+		}
+		for length := 4; length <= 40 && !checked; length++ {
+			text := strings.Repeat("m", length)
+			current := ui.Span{Text: text, Size: scaledFont(13), Weight: 500}
+			small, _ := c.MeasureText(0, current)
+			current.Size = scaledFont(14)
+			current.Weight = 400
+			if large, _ := c.MeasureText(0, current); small > budget || large <= budget {
+				continue
+			}
+			session := &app{locale: localeEnglish, repo: &gitrepo.Repository{Root: filepath.Join(t.TempDir(), text)}}
+			tabs := newRepositoryTabs(context.Background(), session)
+			name := tabs.checkoutTabNames(c, tabs.sessions, budget)[session]
+			if name.name != text || name.caption != text {
+				t.Fatalf("caption %q of %q was elided for a %v DIP budget", name.caption, text, budget)
+			}
+			checked = true
+		}
+	}, 300, 40)
+	tt.Frame()
+	if !checked {
+		t.Fatal("no test name straddled the caption width budget")
+	}
+}
+
+// Labels are drawn at weight 500, so a name that only overflows when bolded
+// must keep its full caption; selection is the fixed line, not weight.
+func TestRepositoryTabCaptionsUseNormalWeight(t *testing.T) {
+	setUIFontScale(fontScaleStandard)
+	defer setUIFontScale(fontScaleStandard)
+	budget := repositoryCaptionWidth(repositoryCardWidth(300, 1))
+	var checked bool
+	tt := ui.NewTester(func(c *ui.Context) {
+		if checked {
+			return
+		}
+		for wide := 1; wide <= 20 && !checked; wide++ {
+			for narrow := 0; narrow <= 30 && !checked; narrow++ {
+				text := strings.Repeat("m", wide) + strings.Repeat("i", narrow)
+				span := ui.Span{Text: text, Size: scaledFont(13), Weight: 500}
+				normal, _ := c.MeasureText(0, span)
+				span.Weight = 600
+				if bold, _ := c.MeasureText(0, span); normal > budget || bold <= budget {
+					continue
+				}
+				session := &app{locale: localeEnglish, repo: &gitrepo.Repository{Root: filepath.Join(t.TempDir(), text)}}
+				tabs := newRepositoryTabs(context.Background(), session)
+				if name := tabs.checkoutTabNames(c, tabs.sessions, budget)[session]; name.caption != text {
+					t.Fatalf("weight-500 caption %q was elided to %q", text, name.caption)
+				}
+				checked = true
+			}
+		}
+	}, 300, 40)
+	tt.Frame()
+	if !checked {
+		t.Fatal("no test name straddled the weight-sensitive budget")
+	}
+}
+
 func TestRepositoryTabsPaintDistinctCJKCheckoutPaths(t *testing.T) {
 	const prefix = "国际化多语言产品管理平台任务队列"
 	assertDistinctTabPaint(t,
@@ -196,7 +267,7 @@ func TestRepositoryTabsKeepCaptionsDistinctAcrossElisionGroups(t *testing.T) {
 
 	captions := make(map[string]bool)
 	for _, text := range tt.Texts() {
-		if strings.Contains(text, "widget · ") && strings.Contains(text, "…") {
+		if strings.Contains(text, "…") {
 			if captions[text] {
 				t.Errorf("repeated visible checkout caption %q", text)
 			}
@@ -230,7 +301,7 @@ func TestRepositoryTabsAvoidCollisionsWithLiteralNumberedNames(t *testing.T) {
 	var names map[*app]checkoutTabName
 	tt := ui.NewTester(func(c *ui.Context) {
 		theme.Apply(c)
-		names = tabs.checkoutTabNames(c, tabs.sessions)
+		names = tabs.checkoutTabNames(c, tabs.sessions, 148)
 	}, 980, 100)
 	tt.Frame()
 

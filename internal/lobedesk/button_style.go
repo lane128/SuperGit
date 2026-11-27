@@ -187,24 +187,6 @@ func compactActionIcon(c *ui.Context, icon *ui.SVG, title string, role buttonRol
 	return b.Background(bg).Border(1, border).TextColor(ink).Radius(6).FocusRing(true).FocusRingColor(tk.Blue)
 }
 
-// Paint a single selection behind both the tab and its close target. The
-// inset belongs to the paint, so the scroll extent and hit boxes stay fixed.
-func paintWorkbenchTab(tab ui.Element, tk *theme.Tokens, active bool, verticalInset float32) ui.Color {
-	if !active && !tab.Hovered() {
-		return tk.TextSecondary
-	}
-	bg, ink := workbenchButtonColors(tk, buttonNormal, true, false, false, active)
-	tab.Draw(func(p *ui.Painter, r ui.Rect) {
-		r.Y += verticalInset
-		r.H -= 2 * verticalInset
-		p.Fill(r, bg, 6)
-		if active {
-			p.Stroke(r, tk.Blue.Alpha(0.22), 6, 1)
-		}
-	})
-	return ink
-}
-
 func styleTabClose(b ui.Element, tk *theme.Tokens, ink ui.Color) {
 	bg := ui.Transparent
 	if b.IsDisabled() {

@@ -116,6 +116,7 @@ type app struct {
 
 	repo               *gitrepo.Repository
 	repositoryAlias    string
+	repositoryColor    string
 	recentRepositories []string // successful checkout roots, newest first
 	cloneForm          cloneFormState
 	cloneOpeningRoot   string // identifies the read following a successful clone
@@ -943,9 +944,10 @@ func (a *app) readRepositoryScope(path string, reset bool, previousRoot string, 
 			statusErr = errors.New("Repository changed while reading the snapshot. Retry refresh.")
 		}
 
-		var alias string
+		var alias, color string
 		if openErr == nil && statusErr == nil && aliasRoot != repo.Root {
 			alias = readRepositoryAlias(repo.Root)
+			color = readRepositoryColor(repo.Root)
 		}
 		a.hopToMain(func() {
 			if seq != a.loadSeq {
@@ -1006,6 +1008,7 @@ func (a *app) readRepositoryScope(path string, reset bool, previousRoot string, 
 			a.repo = repo
 			if aliasRoot != repo.Root {
 				a.repositoryAlias = alias
+				a.repositoryColor = color
 			}
 			if tabs := a.repositoryTabs; tabs != nil && tabs.active == a && !hadRepo {
 				// Replacing Welcome can widen the active tab without adding a tab.

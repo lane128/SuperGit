@@ -26,6 +26,7 @@ type actionCopies struct {
 
 var actionCopyGroups = []actionCopies{
 	{"save repository alias", "保存", "Sav", []string{"saveRepositoryAlias", "saveRepositoryAliasFailed"}},
+	{"save repository color", "保存", "Sav", []string{"saveRepositoryColorFailed"}},
 	{"jump to message commit", "跳转", "Jump", []string{"jumpMessageCommit", "jumpMessageCommitFailed"}},
 	{"open message link", "打开", "Open", []string{"openMessageLinkFailed"}},
 	{"check file undo", "检查", "Check", []string{"busyCheckUndoFile"}},

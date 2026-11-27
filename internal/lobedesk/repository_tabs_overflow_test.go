@@ -107,7 +107,7 @@ func TestRepositoryTabsOverflowArrowsPanWithoutSwitching(t *testing.T) {
 	assertArrow := func(label string, enabled bool) {
 		t.Helper()
 		node, ok := view.AccessByRole(ui.RoleButton, label)
-		if !ok || node.Offscreen || node.Disabled == enabled || node.Bounds.Y+node.Bounds.H > 38 {
+		if !ok || node.Offscreen || node.Disabled == enabled || node.Bounds.Y+node.Bounds.H > 52 {
 			t.Fatalf("expected visible arrow %q (enabled=%v), got %+v", label, enabled, node)
 		}
 	}
@@ -193,7 +193,7 @@ func TestRepositoryTabsOverflowKeepsLastTabAndOpenReachable(t *testing.T) {
 	previousRight := float32(0)
 	for _, label := range []string{b.t("switchRepositoryTab"), b.t("newRepositoryTab")} {
 		node, ok := tt.AccessByRole(ui.RoleButton, label)
-		if !ok || node.Offscreen || node.Disabled || node.Bounds.Y < 0 || node.Bounds.Y+node.Bounds.H > 38 ||
+		if !ok || node.Offscreen || node.Disabled || node.Bounds.Y < 0 || node.Bounds.Y+node.Bounds.H > 52 ||
 			node.Bounds.X < previousRight || node.Bounds.X+node.Bounds.W > 560 {
 			t.Fatalf("%q escaped the narrow title strip or overlapped an action: %+v", label, node)
 		}
