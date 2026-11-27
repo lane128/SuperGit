@@ -1,114 +1,104 @@
-# Repository tabs: fixed selection line and custom backgrounds
+# Repository tabs: integrated chrome and colored icons
 
-Status: Approved — user requested implementation (“按这个方案实现”) on 2026-11-27
+Status: Approved — user requested “按照 1A 推荐方案实现” on 2026-11-27; native verification recorded in the acceptance document.
 Date: 2026-11-27
-Tier: T3 — approved implementation with per-checkout local persistence
+Tier: T2 visual follow-up to the released T3 repository-color feature
 
 ## Background and goal
 
-The user selected the B card foundation, requested right-click tab colors, rejected the large palette and selected outer border, then selected B's bottom-line treatment. Latest direction: use one fixed selection color and coordinate customizable backgrounds with it.
+The original B design used fixed blue selection lines and configurable colored card backgrounds. After trying the installed build, the user requested a 38 DIP strip, clearer tab boundaries and consistent hover behavior. They then rejected the three disconnected surfaces formed by the strip, tabs and toolbar.
 
-The original app's short tabs have no minimum width; close controls inherit a normal-button border and inset shadow. Preserve stable card geometry and remove those close decorations while refining selection and background color as separate concepts.
+The current approved direction follows the supplied Sublime Merge reference: integrate the selected tab with the toolbar, remove the selected underline and hover background changes, and move repository colors to solid folder icons. The user chose variant 1A, with neutral text. This specification supersedes the earlier fixed-line and colored-background designs; their implementation and verification history remains in [the acceptance record](../acceptance/2026-11-27/repository-tab-colors.md).
 
 ## Scope and non-goals
 
-Included: minimum width, card typography, fixed selected underline, coordinated background presets, compact right-click dots, default reset, theme adaptation, accessibility and proposed local persistence.
+This follow-up changes tab/strip/toolbar presentation, tab geometry, icon treatment and the New Tab button's appearance. It preserves existing aliases, drafts, drag reorder, context actions, close rules, welcome/error states, busy/modal guards and per-checkout color preferences.
 
-Product implementation was authorized by the user's “按这个方案实现” approval on 2026-11-27. No arbitrary color picker, selection-color setting, global palette settings, Git writes, status-color meanings, release work, or remote preference sharing. Existing aliases, drafts, drag reorder, context actions, close rules, welcome/error states and busy/modal guards remain intact.
+No arbitrary color picker, additional settings, Git writes, persistence migration, status-color meanings, release work or remote preference sharing. Implementation approval does not authorize a new commit or release.
 
 ## Current preview
 
-[Interactive B preview](../../design/repo-tabs-color-preview.html) now shows only the chosen B direction. Below it, seven independent static selected-state samples show the fixed line against every background; they are component examples, not simultaneous selected tabs in one strip.
-
-The interactive strip supports mixed colors, all one color, default/long names, and nine-tab overflow; 900px/1320px widths; system/light/dark appearance. Right-click or Shift+F10 opens the dot menu. The page's menu demo and scene controls are preview tools only.
-
-Theme and width changes retain in-memory assignments. Reload/reset/scene changes restore fixtures. No real settings or repositories are modified. Earlier comparisons remain at `design/repo-tabs-comparison.html`; their style specifications and earlier test results are superseded.
+Approved comparison: [Sublime-inspired 1A/1B/1C](../../design/repo-tabs-sublime-v1.html). Variant 1A uses solid colored folder icons and neutral labels. Earlier comparisons remain in `design/repo-tabs-integrated-redesign.html` and `design/repo-tabs-color-schemes.html` for reference. Preview files and screenshots are local, gitignored artifacts.
 
 ## Geometry and typography
 
-- Card: 36px high, 6px radius, zero border/outer outline. Equal width, ideal 192px, minimum 168px; overflow horizontally thereafter. Follow-up T2 refinement (2026-11-27, user requested more depth): a shallow bottom shadow and top-edge highlight on every card, stronger on the selected card. Keep the background and geometry unchanged; the close control still has no shadow. The scroll viewport provides five vertical DIPs around the card for shadow rendering.
-- Strip: 52px high, 6px card gap, 3px horizontal track padding.
-- System font 13px at weight 500 in both selection states (review follow-ups passed through 14px and regular 400 before the user settled on 13px/500 on 2026-11-27). Selection is carried by the fixed line and ink alone; it never changes label weight, size, width, background, or position. Caption elision measures this size and weight, so neither can clip names.
-- Repository icon 15px. Close target 24×24px, X 14px; no border or inset shadow.
-- Dirty indicator remains a 6px dot in the close slot, replaced by X on close hover/focus. It has no relationship to assigned background colors.
-- Keyboard focus is an inset dashed indicator only when keyboard focus is visible. Pointer selection never adds a focus or selection border.
+- Strip: 38 DIP high (or the platform titlebar minimum), including a 1 DIP divider painted beneath its children. Horizontal track padding is 2 DIP per side; tabs have no gap.
+- Tab: 35 DIP high, aligned to the bottom of the strip, leaving 3 DIP above at the standard strip height. Top corners use a 6 DIP radius; bottom corners are square. A 1 DIP top/side border reserves the same space in both selection states. There is no bottom border.
+- Equal widths: ideal 192 DIP, minimum 168 DIP; horizontal overflow beyond that. Caption width accounts for both side borders.
+- Selected tab covers the strip divider and uses the toolbar surface, creating an uninterrupted connection. Its top/side border identifies the selected shape.
+- Unselected tabs are transparent on the strip. A centered 1 DIP vertical separator appears between consecutive unselected tabs; it is omitted beside the selected tab's existing edge.
+- System font: 13 DIP at weight 500 in both selection states. Selection never changes label weight, size, width or position. Caption measurement uses the same metrics.
+- Repository icon: 15 DIP. Assigned colors use a solid folder silhouette; the default folder and welcome icon retain their existing neutral outlines.
+- Close target: 24×24 DIP, X at 14 DIP, without a background, border or shadow. Dirty state uses a 6 DIP dot in the same slot, replaced by X while the tab is hovered or the close control is focused.
+- Keyboard focus remains an inset dashed indicator. New Tab is a frameless plus-and-text button with its accessible label and keyboard focus behavior preserved.
 
-## Fixed selection color
+## Integrated chrome colors
 
-Define a dedicated `selection-ink` token independent of all repository palette entries:
+The strip is a recessed track; the selected tab and toolbar form one surface. Repository color never changes either background.
 
-| Theme | Selected line | Selected text/icon | Unselected text/icon |
+| Role | Light | Dark |
+| --- | --- | --- |
+| Strip / unselected tabs | `#E5E9EF` | `#0C1016` |
+| Selected tab / toolbar | `#FFFFFF` | `#1C2128` |
+| Strip divider | `#D4DBE3` | `#252C36` |
+| Selected top/side edge | `#D2D9E2` | `#2E3642` |
+| Selected text | `#1F2328` | `#E6EDF3` |
+| Unselected text | `#5C6672` | `#8B949E` |
+| Hovered unselected text | `#1F2328` | `#DCE4ED` |
+
+These values apply to the SuperGit palette. Other palettes fall back to their existing semantic layout, elevated-surface, border and text tokens.
+
+There is no selection underline, shadow, hover fill or press fill. Hover increases foreground emphasis across the tab, including its close control. Selection remains available through the native accessible selected state as well as the tab shape and connected surface.
+
+## Repository icon colors
+
+The same hue is used by the folder icon and context-menu swatch. Unselected, unhovered icons use 88% opacity; selected or hovered icons use full opacity. Labels remain neutral.
+
+| Preset identifier | Display name | Light icon | Dark icon |
 | --- | --- | --- | --- |
-| Light | `#1764C0` | `#202B38` | `#526175` |
-| Dark | `#86B7F9` | `#E9EFF7` | `#B7C5D6` |
+| default | 默认 | Neutral text ink | Neutral text ink |
+| blue | 蓝色 | `#0969DA` | `#58A6FF` |
+| green | 绿色 | `#1A7F37` | `#3FB950` |
+| amber | 米黄 | `#9A6700` | `#E3B341` |
+| rose | 玫灰 | `#BF3989` | `#F778BA` |
+| violet | 淡紫 | `#7C3AED` | `#BC8CFF` |
+| gray | 灰色 | `#57606A` | `#9CA6B2` |
 
-The line is 2px high, inset 12px from either side, at the bottom of the card with rounded ends. It always uses the same token within a theme: choosing green, pink, default or blue does not recolor it. Theme changes adapt its luminance while preserving its blue identity.
-
-Selected text and icons use neutral primary ink; other tabs use neutral secondary ink. A tab's background is identical before and after selection. The visible line, weight and accessible selected state identify the current repository, including when all tabs share one background.
-
-## Coordinated backgrounds
-
-Use low-saturation backgrounds so the selection blue stays prominent. Menu dot colors may be stronger to make the preset identifiable, but dot color is never the line color source. Palette values live in `repo-tabs-color-preview.html`; implementation should reuse semantic background/ink/selection roles rather than derive colors ad hoc.
-
-| Preset identifier | Display name | Light background | Dark background |
-| --- | --- | --- | --- |
-| default | 默认 | `#EDF1F5` | `#202B39` |
-| blue | 蓝色 | `#E7EEF8` | `#233249` |
-| green | 绿色 | `#E7F0ED` | `#273A35` |
-| amber | 米黄 | `#F5EFDF` | `#3B3529` |
-| rose | 玫灰 | `#F3E9EE` | `#3C2D38` |
-| violet | 淡紫 | `#EEEBF5` | `#332F45` |
-| gray | 灰色 | `#E9EDF2` | `#303743` |
-
-Default remains a distinct stored preference rather than an alias for explicit blue. Current display-name refinements do not change preset identifiers.
+Default remains a distinct stored preference rather than an alias for blue. Preset identifiers and stored data do not change.
 
 ## Compact right-click menu
 
-- One “标签颜色” label (localized from the preview's “Tab 颜色” to follow the project's Chinese terminology checks), then a single row: default plus six colors. Each dot is 18px within a 28px click target.
-- Current choice has an internal checkmark; default shows ∅ when unselected. Color names appear in tooltips/accessibility labels, not caption tiles. No explanatory paragraph, grid, or separate reset row.
-- Selecting a dot applies immediately and closes the menu. Default dot restores default. Right-clicking/recoloring an inactive tab does not activate it or change dirty state/order/drafts.
-- Keyboard access: Shift+F10/context-menu key, arrows within/between native menu groups, Enter/Space to choose, Escape with focus restored to the target. Tab follows the native menu convention and dismisses; the HTML preview permits Tab traversal. Clicking outside dismisses without mutation. Keep the popup within the viewport.
-- Preserve native context alias/close actions. Prototype demonstrates close but not the existing alias dialog.
-- Native welcome/unloaded tabs must not offer persisted repository-color changes. Preserve existing busy/loading/modal guards. Do not reuse `askAlias` unchanged: it activates the target.
+- One localized “标签颜色” label, followed by default plus six colors. Each dot is 18 DIP within a 28 DIP click target.
+- Current choice has an internal checkmark; default shows ∅ when unselected. Color names remain available as tooltips/accessibility labels.
+- Choosing a dot applies immediately and closes the menu. Recoloring an inactive tab does not activate it or change dirty state, order or drafts.
+- Keyboard access: Shift+F10/context-menu key, arrows within/between native groups, Enter/Space to choose, Escape with focus restored to the target. Tab dismisses under the native menu convention. Clicking outside dismisses without mutation.
+- Preserve alias/close actions and busy/loading/modal guards. Welcome/unloaded tabs do not offer persisted repository-color changes.
 
-## Proposed persistence and implementation boundaries
+## Persistence and implementation boundaries
 
-The approved implementation follows `internal/lobedesk/repository_alias.go`: a separate local preference file per SHA-256 canonical checkout root, atomically saved using `writeLocalJSON`. Use a separate `repository-colors` directory beside existing settings; do not change alias formats, `.git/config`, or worktree files.
+Existing persistence follows `internal/lobedesk/repository_alias.go`: one local preference file per SHA-256 canonical checkout root, atomically saved using `writeLocalJSON`. The `repository-colors` directory sits beside settings; aliases, `.git/config` and worktree files are unchanged.
 
-Store a validated stable preset identifier, not a display label, RGB value or selection color. Missing/unknown/malformed values fall back to default. Reset can atomically write the default identifier without deleting existing user files. A failed save reports a localized error, retains the previous assignment and leaves the active tab unchanged.
+Store a validated stable preset identifier, never a display label or RGB value. Missing, unknown or malformed values fall back to default. Reset atomically writes the default identifier. Failed saves report a localized error, retain the previous assignment and leave the active tab unchanged.
 
-Aliases and canonical symlink paths share the same checkout preference. Same-named different roots and different worktrees may have different colors. Reopening/restarting retains colors; alias edits do not change them. Per-checkout files prevent unrelated repository preferences from overwriting one another. Update loaded same-checkout instances via existing mechanisms; cross-process changes may take effect on reopening, with last successful write winning. No broad settings refactor is needed.
+Canonical symlink paths share a checkout preference. Same-named roots and separate worktrees may use different colors. Reopening/restarting retains preferences; aliases do not alter them. Loaded same-checkout instances update through existing mechanisms; cross-process changes may take effect on reopening, with the last successful write winning.
 
-Likely modules: `repository_tabs.go` (geometry, fixed underline, context target, clipping); `button_style.go` (scoped tab/close paint); a repository-color helper and tests; initialization/session preference loading; localization/accessibility strings. Git backend, signing and permissions remain unchanged.
+The T2 follow-up touches `repository_tab_style.go`, `repository_tabs.go`, `repository_tab_menu.go`, `view.go` and rendered style tests. Git backend, signing, permissions and persistence code are unchanged.
 
 ## Verification
 
-### Current design checks
+Current regression coverage:
 
-Completed in ego-browser:
+1. Selected tab surface joins the toolbar without a bottom divider; top/side borders and separators render in both themes.
+2. Hovering either the label or close control leaves both background regions unchanged, for selected and unselected tabs.
+3. All seven presets × two themes × two font scales retain neutral backgrounds and stable geometry. Assigned colors render in the solid folder icon; close targets remain 24×24 DIP.
+4. Existing repository tab, color, overflow, caption, titlebar and keyboard tests remain applicable.
+5. Run `gofmt`, `go vet` and targeted tests; complete inline diff review before native acceptance. T2 skips a new full design pipeline, independent reviewer and redundant full-suite run.
+6. Build `make app` and `make e2e-build`; exercise light/dark at 900×640 and 1320×840 with 100%/115% font scale. Inspect actual native captures for selected seams, icons, long-name elision, menu and overflow controls.
 
-- Seven presets × two themes × selected/unselected = 28 states. Line RGB stayed identical across presets within each theme; selected/unselected background stayed identical. Border/outline remained zero, typography reviewed at 14px/400 and settled at 13px/500, later given shallow depth.
-- Minimum text contrast: **5.32:1**. Minimum fixed-line/background contrast: **4.89:1**, above the 3:1 graphical indicator target.
-- Four scenes × two widths × two themes = 16 layouts passed width, overflow and borderless-close checks.
-- Actual right-click changed the active tab to amber without changing the line RGB; inactive recolor retained current repository; default reset and seven-dot single-row layout passed.
-- Initial exact `2px` computed-height assertion encountered browser-zoom rounding (`1.99653px`). The corrected assertion allows 0.02px rounding and passed; authored height remains 2px.
-- Light/dark screenshots visually inspected. Evidence: `design/repo-tabs-fixed-line-checks.json`, `design/repo-tabs-fixed-line-light.png`, `design/repo-tabs-fixed-line-dark.png`.
+Latest results and local evidence are in [the acceptance record](../acceptance/2026-11-27/repository-tab-colors.md). Earlier fixed-line contrast and pixel checks describe superseded designs and are not evidence for 1A.
 
-These are HTML checks only. Go tests and native acceptance are recorded separately during the approved implementation.
+## Risks and rollback
 
-### Regression and native acceptance after approval
+The selected shape and seam must stay visible when tabs scroll or text scale changes. Repository icon colors must remain independent of selection and dirty/error state. Keyboard focus must remain visible without adding pointer-hover backgrounds.
 
-1. Add failing tests for short/long/CJK/duplicate captions, stable geometry at 100%/115%, fixed line independent of every preset, background unchanged by selection, neutral text and close decorations.
-2. Cover preset validation, missing/corrupt preferences, canonical root identity, aliases, worktrees, reopen/reset, atomic save failures and stale menu targets.
-3. Exercise inactive-tab recolor without navigation, existing alias/close/context behavior, dirty status, drafts, keyboard navigation/reveal, reorder and busy/loading/modal guards.
-4. Run `gofmt`, `go vet`, targeted tests and one T3 `go test -cover ./...` using a checkout without generated `build/` fixtures. Add `make check` if shared low-level/config utilities change. Independent scoped code review must precede native acceptance.
-5. Launch `make app` against disposable repositories. Verify both themes at 900×640 and 1320×840 plus 115% scale. Check fine-line visibility, same-color/gray cases, clipped controls, new-tab/overflow access, focus, titlebar dragging and welcome/error states.
-6. Verify restart persistence, aliases, save failure and deterministic native guard fixtures. Record evidence under `docs/acceptance/<acceptance-date>/` and present the reviewed build for user acceptance.
-
-## Risks, review and rollback
-
-A thin line can become unclear through scaling or clipping; native verification must reproduce the chosen line thickness and confirm it stays visible. Colors must not regain control of the selection token or become dirty/error indicators. Local preference writes require failure and stale-target coverage.
-
-Self-review covers scope, failure modes, compatibility, reproducibility and persistence. Independent code review remains a pre-acceptance gate. The user approved B's fixed-color underline and palette on 2026-11-27 (“按这个方案实现”), satisfying `.claude/skills/feature-flow/SKILL.md` Phase 1 Stop 1.
-
-Rollback future implementation by reverting scoped tab/color changes. Optional preference files can remain ignored by older versions; no alias migration, Git restoration or destructive cleanup is required.
+Rollback the scoped presentation changes to restore the previous appearance. Repository-color preferences need no migration or cleanup; older versions continue to interpret the same identifiers. A new release requires separate authorization.

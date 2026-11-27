@@ -468,20 +468,22 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 	}
 	tabs.stripWidth, tabs.stripButtonWidth, tabs.stripTabCount = width, buttonWidth, len(visibleTabs)
 	tabs.stripOverflowSpace, tabs.stripOpening = space, opening
-	stripGround := ui.Hex("#E7ECF1")
-	if tk.Dark {
-		stripGround = ui.Hex("#151C25")
-	}
-	windowTitleBar(c).Height(max(float32(52), c.TitleBar().Height)).Background(stripGround).Gap(gap).Children(func() {
+	chrome := repositoryChrome(tk)
+	stripHeight := max(float32(titleBarHeight), c.TitleBar().Height)
+	windowTitleBar(c).Background(chrome.track).BorderWidth(0, 0, 0, 0).Gap(gap).
+		Draw(func(p *ui.Painter, r ui.Rect) {
+			p.Fill(ui.Rect{X: r.X, Y: r.Y + r.H - 1, W: r.W, H: 1}, chrome.trackLine, 0)
+		}).Children(func() {
 		var activate, close, alias, dragSource, dragTarget *app
-		viewport := ui.Box(c).Grow(1).Basis(0).MinWidth(0).Height(46).PaddingX(3)
+		viewport := ui.Box(c).Grow(1).Basis(0).MinWidth(0).Height(stripHeight).PaddingX(2)
 		clip := viewport.Bounds()
 		names := tabs.checkoutTabNames(c, visibleTabs, repositoryCaptionWidth(repositoryCardWidth(clip.W, len(visibleTabs))))
 		viewport.Children(func() {
 			layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Horizontal, State: &tabs.scroll}, func() {
-				ui.Row(c).Height(44).Gap(6).AlignItems(ui.Center).Role(ui.RoleTabList).Label(a.t("repositoryTabs")).Children(func() {
-					for _, session := range visibleTabs {
-						row, clicked, closed, editAlias := tabs.tab(c.Key(session), a, session, names[session], tabBlocked, clip)
+				ui.Row(c).Height(stripHeight).Gap(0).AlignItems(ui.End).Role(ui.RoleTabList).Label(a.t("repositoryTabs")).Children(func() {
+					for i, session := range visibleTabs {
+						showLeadingSep := i > 0 && session != a && visibleTabs[i-1] != a
+						row, clicked, closed, editAlias := tabs.tab(c.Key(session), a, session, names[session], tabBlocked, showLeadingSep, clip)
 						if editAlias {
 							alias = session
 						}
@@ -534,11 +536,19 @@ func (tabs *repositoryTabs) strip(c *ui.Context, a *app) {
 			}
 		}
 		label := a.t("newRepositoryTab")
-		button := styleWorkbenchButton(c, ui.ButtonBase(c.Key("new-repository-tab")), buttonNormal, blocked, false).
-			Label(label).Shrink(0)
-		button.Children(func() {
-			ui.Icon(c, lucide.Plus()).FontSize(scaledFont(14))
-			ui.Text(c, label).FontSize(scaledFont(12)).SingleLine()
+		button := ui.ButtonBase(c.Key("new-repository-tab")).Row().Height(scaledFont(workbenchButtonBaseHeight)).
+			PaddingX(8).Gap(5).Radius(6).AlignItems(ui.Center).Shrink(0).
+			Background(ui.Transparent).Border(0, ui.Transparent).NoShadow().
+			Disabled(blocked).DimDisabled(false).Label(label).Tooltip(label).Cursor(ui.CursorPointer)
+		addInk := chrome.inkIdle
+		if blocked {
+			addInk = chrome.inkIdle.Alpha(.45)
+		} else if button.Hovered() || button.Pressed() {
+			addInk = chrome.inkHover
+		}
+		button.TextColor(addInk).Children(func() {
+			ui.Icon(c, lucide.Plus()).FontSize(scaledFont(14)).TextColor(addInk)
+			ui.Text(c, label).FontSize(scaledFont(12)).FontWeight(500).TextColor(addInk).SingleLine()
 		})
 		if button.Clicked() {
 			tabs.newTab()
@@ -706,7 +716,7 @@ func (tabs *repositoryTabs) checkoutTabNames(c *ui.Context, sessions []*app, wid
 	return names
 }
 
-func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutTabName, blocked bool, viewport ui.Rect) (row ui.Element, activate, closeTab, editAlias bool) {
+func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutTabName, blocked, showLeadingSep bool, viewport ui.Rect) (row ui.Element, activate, closeTab, editAlias bool) {
 	name, root, closeTarget := a.t("welcomeTab"), "", a.t("welcomeTab")
 	caption := name
 	icon := lucide.Folder()
@@ -718,14 +728,17 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 	}
 	tk := theme.TokensOf(c)
 	selected := session == a
-	row = ui.Row(c).Shrink(0).Width(repositoryCardWidth(viewport.W, len(tabs.sessions))).Height(36).Padding(0, 5, 0, 0).AlignItems(ui.Center)
-	ink := paintRepositoryTab(row, tk, session.repositoryColor, selected)
+	row = ui.Row(c).Shrink(0).Width(repositoryCardWidth(viewport.W, len(tabs.sessions))).Height(repositoryTabHeight).Padding(0, 5, 0, 0).AlignItems(ui.Center)
+	ink, iconInk, closeInk, filledIcon := paintRepositoryTab(row, tk, session.repositoryColor, selected, blocked, showLeadingSep)
+	if filledIcon && session.repo != nil {
+		icon = repositoryFilledFolderIcon
+	}
 	row.Children(func() {
 		tip := root
 		if session.repositoryAlias != "" {
 			tip = session.repositoryAlias + "\n" + root
 		}
-		tab := ui.ButtonBase(c).Row().Grow(1).Basis(0).MinWidth(0).Height(36).Padding(0, 8, 0, 12).AlignItems(ui.Center).Gap(8).
+		tab := ui.ButtonBase(c).Row().Grow(1).Basis(0).MinWidth(0).Height(repositoryTabHeight-1).Padding(0, 8, 0, 12).AlignItems(ui.Center).Gap(8).
 			Role(ui.RoleTab).Label(name).Description(root).AccessSelected(selected).Tooltip(tip).Disabled(blocked && !selected)
 		styleRepositoryTabTarget(tab, ink)
 		if !blocked && len(tabs.sessions) > 1 {
@@ -740,14 +753,14 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 			tab.Description(tip + " · " + a.t("repositoryTabUncommitted"))
 		}
 		tab.Children(func() {
-			ui.Icon(c, icon).FontSize(scaledFont(15)).TextColor(ink).Shrink(0)
-			// Selection is carried by the fixed line alone; the label keeps
-			// its normal weight so switching tabs does not reflow the caption.
+			ui.Icon(c, icon).FontSize(scaledFont(15)).TextColor(iconInk).Shrink(0)
+			// Label keeps its normal weight in both states so switching tabs
+			// never reflows the caption.
 			ui.Text(c, caption).FontSize(scaledFont(13)).FontWeight(500).TextColor(ink).SingleLine().Grow(1).Basis(0).MinWidth(0)
 			if wholeTab {
 				slot := ui.Box(c).Width(24).Shrink(0).AlignItems(ui.Center).Justify(ui.Center)
 				if dirty {
-					slot.Children(func() { size := scaledFont(6); ui.Box(c).Size(size, size).Radius(size / 2).Background(ink) })
+					slot.Children(func() { size := scaledFont(6); ui.Box(c).Size(size, size).Radius(size / 2).Background(closeInk) })
 				}
 			}
 		})
@@ -802,14 +815,14 @@ func (tabs *repositoryTabs) tab(c *ui.Context, a, session *app, labels checkoutT
 			(bounds.X < viewport.X-.5 || bounds.X+bounds.W > viewport.X+viewport.W+.5)
 		closeLabel := a.t("close") + " " + closeTarget
 		close := ui.ButtonBase(c).Disabled(!canClose || clipped).Shrink(0).Label(closeLabel).Tooltip(closeLabel)
-		styleRepositoryClose(close, ink)
+		styleRepositoryClose(close, closeInk)
 		if dirty {
 			close.Description(a.t("repositoryTabUncommitted"))
 		}
 		close.Children(func() {
-			if dirty && !close.Hovered() && !close.Focused() {
+			if dirty && !row.Hovered() && !close.Focused() {
 				size := scaledFont(6)
-				ui.Box(c).Width(size).Height(size).Radius(size / 2).Background(ink)
+				ui.Box(c).Width(size).Height(size).Radius(size / 2).Background(closeInk)
 			} else {
 				ui.Icon(c, lucide.X()).FontSize(scaledFont(14))
 			}

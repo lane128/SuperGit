@@ -137,6 +137,9 @@ func (a *app) workbenchToolbar(c *ui.Context, nativeChrome bool) {
 	toolbar := ui.Row(c).FillWidth().Height(height).Shrink(0).AlignItems(ui.Center).Gap(8).Padding(0, 12, 0, 12)
 	if nativeChrome {
 		toolbar.DragWindow()
+	} else {
+		chrome := repositoryChrome(tk)
+		toolbar.Background(chrome.deck).BorderWidth(0, 0, 1, 0).BorderColor(tk.BorderSecondary)
 	}
 	toolbar.Children(func() {
 		showBranch := a.repo != nil && !a.restoredCheckout

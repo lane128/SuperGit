@@ -7,22 +7,17 @@ import (
 )
 
 func repositoryColorDot(dark bool, preset string) (bg, ink ui.Color) {
-	dots := map[string][2]string{
-		"blue": {"#476EAE", "#8FAFE5"}, "green": {"#4B806B", "#94BFAE"},
-		"amber": {"#96783B", "#D2B67C"}, "rose": {"#986E85", "#D0A5BC"},
-		"violet": {"#7C6CA4", "#BAAFE0"}, "gray": {"#738294", "#ACB8C7"},
+	if tag, ok := repositoryTagColor(dark, preset); ok {
+		ink = ui.Hex("#FFFFFF")
+		if dark {
+			ink = ui.Hex("#0D1117")
+		}
+		return tag, ink
 	}
-	if preset == "default" {
-		bg, ink, _ = repositoryTabColors(dark, preset, false)
-		return
-	}
-	index := 0
-	ink = ui.Hex("#FFFFFF")
 	if dark {
-		index = 1
-		ink = ui.Hex("#202B38")
+		return ui.Hex("#252C36"), ui.Hex("#DCE4ED")
 	}
-	return ui.Hex(dots[preset][index]), ink
+	return ui.Hex("#E5E9EF"), ui.Hex("#5C6672")
 }
 
 func (tabs *repositoryTabs) tabMenu(c *ui.Context, target ui.Element, a, session *app) (closeTab, editAlias bool) {
