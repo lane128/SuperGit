@@ -51,8 +51,13 @@ func (a *app) renderWorkbench(c *ui.Context, repositoryStrip func()) {
 		content := ui.Row(c).Grow(1).Basis(0).MinHeight(0).AlignItems(ui.Stretch)
 		a.sidebarSplit.rowWidth, _ = c.Size()
 		content.Children(func() {
-			if a.sidebarHidden {
+			if a.sidebarHidden || a.repo == nil {
 				a.contentCardAtWidth(c, a.sidebarSplit.rowWidth)
+				if a.repo == nil && !a.sidebarHidden {
+					ui.Column(c.Key("welcome-settings")).Absolute().Left(6).Bottom(6).Width(sidebarWidth - 12).Children(func() {
+						a.sidebarSettings(c)
+					})
+				}
 				return
 			}
 			sidebar := a.sidebar(c)
@@ -357,20 +362,20 @@ func (a *app) sidebar(c *ui.Context) float32 {
 			ui.Column(c).FillWidth().Padding(0, 6).Children(func() {
 				a.sidebarHeader(c)
 			})
-			if a.repo == nil && a.repositoryTabs != nil {
-				ui.Box(c).Grow(1)
-			} else {
-				layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.sidebarScroll}, func() {
-					ui.Column(c).FillWidth().Gap(0).Children(func() {
-						a.sidebarRefGroups(c)
-					})
-				}).Grow(1).Basis(0).MinHeight(0)
-			}
+			layout.ScrollArea(c, layout.ScrollAreaProps{State: &a.sidebarScroll}, func() {
+				ui.Column(c).FillWidth().Gap(0).Children(func() {
+					a.sidebarRefGroups(c)
+				})
+			}).Grow(1).Basis(0).MinHeight(0)
 			ui.Column(c).FillWidth().Padding(4, 6, 0, 6).Children(func() {
-				a.sidebarItem(c, lucide.Settings(), "settings", a.t("settings"), shortcutKeys("window.settings"))
+				a.sidebarSettings(c)
 			})
 		})
 	return width
+}
+
+func (a *app) sidebarSettings(c *ui.Context) {
+	a.sidebarItem(c, lucide.Settings(), "settings", a.t("settings"), shortcutKeys("window.settings"))
 }
 
 func (a *app) sidebarRefGroups(c *ui.Context) {

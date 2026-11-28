@@ -195,6 +195,14 @@ func TestWelcomeActionButtonsEqualWidthAndAlignment(t *testing.T) {
 			}
 		}
 
+		if center := btnBounds[0].X + btnBounds[0].W/2; math.Abs(float64(center-980.0/2)) > 0.5 {
+			t.Fatalf("Welcome actions centered at %.2f, want window center %.2f", center, 980.0/2)
+		}
+		settings, ok := tt.AccessByRole(ui.RoleButton, a.t("settings"))
+		if !ok || settings.Offscreen || settings.Disabled {
+			t.Fatalf("Welcome missing interactive Settings button: %+v", settings)
+		}
+
 		guidance, ok := tt.AccessByRole(ui.RoleText, a.loadErr)
 		if !ok || guidance.Offscreen {
 			t.Fatalf("error guidance missing or offscreen: %+v", guidance)
