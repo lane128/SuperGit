@@ -8,17 +8,14 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 )
 
-// Store persists tasks under the tasks directory in Root.
+// Store persists tasks under the tasks directory in Root. Writers sharing a
+// root take an advisory file lock across processes. Load and List stay
+// lock-free because each task is published with an atomic rename.
 type Store struct {
 	Root string
 }
-
-// Serialize writes across Store instances in this process. Readers see either
-// the previous file or its complete replacement because writes use rename.
-var taskStoreWrites sync.Mutex
 
 func NewStore(root string) *Store {
 	return &Store{Root: root}
@@ -29,8 +26,11 @@ func (s *Store) Create(t Task) error {
 	if err != nil {
 		return err
 	}
-	taskStoreWrites.Lock()
-	defer taskStoreWrites.Unlock()
+	lock, err := s.lockWrites()
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
 
 	if _, err := os.Lstat(path); err == nil {
 		return fmt.Errorf("task %q already exists: %w", t.ID, os.ErrExist)
@@ -54,8 +54,11 @@ func (s *Store) Save(t Task) error {
 	if err != nil {
 		return err
 	}
-	taskStoreWrites.Lock()
-	defer taskStoreWrites.Unlock()
+	lock, err := s.lockWrites()
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
 	return writeTask(path, t)
 }
 
@@ -66,8 +69,11 @@ func (s *Store) Update(id string, fn func(*Task) error) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	taskStoreWrites.Lock()
-	defer taskStoreWrites.Unlock()
+	lock, err := s.lockWrites()
+	if err != nil {
+		return Task{}, err
+	}
+	defer lock.Close()
 
 	t, err := readTask(path, id)
 	if err != nil {
@@ -120,6 +126,24 @@ func (s *Store) List() ([]Task, error) {
 	return tasks, nil
 }
 
+// Closing the returned file releases the lock. Keep the lock file on disk so
+// every process locking this root uses the same file.
+func (s *Store) lockWrites() (*os.File, error) {
+	path := filepath.Join(s.Root, ".tasks.lock")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err := lockTaskStoreFile(file); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("lock task store %s: %w", path, err)
+	}
+	return file, nil
+}
+
 func (s *Store) tasksDir() string {
 	return filepath.Join(s.Root, "tasks")
 }
@@ -150,6 +174,15 @@ func writeTask(path string, task Task) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if info.Mode().Perm() != 0700 {
+		if err := os.Chmod(dir, 0700); err != nil {
+			return err
+		}
 	}
 	f, err := os.CreateTemp(dir, ".task-*")
 	if err != nil {

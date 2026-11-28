@@ -1,10 +1,15 @@
 package delivery
 
 import (
+	"bufio"
+	"context"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -24,7 +29,7 @@ func TestStoreRoundTripAndList(t *testing.T) {
 		t.Fatal(err)
 	}
 	recordLedgerCheck(t, &task, Check{Name: "analysis", Candidate: "candidate-a", Passed: true, Evidence: "scope confirmed", RecordedAt: later})
-	if err := task.AuthorizeRevision(AuthorizationRevision{By: "maintainer", Release: true, VersionPolicy: "minor", At: later}, later); err != nil {
+	if err := task.AuthorizeRevision(AuthorizationRevision{By: "maintainer", Reason: "change release policy", Release: true, VersionPolicy: "minor", At: later}, later); err != nil {
 		t.Fatal(err)
 	}
 
@@ -61,6 +66,30 @@ func TestStoreRoundTripAndList(t *testing.T) {
 	}
 	if want := []string{"first-a", "first-z", "a-later"}; !reflect.DeepEqual(ids, want) {
 		t.Fatalf("list order = %v, want %v", ids, want)
+	}
+}
+
+func TestStoreRestrictsExistingTaskDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not report Unix directory modes")
+	}
+	store := NewStore(t.TempDir())
+	dir := filepath.Join(store.Root, "tasks")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Create(newLedgerTask(t, "task", taskStartTime)); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0700 {
+		t.Fatalf("existing task directory has mode %04o, want 0700", mode)
 	}
 }
 
@@ -147,6 +176,76 @@ func TestStoreReportsCorruptFile(t *testing.T) {
 	}
 	if _, err := store.List(); err == nil || !strings.Contains(err.Error(), "task.json") {
 		t.Fatalf("List corrupt task error = %v", err)
+	}
+}
+
+func TestStoreSerializesSeparateProcessUpdates(t *testing.T) {
+	const rootEnv = "SUPERGIT_TEST_LEDGER_LOCK_ROOT"
+	const id = "task"
+	later := taskStartTime.Add(time.Minute)
+	if root := os.Getenv(rootEnv); root != "" {
+		fmt.Fprintln(os.Stdout, "ready")
+		_, err := NewStore(root).Update(id, func(task *Task) error {
+			return task.SetPR(42, later.Add(time.Minute))
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	store := NewStore(t.TempDir())
+	if err := store.Create(newLedgerTask(t, id, taskStartTime)); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestStoreSerializesSeparateProcessUpdates$")
+	cmd.Env = append(os.Environ(), rootEnv+"="+store.Root)
+	cmd.Stderr = os.Stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := make(chan error, 1)
+	var workerFinished bool
+	_, err = store.Update(id, func(task *Task) error {
+		if err := task.Revoke("maintainer", later); err != nil {
+			return err
+		}
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		output := bufio.NewScanner(stdout)
+		if !output.Scan() || output.Text() != "ready" {
+			cancel()
+			return fmt.Errorf("worker did not start: %q, %v, %v", output.Text(), output.Err(), cmd.Wait())
+		}
+		go func() { worker <- cmd.Wait() }()
+		timer := time.NewTimer(500 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case err := <-worker:
+			workerFinished = true
+			return err
+		case <-timer.C:
+			return nil
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !workerFinished {
+		if err := <-worker; err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := store.Load(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PR != 42 || got.Authorization.RevokedAt == nil || len(got.History) != 3 {
+		t.Fatalf("concurrent processes lost an update: PR = %d, revoked = %t, events = %d", got.PR, got.Authorization.RevokedAt != nil, len(got.History))
 	}
 }
 

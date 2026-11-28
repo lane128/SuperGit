@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -178,6 +179,38 @@ func TestAdvanceRejectsCheckFromOlderCandidate(t *testing.T) {
 	advanceLedgerTask(t, &task, PhaseDesignReview, later)
 }
 
+func TestAdvanceRejectsCheckRecordedBeforeItsPhase(t *testing.T) {
+	task := newLedgerTask(t, "task", taskStartTime)
+	task.Phase = PhaseImplementation
+	task.Candidate = "candidate-a"
+	later := taskStartTime.Add(time.Minute)
+	check := Check{Name: "public_verify", Phase: PhaseVerify, Candidate: task.Candidate, Passed: true, RecordedAt: later}
+	recordLedgerCheck(t, &task, check)
+
+	// Isolate the verify gate from the intervening transitions.
+	task.Phase = PhaseVerify
+	if err := task.Advance(PhaseComplete, later); err == nil {
+		t.Fatal("completed using a public verification recorded during implementation")
+	}
+	check.Phase = PhaseImplementation
+	recordLedgerCheck(t, &task, check)
+	advanceLedgerTask(t, &task, PhaseComplete, later)
+}
+
+func TestSkipDesignRejectsEvidenceRecordedBeforeAnalysis(t *testing.T) {
+	task := newLedgerTask(t, "task", taskStartTime)
+	later := taskStartTime.Add(time.Minute)
+	skip := Check{Name: "design", Evidence: "skipped: backend only", RecordedAt: later}
+	recordLedgerCheck(t, &task, skip)
+	advanceLedgerTask(t, &task, PhaseAnalysis, later)
+	recordLedgerCheck(t, &task, Check{Name: "analysis", Passed: true, RecordedAt: later})
+	if err := task.Advance(PhaseImplementation, later); err == nil {
+		t.Fatal("skipped design using evidence recorded during intake")
+	}
+	recordLedgerCheck(t, &task, skip)
+	advanceLedgerTask(t, &task, PhaseImplementation, later)
+}
+
 func TestSkipDesignRecordsReason(t *testing.T) {
 	task := newLedgerTask(t, "task", taskStartTime)
 	later := taskStartTime.Add(time.Minute)
@@ -212,13 +245,13 @@ func TestRevokedAuthorizationBlocksMerge(t *testing.T) {
 	if task.Status != StatusActive || task.Authorization.RevokedAt == nil || !task.Authorization.RevokedAt.Equal(later) || task.Advance(PhaseMerge, later) == nil {
 		t.Fatalf("revoked authorization did not prevent merge: %+v", task)
 	}
-	if err := task.AuthorizeRevision(AuthorizationRevision{By: "maintainer", VersionPolicy: "patch"}, later); err != nil {
+	if err := task.AuthorizeRevision(AuthorizationRevision{By: "maintainer", Reason: "pause release", VersionPolicy: "patch"}, later); err != nil {
 		t.Fatal(err)
 	}
 	if err := task.Advance(PhaseMerge, later); err == nil {
 		t.Fatal("advanced to merge with release disabled")
 	}
-	if err := task.AuthorizeRevision(AuthorizationRevision{By: "maintainer", Release: true, VersionPolicy: "patch"}, later); err != nil {
+	if err := task.AuthorizeRevision(AuthorizationRevision{By: "maintainer", Reason: "resume release", Release: true, VersionPolicy: "patch"}, later); err != nil {
 		t.Fatal(err)
 	}
 	advanceLedgerTask(t, &task, PhaseMerge, later)
@@ -236,6 +269,44 @@ func TestRevokedAuthorizationBlocksMerge(t *testing.T) {
 			}
 			if err := lateTask.Resume(at); err == nil {
 				t.Fatal("resumed a release phase with revoked authorization")
+			}
+		})
+	}
+}
+
+func TestAuthorizeRevisionRejectsInvalidDetailsWithoutClearingRevocation(t *testing.T) {
+	for _, release := range []bool{true, false} {
+		mode := "grant release"
+		if !release {
+			mode = "disable release"
+		}
+		t.Run(mode, func(t *testing.T) {
+			for _, tc := range []struct {
+				name   string
+				change func(*AuthorizationRevision)
+			}{
+				{"missing author", func(r *AuthorizationRevision) { r.By = "" }},
+				{"missing reason", func(r *AuthorizationRevision) { r.Reason = "" }},
+				{"invalid policy", func(r *AuthorizationRevision) { r.VersionPolicy = "major" }},
+				{"missing exact version", func(r *AuthorizationRevision) { r.VersionPolicy = "exact" }},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					task := newLedgerTask(t, "task", taskStartTime)
+					task.Phase = PhaseMerge
+					at := taskStartTime.Add(time.Minute)
+					if err := task.Revoke("maintainer", at); err != nil {
+						t.Fatal(err)
+					}
+					before := task
+					rev := AuthorizationRevision{By: "maintainer", Reason: "change release policy", Release: release, VersionPolicy: "patch"}
+					tc.change(&rev)
+					if err := task.AuthorizeRevision(rev, at.Add(time.Minute)); err == nil {
+						t.Fatal("invalid revision was accepted")
+					}
+					if !reflect.DeepEqual(task, before) {
+						t.Fatalf("invalid revision changed the revoked task: %+v", task)
+					}
+				})
 			}
 		})
 	}

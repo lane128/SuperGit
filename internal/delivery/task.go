@@ -89,6 +89,7 @@ type Event struct {
 
 type Check struct {
 	Name       string
+	Phase      Phase
 	Candidate  string
 	Passed     bool
 	Evidence   string
@@ -147,14 +148,8 @@ func NewTask(id string, req StartRequest, now time.Time) (Task, error) {
 	if !req.Release {
 		return Task{}, errors.New("release authorization is required")
 	}
-	switch req.VersionPolicy {
-	case "patch", "minor":
-	case "exact":
-		if req.Version == "" {
-			return Task{}, errors.New("exact version policy requires a version")
-		}
-	default:
-		return Task{}, fmt.Errorf("invalid version policy %q", req.VersionPolicy)
+	if err := validateVersionPolicy(req.VersionPolicy, req.Version); err != nil {
+		return Task{}, err
 	}
 
 	task := Task{
@@ -177,7 +172,7 @@ func NewTask(id string, req StartRequest, now time.Time) (Task, error) {
 			GrantedAt:       now,
 		},
 		Checks: map[string]Check{
-			"intake": {Name: "intake", Passed: true, Evidence: "request and release authorization recorded", RecordedAt: now},
+			"intake": {Name: "intake", Phase: PhaseIntake, Passed: true, Evidence: "request and release authorization recorded", RecordedAt: now},
 		},
 		CreatedAt: now,
 	}
@@ -192,6 +187,7 @@ func (t *Task) RecordCheck(c Check) error {
 	if t.Checks == nil {
 		t.Checks = make(map[string]Check)
 	}
+	c.Phase = t.Phase
 	t.Checks[c.Name] = c
 	detail := fmt.Sprintf("%s: passed=%t candidate=%q", c.Name, c.Passed, c.Candidate)
 	if c.Evidence != "" {
@@ -246,17 +242,20 @@ func (t *Task) Advance(to Phase, now time.Time) error {
 	if !check.Passed {
 		return fmt.Errorf("phase %q requires a passing %q check", t.Phase, name)
 	}
+	if check.Phase != t.Phase {
+		return fmt.Errorf("check %q must be recorded during phase %q", name, t.Phase)
+	}
 	if check.Candidate != t.Candidate || (check.Candidate == "" && t.Phase != PhaseIntake && t.Phase != PhaseAnalysis) {
 		return fmt.Errorf("check %q must match the current candidate for phase %q", name, t.Phase)
 	}
 
 	detail := fmt.Sprintf("%s → %s", t.Phase, to)
 	if skipDesign {
-		evidence := t.Checks["design"].Evidence
-		if !strings.HasPrefix(evidence, "skipped:") {
-			return errors.New("skipping design requires a design check with evidence starting with skipped:")
+		design := t.Checks["design"]
+		if design.Phase != PhaseAnalysis || !strings.HasPrefix(design.Evidence, "skipped:") {
+			return errors.New("skipping design requires a design check recorded during analysis with evidence starting with skipped:")
 		}
-		detail += "; design " + evidence
+		detail += "; design " + design.Evidence
 	}
 	if isReleasePhase(to) && !t.hasReleaseAuthorization() {
 		return fmt.Errorf("phase %q requires active release authorization", to)
@@ -308,6 +307,12 @@ func (t *Task) AuthorizeRevision(rev AuthorizationRevision, now time.Time) error
 	if err := t.ensureMutable(); err != nil {
 		return err
 	}
+	if strings.TrimSpace(rev.By) == "" || strings.TrimSpace(rev.Reason) == "" {
+		return errors.New("authorization revision requires an author and a reason")
+	}
+	if err := validateVersionPolicy(rev.VersionPolicy, rev.Version); err != nil {
+		return err
+	}
 	if rev.At.IsZero() {
 		rev.At = now
 	}
@@ -320,6 +325,19 @@ func (t *Task) AuthorizeRevision(rev AuthorizationRevision, now time.Time) error
 	t.Status = StatusActive
 	t.BlockedReason = ""
 	t.recordEvent("authorize", fmt.Sprintf("%s: %s", rev.By, rev.Reason), now)
+	return nil
+}
+
+func validateVersionPolicy(policy, version string) error {
+	switch policy {
+	case "patch", "minor":
+	case "exact":
+		if version == "" {
+			return errors.New("exact version policy requires a version")
+		}
+	default:
+		return fmt.Errorf("invalid version policy %q", policy)
+	}
 	return nil
 }
 
