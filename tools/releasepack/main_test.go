@@ -88,15 +88,19 @@ func TestPackageReleaseRequiresMatchingEmbeddedPublicKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	matchingKeyEntry := "<key>SuperGitUpdatePublicKey</key><string> " + string(pubRaw) + "</string>"
 	for _, tc := range []struct {
 		name     string
 		keyEntry string
 		wantErr  bool
 	}{
 		{name: "missing", wantErr: true},
-		{name: "empty", keyEntry: "<key>SuperGitUpdatePublicKey</key><string> </string>", wantErr: true},
+		{name: "empty", keyEntry: "<key>SuperGitUpdatePublicKey</key><string></string>", wantErr: true},
+		{name: "whitespace_only", keyEntry: "<key>SuperGitUpdatePublicKey</key><string> </string>", wantErr: true},
+		{name: "commented_out", keyEntry: "<!-- " + matchingKeyEntry + " -->", wantErr: true},
+		{name: "nested", keyEntry: "<key>Other</key><dict>" + matchingKeyEntry + "</dict>", wantErr: true},
 		{name: "wrong", keyEntry: "<key>SuperGitUpdatePublicKey</key><string>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</string>", wantErr: true},
-		{name: "correct", keyEntry: "<key>SuperGitUpdatePublicKey</key><string> " + string(pubRaw) + "</string>"},
+		{name: "correct", keyEntry: matchingKeyEntry},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tmp := t.TempDir()

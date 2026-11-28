@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"flag"
 	"fmt"
@@ -26,10 +27,9 @@ import (
 )
 
 var (
-	plistShortVerRE     = regexp.MustCompile(`<key>CFBundleShortVersionString</key>\s*<string>([^<]*)</string>`)
-	plistBuildVerRE     = regexp.MustCompile(`<key>CFBundleVersion</key>\s*<string>([^<]*)</string>`)
-	plistMinOSRE        = regexp.MustCompile(`<key>LSMinimumSystemVersion</key>\s*<string>([^<]*)</string>`)
-	plistUpdatePubKeyRE = regexp.MustCompile(`<key>SuperGitUpdatePublicKey</key>\s*<string>([^<]*)</string>`)
+	plistShortVerRE = regexp.MustCompile(`<key>CFBundleShortVersionString</key>\s*<string>([^<]*)</string>`)
+	plistBuildVerRE = regexp.MustCompile(`<key>CFBundleVersion</key>\s*<string>([^<]*)</string>`)
+	plistMinOSRE    = regexp.MustCompile(`<key>LSMinimumSystemVersion</key>\s*<string>([^<]*)</string>`)
 )
 
 func main() {
@@ -128,7 +128,10 @@ func packageRelease(opts packOptions) error {
 		return err
 	}
 	pubBase64 := base64.StdEncoding.EncodeToString(pub)
-	embeddedPubKey := extractPlistValue(plistBytes, plistUpdatePubKeyRE)
+	embeddedPubKey, err := extractEmbeddedUpdatePublicKey(plistBytes)
+	if err != nil {
+		return fmt.Errorf("embedded update public key: %w", err)
+	}
 	if embeddedPubKey == "" {
 		return fmt.Errorf("embedded update public key is missing or empty in Info.plist")
 	}
@@ -272,6 +275,47 @@ func fileSHA256(path string) ([sha256.Size]byte, int64, error) {
 	var sum [sha256.Size]byte
 	copy(sum[:], h.Sum(nil))
 	return sum, n, nil
+}
+
+func extractEmbeddedUpdatePublicKey(data []byte) (string, error) {
+	// Collect only direct children of the outer plist dictionary. Nested
+	// dictionaries and comments must not supply the installed app's key.
+	var plist struct {
+		XMLName xml.Name `xml:"plist"`
+		Values  []struct {
+			XMLName xml.Name
+			Entries []struct {
+				XMLName  xml.Name
+				Text     string     `xml:",chardata"`
+				Children []struct{} `xml:",any"`
+			} `xml:",any"`
+		} `xml:",any"`
+	}
+	if err := xml.Unmarshal(data, &plist); err != nil || plist.XMLName != (xml.Name{Local: "plist"}) ||
+		len(plist.Values) != 1 || plist.Values[0].XMLName != (xml.Name{Local: "dict"}) {
+		return "", errors.New("invalid top-level dictionary in Info.plist")
+	}
+	entries := plist.Values[0].Entries
+	if len(entries)%2 != 0 {
+		return "", errors.New("invalid key/value pairs in Info.plist")
+	}
+	var embedded string
+	found := false
+	for i := 0; i < len(entries); i += 2 {
+		key, value := entries[i], entries[i+1]
+		if key.XMLName != (xml.Name{Local: "key"}) || len(key.Children) != 0 || value.XMLName.Local == "key" {
+			return "", errors.New("invalid key/value pairs in Info.plist")
+		}
+		if key.Text != "SuperGitUpdatePublicKey" {
+			continue
+		}
+		if found || value.XMLName != (xml.Name{Local: "string"}) || len(value.Children) != 0 {
+			return "", errors.New("expected one string entry in Info.plist")
+		}
+		embedded = strings.TrimSpace(value.Text)
+		found = true
+	}
+	return embedded, nil
 }
 
 func extractPlistValue(data []byte, re *regexp.Regexp) string {
