@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -25,6 +26,14 @@ import (
 func TestRunVerifyReleaseReportsAndExits(t *testing.T) {
 	args, archivePath, digest := verifyReleaseFixture(t)
 	verifySignature := func(context.Context, string) error { return nil }
+	info, err := os.Stat(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const manifestDetail = "version 1.2.3, build 42"
+	sizeDetail := fmt.Sprintf("%d bytes", info.Size())
+	passPrefix := "PASS manifest: " + manifestDetail + "\nPASS size: " + sizeDetail + "\n"
+	passThroughZip := passPrefix + "PASS sha256: " + digest + "\nPASS ed25519: signature verified\nPASS zip_safety: zip safe\n"
 
 	t.Run("text success", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
@@ -32,9 +41,9 @@ func TestRunVerifyReleaseReportsAndExits(t *testing.T) {
 		if code != 0 || stderr.Len() != 0 {
 			t.Fatalf("exit code = %d, want 0; stdout = %q, stderr = %q", code, &stdout, &stderr)
 		}
-		const checks = "PASS manifest\nPASS size\nPASS sha256\nPASS ed25519\nPASS zip_safety\nPASS extract\nPASS codesign\n"
-		if !strings.HasPrefix(stdout.String(), checks) {
-			t.Errorf("missing ordered passing checks; stdout = %q", &stdout)
+		if !strings.HasPrefix(stdout.String(), passThroughZip+"PASS extract: ") ||
+			!strings.Contains(stdout.String(), "SuperGit.app\nPASS codesign: code signature verified\n") {
+			t.Errorf("missing ordered passing checks with details; stdout = %q", &stdout)
 		}
 		for _, want := range []string{"Version 1.2.3", "Build 42", "Archive " + archivePath, "SHA-256 " + digest, "Bundle ", "SuperGit.app"} {
 			if !strings.Contains(stdout.String(), want) {
@@ -56,6 +65,11 @@ func TestRunVerifyReleaseReportsAndExits(t *testing.T) {
 		if report.Version != "1.2.3" || report.Build != 42 || report.ArchivePath != archivePath || report.SHA256 != digest || len(report.Checks) != 7 || filepath.Base(report.BundlePath) != "SuperGit.app" {
 			t.Errorf("unexpected release report: %+v", report)
 		}
+		for _, check := range report.Checks {
+			if !check.Passed || check.Detail == "" {
+				t.Errorf("expected a passing check with detail: %+v", check)
+			}
+		}
 	})
 
 	t.Run("multiline codesign failure", func(t *testing.T) {
@@ -66,7 +80,9 @@ func TestRunVerifyReleaseReportsAndExits(t *testing.T) {
 		if code != 1 || stderr.Len() != 0 {
 			t.Fatalf("exit code = %d, want 1; stdout = %q, stderr = %q", code, &stdout, &stderr)
 		}
-		if !strings.Contains(stdout.String(), "FAIL codesign: ") || !strings.Contains(stdout.String(), "in subcomponent") || strings.Count(stdout.String(), "\n") != 7 {
+		if !strings.HasPrefix(stdout.String(), passThroughZip+"PASS extract: ") ||
+			!strings.Contains(stdout.String(), "SuperGit.app\nFAIL codesign: ") ||
+			!strings.Contains(stdout.String(), "in subcomponent") || strings.Count(stdout.String(), "\n") != 7 {
 			t.Errorf("expected one line per check with the codesign detail; stdout = %q", &stdout)
 		}
 	})
@@ -85,7 +101,7 @@ func TestRunVerifyReleaseReportsAndExits(t *testing.T) {
 		if code := run(args, &stdout, &stderr); code != 1 || stderr.Len() != 0 {
 			t.Fatalf("exit code = %d, want 1; stdout = %q, stderr = %q", code, &stdout, &stderr)
 		}
-		if !strings.HasPrefix(stdout.String(), "PASS manifest\nPASS size\nFAIL sha256: ") || strings.Count(stdout.String(), "\n") != 3 {
+		if !strings.HasPrefix(stdout.String(), passPrefix+"FAIL sha256: ") || strings.Count(stdout.String(), "\n") != 3 {
 			t.Errorf("expected the completed and failed checks; stdout = %q", &stdout)
 		}
 
@@ -97,7 +113,10 @@ func TestRunVerifyReleaseReportsAndExits(t *testing.T) {
 		if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 			t.Fatalf("decode stdout as a single JSON report: %v; stdout = %q", err, &stdout)
 		}
-		if len(report.Checks) != 3 || report.Checks[2].Name != "sha256" || report.Checks[2].Passed || report.Checks[2].Detail == "" {
+		if len(report.Checks) != 3 ||
+			report.Checks[0] != (delivery.PreflightCheck{Name: "manifest", Passed: true, Detail: manifestDetail}) ||
+			report.Checks[1] != (delivery.PreflightCheck{Name: "size", Passed: true, Detail: sizeDetail}) ||
+			report.Checks[2].Name != "sha256" || report.Checks[2].Passed || report.Checks[2].Detail == "" {
 			t.Errorf("unexpected release checks: %+v", report.Checks)
 		}
 	})

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"supergit/internal/updater"
@@ -19,14 +20,16 @@ import (
 
 const maxReleaseManifestBytes = 1 << 20
 
+var nativeCodeSignAvailable = func() bool { return runtime.GOOS == "darwin" }
+
 // VerifyOptions identifies the packaged release and its Ed25519 public key.
 type VerifyOptions struct {
 	OutDir          string
 	ArchivePath     string // empty: derive from manifest asset
 	ManifestPath    string // empty: OutDir/update.json
 	PublicKey       string
-	Platform        string // default "darwin-arm64"
-	VerifySignature func(context.Context, string) error
+	Platform        string                              // default "darwin-arm64"
+	VerifySignature func(context.Context, string) error // nil: use native macOS verification
 }
 
 // ReleaseVerification contains release metadata and checks in execution order.
@@ -45,8 +48,8 @@ type ReleaseVerification struct {
 // of a temporary workspace. The caller can remove the workspace after inspection.
 func VerifyRelease(ctx context.Context, opts VerifyOptions) (ReleaseVerification, error) {
 	var report ReleaseVerification
-	pass := func(name string) {
-		report.Checks = append(report.Checks, PreflightCheck{Name: name, Passed: true})
+	pass := func(name, detail string) {
+		report.Checks = append(report.Checks, PreflightCheck{Name: name, Passed: true, Detail: detail})
 	}
 	fail := func(name string, err error) (ReleaseVerification, error) {
 		report.Checks = append(report.Checks, PreflightCheck{Name: name, Detail: err.Error()})
@@ -82,7 +85,7 @@ func VerifyRelease(ctx context.Context, opts VerifyOptions) (ReleaseVerification
 		}
 		report.ArchivePath = filepath.Join(opts.OutDir, name)
 	}
-	pass("manifest")
+	pass("manifest", fmt.Sprintf("version %s, build %d", report.Version, report.Build))
 
 	archive, err := os.Open(report.ArchivePath)
 	if err != nil {
@@ -100,7 +103,7 @@ func VerifyRelease(ctx context.Context, opts VerifyOptions) (ReleaseVerification
 	if report.Size != asset.Size {
 		return fail("size", fmt.Errorf("archive size mismatch: got %d, want %d bytes", report.Size, asset.Size))
 	}
-	pass("size")
+	pass("size", fmt.Sprintf("%d bytes", report.Size))
 
 	workspace, err := os.MkdirTemp("", "supergit-verify-release-*")
 	if err != nil {
@@ -128,7 +131,7 @@ func VerifyRelease(ctx context.Context, opts VerifyOptions) (ReleaseVerification
 	if report.SHA256 != expectedSHA256 {
 		return fail("sha256", fmt.Errorf("%w: got %s, want %q", updater.ErrChecksumMismatch, report.SHA256, expectedSHA256))
 	}
-	pass("sha256")
+	pass("sha256", report.SHA256)
 
 	pubKey, err := updater.ParsePublicKey(opts.PublicKey)
 	if err != nil {
@@ -137,13 +140,17 @@ func VerifyRelease(ctx context.Context, opts VerifyOptions) (ReleaseVerification
 	if err := updater.VerifyArchiveDigest(sum, expectedSHA256, asset.Ed25519, pubKey); err != nil {
 		return fail("ed25519", err)
 	}
-	pass("ed25519")
+	pass("ed25519", "signature verified")
 
-	if _, err := updater.InspectZipSafety(archiveCopy); err != nil {
+	appName, err := updater.InspectZipSafety(archiveCopy)
+	if err != nil {
 		return fail("zip_safety", err)
 	}
-	pass("zip_safety")
+	pass("zip_safety", "zip safe")
 
+	if opts.VerifySignature == nil && !nativeCodeSignAvailable() {
+		return fail("codesign", errors.New("code signature verification requires macOS"))
+	}
 	var verifySignature func(context.Context, string) error
 	if opts.VerifySignature != nil {
 		verifySignature = func(ctx context.Context, appPath string) error {
@@ -153,11 +160,12 @@ func VerifyRelease(ctx context.Context, opts VerifyOptions) (ReleaseVerification
 			return nil
 		}
 	}
-	bundlePath, err := updater.ExtractAndVerifyApp(ctx, archiveCopy, filepath.Join(workspace, "bundle"), updater.ExpectedBundleID, verifySignature)
+	bundleDir := filepath.Join(workspace, "bundle")
+	bundlePath, err := updater.ExtractAndVerifyApp(ctx, archiveCopy, bundleDir, updater.ExpectedBundleID, verifySignature)
 	if errors.Is(err, updater.ErrCodeSignVerify) {
 		// The updater only calls the signature verifier once extraction and
 		// the bundle metadata checks have succeeded.
-		pass("extract")
+		pass("extract", filepath.Join(bundleDir, appName))
 		return fail("codesign", err)
 	}
 	if err != nil {
@@ -167,8 +175,8 @@ func VerifyRelease(ctx context.Context, opts VerifyOptions) (ReleaseVerification
 		return fail("extract", err)
 	}
 	report.BundlePath = bundlePath
-	pass("extract")
-	pass("codesign")
+	pass("extract", bundlePath)
+	pass("codesign", "code signature verified")
 	return report, nil
 }
 
@@ -206,6 +214,12 @@ func copyReleaseArchive(dest string, archive io.Reader, size int64) ([sha256.Siz
 	closeErr := file.Close()
 	if err := errors.Join(copyErr, closeErr); err != nil {
 		return sum, fmt.Errorf("copy release archive: %w", err)
+	}
+	var trailing [1]byte
+	if n, err := archive.Read(trailing[:]); n != 0 || err == nil {
+		return sum, fmt.Errorf("archive grew during verification: expected %d bytes", size)
+	} else if err != io.EOF {
+		return sum, fmt.Errorf("check end of release archive: %w", err)
 	}
 	copy(sum[:], hash.Sum(nil))
 	return sum, nil

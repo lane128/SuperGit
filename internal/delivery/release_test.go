@@ -90,6 +90,35 @@ func TestVerifyReleaseRejectsFailedCodeSignature(t *testing.T) {
 	assertReleaseFailure(t, opts, 7, signErr)
 }
 
+func TestVerifyReleaseRejectsUnavailableCodeSign(t *testing.T) {
+	original := nativeCodeSignAvailable
+	t.Cleanup(func() { nativeCodeSignAvailable = original })
+	nativeCodeSignAvailable = func() bool { return false }
+
+	// The wrong bundle ID would fail extraction if the platform guard ran too late.
+	opts, _ := releaseFixture(t, "invalid.example.bundle", false)
+	opts.VerifySignature = nil
+	report, err := VerifyRelease(t.Context(), opts)
+	const detail = "code signature verification requires macOS"
+	if err == nil || !strings.Contains(err.Error(), detail) {
+		t.Fatalf("VerifyRelease error = %v, want unavailable codesign error; checks = %+v", err, report.Checks)
+	}
+	if len(report.Checks) != 6 {
+		t.Fatalf("checks = %+v, want five completed checks and failed codesign", report.Checks)
+	}
+	for i, check := range report.Checks[:5] {
+		if check.Name != releaseCheckOrder[i] || !check.Passed {
+			t.Errorf("check %d = %+v, want passing %s", i, check, releaseCheckOrder[i])
+		}
+	}
+	if check := report.Checks[5]; check.Name != "codesign" || check.Passed || check.Detail != detail {
+		t.Errorf("check = %+v, want failed codesign with detail %q", check, detail)
+	}
+	if report.BundlePath != "" {
+		t.Errorf("unexpected extracted bundle path %q", report.BundlePath)
+	}
+}
+
 func TestVerifyReleaseRejectsOversizedManifest(t *testing.T) {
 	opts, _ := releaseFixture(t, "cc.supermix.supergit", false)
 	manifestPath := filepath.Join(opts.OutDir, "update.json")
@@ -102,6 +131,25 @@ func TestVerifyReleaseRejectsOversizedManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertReleaseFailure(t, opts, 1, nil)
+}
+
+func TestVerifyReleaseRejectsArchiveGrowth(t *testing.T) {
+	root := t.TempDir()
+	archivePath := filepath.Join(root, "archive.zip")
+	const original = "original archive contents"
+	if err := os.WriteFile(archivePath, []byte(original+"appended bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := os.Open(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+
+	_, err = copyReleaseArchive(filepath.Join(root, "copy.zip"), archive, int64(len(original)))
+	if err == nil || !strings.Contains(err.Error(), "archive grew during verification") {
+		t.Fatalf("copyReleaseArchive error = %v, want archive growth error", err)
+	}
 }
 
 func assertReleaseFailure(t *testing.T, opts VerifyOptions, count int, cause error) {
@@ -120,8 +168,8 @@ func assertReleaseChecks(t *testing.T, report ReleaseVerification, count int, fa
 	}
 	for i, check := range report.Checks {
 		passed := !failed || i < count-1
-		if check.Name != releaseCheckOrder[i] || check.Passed != passed || !passed && check.Detail == "" {
-			t.Errorf("check %d = %+v, want %s with Passed=%t and detail on failure", i, check, releaseCheckOrder[i], passed)
+		if check.Name != releaseCheckOrder[i] || check.Passed != passed || check.Detail == "" {
+			t.Errorf("check %d = %+v, want %s with Passed=%t and a detail", i, check, releaseCheckOrder[i], passed)
 		}
 	}
 }
