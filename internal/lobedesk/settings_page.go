@@ -287,6 +287,11 @@ func (a *app) choiceRow(c *ui.Context, label string, items []choice.ToggleItem, 
 				selected := item.Value == current
 				button := styleWorkbenchButton(c.Key(item.Value), ui.ButtonBase(c.Key(item.Value)), buttonNormal, item.Disabled, selected).
 					Role(ui.RoleToggleButton).Label(item.Label).Checked(selected).Width(optionWidth).Shrink(0)
+				// The shared button's top sheen belongs to a control standing
+				// on the card. On the segmented track it painted a white seam
+				// above every unselected option, so the track carried the
+				// button grammar instead of its own.
+				button.NoShadow()
 				if !selected && !item.Disabled && !button.Hovered() && !button.Pressed() {
 					button.Background(ui.Transparent).Border(1, ui.Transparent)
 				}

@@ -84,3 +84,39 @@ func TestSettingsChoiceUsesSharedSelectionAndKeepsOneValue(t *testing.T) {
 		t.Fatalf("keyboard choice did not select exactly once: value=%s changes=%d", current, changes)
 	}
 }
+
+// The shared button style paints a one-pixel top sheen so a control standing on
+// the card reads as raised. A segmented option sits on the track instead, where
+// that sheen showed as a white seam above every unselected option.
+func TestSettingsChoiceTrackHasNoButtonSheen(t *testing.T) {
+	for _, mode := range []string{"light", "dark"} {
+		t.Run(mode, func(t *testing.T) {
+			a := &app{locale: localeEnglish, themeMode: mode}
+			var ground ui.Color
+			tt := ui.NewTester(func(c *ui.Context) {
+				a.applyTheme(c)
+				ground = theme.TokensOf(c).BgLayout
+				ui.Column(c).Width(460).Children(func() {
+					a.choiceRow(c, "Line shape", []choice.ToggleItem{
+						{Value: "rounded", Label: "Rounded"},
+						{Value: "chamfer", Label: "Chamfer"},
+						{Value: "compact", Label: "Short curve"},
+					}, "rounded", func(string) {})
+				})
+			}, 460, 160)
+			img := tt.Image()
+			for _, label := range []string{"Chamfer", "Short curve"} {
+				option, ok := tt.AccessByRole(ui.RoleToggleButton, label)
+				if !ok {
+					t.Fatalf("%s choice is missing", label)
+				}
+				for dy := 0; dy < 2; dy++ {
+					pixel := img.RGBAAt(int(option.Bounds.X+option.Bounds.W/2), int(option.Bounds.Y)+dy)
+					if got := ui.RGB(pixel.R, pixel.G, pixel.B); got != ground {
+						t.Errorf("%s top +%d = %v, want the track %v: the button sheen shows through", label, dy, got, ground)
+					}
+				}
+			}
+		})
+	}
+}
