@@ -210,6 +210,9 @@ func inspectZipSafety(zipPath string) (appRoot string, hasBackslashes bool, err 
 			return "", false, err
 		}
 		hasBackslashes = hasBackslashes || strings.Contains(f.Name, `\`)
+		if zipEntryIsDir(f) && f.UncompressedSize64 != 0 {
+			return "", false, fmt.Errorf("%w: directory entry %q contains data", ErrInvalidArchive, f.Name)
+		}
 		top, _, _ := strings.Cut(clean, "/")
 		if top == "__MACOSX" {
 			continue
@@ -308,6 +311,10 @@ func defaultVerifyCodeSign(ctx context.Context, appPath string) error {
 	return nil
 }
 
+func zipEntryIsDir(f *zip.File) bool {
+	return f.Mode().IsDir() || strings.HasSuffix(f.Name, `\`)
+}
+
 func extractZipPureGo(zipPath, destDir string) error {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil && !errors.Is(err, zip.ErrInsecurePath) {
@@ -327,8 +334,14 @@ func extractZipPureGo(zipPath, destDir string) error {
 		if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) {
 			return fmt.Errorf("%w: unsafe extraction path %q", ErrInvalidArchive, f.Name)
 		}
-		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(target, f.Mode().Perm()); err != nil {
+		if zipEntryIsDir(f) {
+			mode := f.Mode().Perm()
+			if !f.FileInfo().IsDir() || mode == 0 {
+				// A trailing backslash is a directory marker even when the
+				// ZIP creator did not attach directory mode bits.
+				mode = 0o755
+			}
+			if err := os.MkdirAll(target, mode); err != nil {
 				return err
 			}
 			continue

@@ -224,6 +224,35 @@ func TestReleaseWindowCannotBeReleasedDuringDelivery(t *testing.T) {
 	}
 }
 
+func TestRecoverReleaseWindowBeforeMergeAfterRevocation(t *testing.T) {
+	store := NewStore(t.TempDir())
+	createWindowTaskAtPullRequest(t, store)
+	if err := store.Create(newLedgerTask(t, "task-b", taskStartTime)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AcquireReleaseWindow("task-a", taskStartTime); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Update("task-a", func(task *Task) error {
+		return task.Revoke("maintainer", taskStartTime)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecoverReleaseWindow("task-a", "maintainer", "remote main has not changed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AcquireReleaseWindow("task-b", taskStartTime); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load("task-a")
+	if err != nil || got.Phase != PhasePullRequest || got.Status != StatusBlocked || got.Authorization.RevokedAt == nil {
+		t.Fatalf("window recovery changed revoked task: %+v, %v", got, err)
+	}
+	if _, err := store.AdvanceTask("task-a", PhaseMerge, "", taskStartTime); err == nil {
+		t.Fatal("revoked task advanced after window recovery")
+	}
+}
+
 func createWindowTaskAtPullRequest(t *testing.T, store *Store) {
 	t.Helper()
 	task := newLedgerTask(t, "task-a", taskStartTime)
@@ -265,6 +294,9 @@ func advanceWindowTaskToVerify(t *testing.T, store *Store, id string) {
 		if step.to == PhaseAcceptance {
 			recordWindowCheck(t, store, id, "tests")
 		}
+		if step.to == PhaseTag {
+			recordWindowCheck(t, store, id, "release_selection")
+		}
 		recordWindowCheck(t, store, id, step.check)
 		if _, err := store.AdvanceTask(id, step.to, "", taskStartTime); err != nil {
 			t.Fatalf("advance to %s: %v", step.to, err)
@@ -283,7 +315,11 @@ func completeWindowTask(t *testing.T, store *Store, id string) {
 func recordWindowCheck(t *testing.T, store *Store, id, name string) {
 	t.Helper()
 	if _, err := store.Update(id, func(task *Task) error {
-		return task.RecordCheck(Check{Name: name, Candidate: "candidate", Passed: true, RecordedAt: taskStartTime})
+		check := Check{Name: name, Candidate: "candidate", Passed: true, RecordedAt: taskStartTime}
+		if name == "release_selection" || name == "release_preflight" {
+			check.ReleaseCommit, check.ReleasePlanRevision = "merged-main", new(0)
+		}
+		return task.RecordCheck(check)
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -54,7 +54,7 @@ func (s *Store) Load(id string) (Task, error) {
 	return readTask(path, id)
 }
 
-// Save persists a task with the current timestamp. Use Update for mutations.
+// Save persists a task based on the current stored snapshot. Use Update for mutations.
 func (s *Store) Save(t Task) error {
 	path, err := s.taskPath(t.ID)
 	if err != nil {
@@ -69,9 +69,10 @@ func (s *Store) Save(t Task) error {
 	if err != nil {
 		return err
 	}
-	if !t.UpdatedAt.Equal(current.UpdatedAt) {
+	if t.StoreRevision != current.StoreRevision || !t.UpdatedAt.Equal(current.UpdatedAt) {
 		return fmt.Errorf("task %q: %w", t.ID, ErrStaleTask)
 	}
+	t.StoreRevision++
 	return s.persistTask(path, t)
 }
 
@@ -92,12 +93,14 @@ func (s *Store) Update(id string, fn func(*Task) error) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
+	nextRevision := t.StoreRevision + 1
 	if err := fn(&t); err != nil {
 		return Task{}, err
 	}
 	if t.ID != id {
 		return Task{}, fmt.Errorf("cannot change task ID from %q to %q", id, t.ID)
 	}
+	t.StoreRevision = nextRevision
 	if err := s.persistTask(path, t); err != nil {
 		return Task{}, err
 	}

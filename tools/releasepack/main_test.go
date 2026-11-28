@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"supergit/internal/updater"
 )
@@ -198,6 +199,7 @@ func TestPackageReleaseRejectsNonTopLevelVersion(t *testing.T) {
 		{"commented", "<!-- " + version + " -->"},
 		{"nested", "<key>Other</key><dict>" + version + "</dict>"},
 		{"split", "<key>CFBundleShortVersionString</key><string>0.2.<!-- split -->0</string>"},
+		{"padded", "<key>CFBundleShortVersionString</key><string> 0.2.0&#32;</string>"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -259,6 +261,144 @@ func TestPackageReleasePreservesExistingArtifacts(t *testing.T) {
 			entries, err := os.ReadDir(out)
 			if err != nil || len(entries) != 1 {
 				t.Errorf("packaging conflict left additional artifacts: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
+func TestPackageReleaseRejectsLinkedExecutable(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("releasepack uses macOS ditto")
+	}
+	root := t.TempDir()
+	priv, pub := filepath.Join(root, "update.key"), filepath.Join(root, "update.pub")
+	if err := generateKeypair(priv, pub); err != nil {
+		t.Fatal(err)
+	}
+	keyData, err := os.ReadFile(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := strings.TrimSpace(string(keyData))
+	app := writeAppBundle(t, root, "<key>SuperGitUpdatePublicKey</key><string>"+key+"</string>", key)
+	bin := filepath.Join(app, "Contents", "MacOS", "supergit")
+	external := filepath.Join(root, "external-executable")
+	if err := os.Rename(bin, external); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, bin); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(root, "release")
+	if err := packageRelease(packOptions{AppPath: app, OutDir: out, PrivPath: priv, Platform: "darwin-arm64"}); err == nil {
+		t.Fatal("packaged a symlink using the key in a file outside the bundle")
+	}
+	if _, err := os.Stat(out); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("invalid bundle created an output directory: %v", err)
+	}
+}
+
+func TestPackageReleaseRecoversInterruptedPair(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("releasepack uses macOS ditto")
+	}
+	for _, scenario := range []string{"same bundle", "changed bundle", "changed notes", "omitted notes", "extra recovery file", "already complete"} {
+		t.Run(scenario, func(t *testing.T) {
+			root := t.TempDir()
+			priv, pub := filepath.Join(root, "update.key"), filepath.Join(root, "update.pub")
+			if err := generateKeypair(priv, pub); err != nil {
+				t.Fatal(err)
+			}
+			keyData, err := os.ReadFile(pub)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := strings.TrimSpace(string(keyData))
+			app := writeAppBundle(t, root, "<key>SuperGitUpdatePublicKey</key><string>"+key+"</string>", key)
+			out := filepath.Join(root, "dist")
+			opts := packOptions{AppPath: app, OutDir: out, PrivPath: priv, Platform: "darwin-arm64", Tag: "v0.2.0", NotesEN: "Original notes"}
+			if err := packageRelease(opts); err != nil {
+				t.Fatal(err)
+			}
+			const archiveName = "SuperGit-0.2.0-darwin-arm64.zip"
+			archive := filepath.Join(out, archiveName)
+			manifest := filepath.Join(out, "update.json")
+			original, err := os.ReadFile(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldSum, _, err := fileSHA256(archive)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Simulate a stop after the prepared archive is installed but
+			// before its manifest is linked into the output directory.
+			pending := filepath.Join(out, ".release-pack-pending")
+			if scenario != "already complete" {
+				if err := os.Mkdir(pending, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Link(archive, filepath.Join(pending, archiveName)); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Rename(manifest, filepath.Join(pending, "update.json")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "extra recovery file" {
+				if err := os.WriteFile(filepath.Join(pending, "keep.txt"), []byte("operator notes"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			when := time.Date(2020, 1, 2, 3, 4, 6, 0, time.UTC)
+			if err := os.Chtimes(filepath.Join(app, "Contents", "Info.plist"), when, when); err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "changed bundle" {
+				if err := os.WriteFile(filepath.Join(app, "Contents", "MacOS", "supergit"), []byte("#!/bin/sh\n# "+key+"\necho different\n"), 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "changed notes" {
+				opts.NotesEN = "Different notes"
+			}
+			if scenario == "omitted notes" {
+				opts.NotesEN = ""
+			}
+			fresh := filepath.Join(root, "fresh.zip")
+			if err := archiveAppBundle(app, fresh); err != nil {
+				t.Fatal(err)
+			}
+			freshSum, _, err := fileSHA256(fresh)
+			if err != nil || freshSum == oldSum {
+				t.Fatalf("fixture must re-archive to different bytes: %v", err)
+			}
+			err = packageRelease(opts)
+			if sum, _, readErr := fileSHA256(archive); readErr != nil || sum != oldSum {
+				t.Fatalf("retry modified previously installed archive: %v", readErr)
+			}
+			if scenario != "same bundle" && scenario != "already complete" {
+				if scenario == "extra recovery file" {
+					if got, err := os.ReadFile(filepath.Join(pending, "keep.txt")); err != nil || string(got) != "operator notes" {
+						t.Errorf("retry did not preserve the additional recovery file: %v", err)
+					}
+				}
+				if err == nil {
+					t.Error("retry accepted changed release inputs")
+				}
+				if _, err := os.Stat(manifest); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("conflicting retry installed a manifest: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := os.ReadFile(manifest); err != nil || !bytes.Equal(got, original) {
+				t.Errorf("retry failed to restore the original manifest: %v", err)
+			}
+			if _, err := os.Stat(pending); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("successful retry left its pending directory: %v", err)
 			}
 		})
 	}

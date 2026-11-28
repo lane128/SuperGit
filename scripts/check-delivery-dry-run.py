@@ -147,8 +147,17 @@ def dry_run(root):
             git("add", "fixture.txt")
             git("commit", "-m", "Apply fixture review fix")
             candidate = git("rev-parse", "HEAD")
+        release_args = ()
+        if check == "release_preflight":
+            # A normal no-FF/squash merge has a different commit from the PR head.
+            git("commit", "--allow-empty", "-m", "Record fixture integration")
+            release_commit = git("rev-parse", "HEAD")
+            require(release_commit != candidate, "fixture did not create a distinct release commit")
+            status = json.loads(task("status", "-id", "task-a", "-json").stdout)
+            revision = str(status["authorization"]["release_plan_revision"])
+            release_args = ("-release-commit", release_commit, "-release-plan-revision", revision)
         task("check", "-id", "task-a", "-name", check, "-candidate", candidate,
-             "-passed", "-evidence", f"Dry-run fixture for {check}")
+             "-passed", "-evidence", f"Dry-run fixture for {check}", *release_args)
         if check == "code_review":
             rejected = task("advance", "-id", "task-a", "-to", phase,
                             "-candidate", candidate, expected=1)
@@ -157,6 +166,14 @@ def dry_run(root):
             task("check", "-id", "task-a", "-name", "tests", "-candidate", candidate,
                  "-passed", "-evidence", "Dry-run fixture for tests rerun after review fix")
             print("Code review rejected the revised candidate until its tests were recorded.")
+        if check == "release_preflight":
+            rejected = task("advance", "-id", "task-a", "-to", phase,
+                            "-candidate", candidate, expected=1)
+            require('"release_selection"' in rejected.stderr,
+                    "tag phase accepted a missing release selection")
+            task("check", "-id", "task-a", "-name", "release_selection", "-candidate", candidate,
+                 "-passed", "-evidence", f"tag={TAG} commit={release_commit}", *release_args)
+            print("Tag phase rejected missing release selection, then accepted a distinct merged commit.")
         result = task("advance", "-id", "task-a", "-to", phase, "-candidate", candidate)
         require(result.stdout.strip() == phase, f"task A did not report phase {phase}")
     task("queue", "-id", "task-b", "-acquire")

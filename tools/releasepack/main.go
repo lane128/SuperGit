@@ -115,7 +115,24 @@ func packageRelease(opts packOptions) error {
 	if err != nil {
 		return err
 	}
-	plist, err := updater.ReadAppPlist(opts.AppPath)
+	appPath := opts.AppPath
+	if runtime.GOOS == "darwin" {
+		// Validate and archive a private copy, not a build path that can be
+		// replaced by a concurrent build while the packager waits for its lock.
+		root, err := os.MkdirTemp("", "supergit-release-bundle-*")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(root)
+		appPath, err = snapshotAppBundle(opts.AppPath, root)
+		if err != nil {
+			return err
+		}
+	}
+	if err := requireBundleFile(appPath, "Contents", "Info.plist"); err != nil {
+		return fmt.Errorf("embedded update public key: %w", err)
+	}
+	plist, err := updater.ReadAppPlist(appPath)
 	if err != nil {
 		return fmt.Errorf("embedded update public key: %w", err)
 	}
@@ -130,8 +147,11 @@ func packageRelease(opts packOptions) error {
 	if embeddedPubKey != pubBase64 {
 		return fmt.Errorf("embedded update public key: Info.plist key does not match the signing key")
 	}
-	executable, err := plist.ExecutablePath(opts.AppPath)
+	executable, err := plist.ExecutablePath(appPath)
 	if err != nil {
+		return fmt.Errorf("embedded update public key: %w", err)
+	}
+	if err := requireBundleFile(appPath, "Contents", "MacOS", filepath.Base(executable)); err != nil {
 		return fmt.Errorf("embedded update public key: %w", err)
 	}
 	binary, err := os.ReadFile(executable)
@@ -156,29 +176,72 @@ func packageRelease(opts packOptions) error {
 		return err
 	}
 
+	if opts.Platform == "" || strings.ContainsAny(opts.Platform, `/\`) {
+		return errors.New("invalid platform for release archive")
+	}
 	if err := os.MkdirAll(opts.OutDir, 0o755); err != nil {
 		return err
 	}
+	output, err := lockReleaseOutput(opts.OutDir)
+	if err != nil {
+		return err
+	}
+	defer output.Close()
 
-	if opts.Platform == "" || strings.ContainsAny(opts.Platform, `/\`) {
-		return errors.New("invalid platform for release archive")
+	pending := filepath.Join(opts.OutDir, pendingPackageDir)
+	pendingInfo, err := os.Lstat(pending)
+	recovering := err == nil
+	if recovering && !pendingInfo.IsDir() {
+		return errors.New("pending release package must be a directory")
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	stage, err := os.MkdirTemp(opts.OutDir, ".release-pack-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(stage)
+	prepared := filepath.Join(stage, "prepared")
 	archiveName := fmt.Sprintf("SuperGit-%s-%s.zip", shortVer, opts.Platform)
 	archivePath := filepath.Join(opts.OutDir, archiveName)
-	stagedArchive := filepath.Join(stage, archiveName)
-
-	if err := archiveAppBundle(opts.AppPath, stagedArchive); err != nil {
+	manifestPath := filepath.Join(opts.OutDir, "update.json")
+	archiveSource := prepared
+	if recovering {
+		if err := validatePendingPackage(pending, archiveName); err != nil {
+			return err
+		}
+		archiveSource = pending
+	} else {
+		complete, err := existingPackage(archivePath, manifestPath)
+		if err != nil {
+			return err
+		}
+		if complete {
+			archiveSource = opts.OutDir
+		}
+	}
+	reusing := archiveSource != prepared
+	freshArchive := filepath.Join(stage, archiveName)
+	if !reusing {
+		if err := os.Mkdir(prepared, 0o700); err != nil {
+			return err
+		}
+		freshArchive = filepath.Join(prepared, archiveName)
+	}
+	if err := archiveAppBundle(appPath, freshArchive); err != nil {
 		return err
 	}
-	if _, err := updater.InspectZipSafety(stagedArchive); err != nil {
+	if _, err := updater.InspectZipSafety(freshArchive); err != nil {
 		return fmt.Errorf("generated archive failed safety check: %w", err)
 	}
 
+	stagedArchive := filepath.Join(archiveSource, archiveName)
+	if reusing {
+		if err := requireRegularArtifact(stagedArchive); err != nil {
+			return err
+		}
+	}
 	sum, size, err := fileSHA256(stagedArchive)
 	if err != nil {
 		return err
@@ -195,13 +258,21 @@ func packageRelease(opts packOptions) error {
 		notesURL = fmt.Sprintf("https://github.com/lane128/SuperGit/releases/tag/v%s", shortVer)
 	}
 
-	manifestPath := filepath.Join(opts.OutDir, "update.json")
-	var manifest updater.Manifest
-	if existing, err := os.ReadFile(manifestPath); err == nil {
-		var prev updater.Manifest
-		if json.Unmarshal(existing, &prev) == nil && prev.Version == shortVer {
-			manifest = prev
+	prevManifestPath := manifestPath
+	if reusing {
+		prevManifestPath = filepath.Join(archiveSource, "update.json")
+		if err := requireRegularArtifact(prevManifestPath); err != nil {
+			return err
 		}
+	}
+	prevData, readErr := os.ReadFile(prevManifestPath)
+	if reusing && readErr != nil {
+		return fmt.Errorf("read existing release manifest: %w", readErr)
+	}
+	var manifest updater.Manifest
+	var prev updater.Manifest
+	if readErr == nil && json.Unmarshal(prevData, &prev) == nil && prev.Version == shortVer {
+		manifest = prev
 	}
 	manifest.Version = shortVer
 	manifest.Build = buildNum
@@ -212,11 +283,12 @@ func packageRelease(opts packOptions) error {
 	if manifest.Notes == nil {
 		manifest.Notes = map[string]string{}
 	}
-	if strings.TrimSpace(opts.NotesZH) != "" {
-		manifest.Notes["zh"] = strings.TrimSpace(opts.NotesZH)
-	}
-	if strings.TrimSpace(opts.NotesEN) != "" {
-		manifest.Notes["en"] = strings.TrimSpace(opts.NotesEN)
+	for lang, notes := range map[string]string{"zh": opts.NotesZH, "en": opts.NotesEN} {
+		if notes = strings.TrimSpace(notes); notes != "" {
+			manifest.Notes[lang] = notes
+		} else {
+			delete(manifest.Notes, lang)
+		}
 	}
 	if minOS != "" {
 		if manifest.MinOS == nil {
@@ -238,9 +310,13 @@ func packageRelease(opts packOptions) error {
 	if err != nil {
 		return err
 	}
-	stagedManifest := filepath.Join(stage, "update.json")
+	stagedManifest := filepath.Join(archiveSource, "update.json")
 	encoded = append(encoded, '\n')
-	if err := os.WriteFile(stagedManifest, encoded, 0o644); err != nil {
+	if reusing {
+		if !bytes.Equal(prevData, encoded) {
+			return errors.New("existing release manifest differs from the requested package")
+		}
+	} else if err := os.WriteFile(stagedManifest, encoded, 0o644); err != nil {
 		return err
 	}
 	stagedData, err := os.ReadFile(stagedManifest)
@@ -258,26 +334,15 @@ func packageRelease(opts packOptions) error {
 	if err := updater.VerifyArchiveDigest(sum, asset.SHA256, asset.Ed25519, pub); err != nil {
 		return fmt.Errorf("self-verification failed: %w", err)
 	}
-	artifacts := []struct {
-		staged, final string
-		digest        [sha256.Size]byte
-	}{{stagedArchive, archivePath, sum}, {stagedManifest, manifestPath, sha256.Sum256(stagedData)}}
-	// Check both destinations before publishing either staged file.
-	for _, artifact := range artifacts {
-		if err := compareArtifact(artifact.final, artifact.digest); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
+	if reusing {
+		if err := compareBundleArchives(freshArchive, stagedArchive); err != nil {
+			return fmt.Errorf("reuse release package: %w", err)
 		}
 	}
-	for _, artifact := range artifacts {
-		// A hard link atomically installs a complete file and never clobbers a
-		// destination another attempt published after the initial checks.
-		if err := os.Link(artifact.staged, artifact.final); err != nil {
-			if !errors.Is(err, os.ErrExist) {
-				return err
-			}
-			if err := compareArtifact(artifact.final, artifact.digest); err != nil {
-				return err
-			}
+	if recovering || !reusing {
+		artifacts := []releaseArtifact{{archiveName, sum}, {"update.json", sha256.Sum256(stagedData)}}
+		if err := installPackage(output, prepared, pending, recovering, artifacts); err != nil {
+			return err
 		}
 	}
 	fmt.Printf("Packaged %s (%d bytes)\n", archivePath, size)
@@ -302,6 +367,35 @@ func loadPrivateKey(path string) (ed25519.PrivateKey, ed25519.PublicKey, error) 
 	priv := ed25519.PrivateKey(raw)
 	pub, _ := priv.Public().(ed25519.PublicKey)
 	return priv, pub, nil
+}
+
+// Reject links in the metadata and executable paths so validation cannot
+// consult anything outside the private snapshot being archived.
+func requireBundleFile(appPath string, components ...string) error {
+	for _, component := range append([]string{"."}, components[:len(components)-1]...) {
+		appPath = filepath.Join(appPath, component)
+		info, err := os.Lstat(appPath)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("bundle directory %q must not be a link", component)
+		}
+	}
+	return requireRegularArtifact(filepath.Join(appPath, components[len(components)-1]))
+}
+
+func snapshotAppBundle(appPath, root string) (string, error) {
+	source, err := filepath.Abs(appPath)
+	if err != nil {
+		return "", err
+	}
+	dest := filepath.Join(root, filepath.Base(source))
+	cmd := exec.Command("ditto", source, dest)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("copy app bundle: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return dest, nil
 }
 
 func archiveAppBundle(appPath, zipPath string) error {
@@ -331,13 +425,20 @@ func fileSHA256(path string) ([sha256.Size]byte, int64, error) {
 	return sum, n, nil
 }
 
-func compareArtifact(path string, expected [sha256.Size]byte) error {
+func requireRegularArtifact(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("existing artifact %s is not a regular file", path)
+	}
+	return nil
+}
+
+func compareArtifact(path string, expected [sha256.Size]byte) error {
+	if err := requireRegularArtifact(path); err != nil {
+		return err
 	}
 	sum, _, err := fileSHA256(path)
 	if err != nil {

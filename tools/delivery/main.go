@@ -105,8 +105,13 @@ func runTaskCommand(command string, args []string, stdout, stderr io.Writer) int
 		flags.StringVar(&check.Candidate, "candidate", "", "candidate covered by the check")
 		flags.BoolVar(&check.Passed, "passed", false, "record a passing check")
 		flags.StringVar(&check.Evidence, "evidence", "", "check evidence")
+		flags.StringVar(&check.ReleaseCommit, "release-commit", "", "merged commit covered by release evidence")
+		planRevision := flags.Int("release-plan-revision", -1, "release plan revision covered by release evidence")
 		required = append(required, "name")
 		perform = update(func(task *delivery.Task, now time.Time) error {
+			if *planRevision >= 0 {
+				check.ReleasePlanRevision = planRevision
+			}
 			check.RecordedAt = now
 			return task.RecordCheck(check)
 		})
@@ -312,18 +317,23 @@ type taskStatusResponse struct {
 }
 
 type taskStatusAuthorization struct {
-	AuthorizedBy string `json:"authorized_by"`
-	Release      bool   `json:"release"`
-	Revoked      bool   `json:"revoked"`
+	AuthorizedBy        string `json:"authorized_by"`
+	Release             bool   `json:"release"`
+	Revoked             bool   `json:"revoked"`
+	ReleasePlanRevision int    `json:"release_plan_revision"`
+	VersionPolicy       string `json:"version_policy"`
+	Version             string `json:"version"`
 }
 
 type taskStatusCheck struct {
-	Name       string         `json:"name"`
-	Phase      delivery.Phase `json:"phase"`
-	Candidate  string         `json:"candidate"`
-	Passed     bool           `json:"passed"`
-	Evidence   string         `json:"evidence"`
-	RecordedAt time.Time      `json:"recorded_at"`
+	Name                string         `json:"name"`
+	Phase               delivery.Phase `json:"phase"`
+	Candidate           string         `json:"candidate"`
+	Passed              bool           `json:"passed"`
+	Evidence            string         `json:"evidence"`
+	RecordedAt          time.Time      `json:"recorded_at"`
+	ReleaseCommit       string         `json:"release_commit,omitempty"`
+	ReleasePlanRevision *int           `json:"release_plan_revision,omitempty"`
 }
 
 func writeTaskStatus(out io.Writer, store *delivery.Store, id string, jsonOutput bool) error {
@@ -357,6 +367,7 @@ func writeTaskStatus(out io.Writer, store *delivery.Store, id string, jsonOutput
 			checks[name] = taskStatusCheck{
 				Name: check.Name, Phase: check.Phase, Candidate: check.Candidate,
 				Passed: check.Passed, Evidence: check.Evidence, RecordedAt: check.RecordedAt,
+				ReleaseCommit: check.ReleaseCommit, ReleasePlanRevision: check.ReleasePlanRevision,
 			}
 		}
 		return json.NewEncoder(out).Encode(taskStatusResponse{
@@ -364,9 +375,12 @@ func writeTaskStatus(out io.Writer, store *delivery.Store, id string, jsonOutput
 			Tier: task.Tier, Phase: task.Phase, Status: task.Status, Candidate: task.Candidate,
 			Version: task.Version, Tag: task.Tag, PR: task.PR, BlockedReason: task.BlockedReason,
 			Authorization: taskStatusAuthorization{
-				AuthorizedBy: task.Authorization.AuthorizedBy,
-				Release:      task.Authorization.Release,
-				Revoked:      task.Authorization.RevokedAt != nil,
+				AuthorizedBy:        task.Authorization.AuthorizedBy,
+				Release:             task.Authorization.Release,
+				Revoked:             task.Authorization.RevokedAt != nil,
+				ReleasePlanRevision: task.Authorization.ReleasePlanRevision,
+				VersionPolicy:       task.Authorization.VersionPolicy,
+				Version:             task.Authorization.Version,
 			},
 			Checks: checks, HistoryCount: len(task.History),
 		})

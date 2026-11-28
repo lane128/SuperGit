@@ -208,7 +208,7 @@ func TestStoreSaveRejectsSnapshotBeforeRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	revoked, err := store.Update(task.ID, func(current *Task) error {
-		return current.Revoke("maintainer", taskStartTime.Add(time.Minute))
+		return current.Revoke("maintainer", taskStartTime)
 	})
 	if err != nil {
 		t.Fatal(err)

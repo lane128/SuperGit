@@ -144,12 +144,23 @@ func TestAdvanceRequiresPassedCheckForCurrentCandidate(t *testing.T) {
 				t.Fatalf("advance to %q succeeded without %q", step.phase, step.check)
 			}
 			check := Check{Name: step.check, Candidate: "candidate-a", RecordedAt: later}
+			if step.phase == PhaseTag {
+				check.ReleaseCommit, check.ReleasePlanRevision = "merged-main", new(0)
+			}
 			recordLedgerCheck(t, &task, check)
 			if err := task.Advance(step.phase, later); err == nil {
 				t.Fatalf("advance to %q succeeded with a failed check", step.phase)
 			}
 			check.Passed = true
 			recordLedgerCheck(t, &task, check)
+			if step.phase == PhaseTag {
+				if err := task.Advance(PhaseTag, later); err == nil {
+					t.Error("advanced to tag without a release selection")
+					return
+				}
+				check.Name = "release_selection"
+				recordLedgerCheck(t, &task, check)
+			}
 			advanceLedgerTask(t, &task, step.phase, later)
 		})
 	}
@@ -280,7 +291,8 @@ func TestRevokedAuthorizationBlocksEnteringPullRequest(t *testing.T) {
 func TestAuthorizeRevisionPreservesUnrelatedBlock(t *testing.T) {
 	task := newLedgerTask(t, "task", taskStartTime)
 	task.Phase = PhasePullRequest
-	const reason = "waiting for remote checks"
+	// A manual block may have exactly the same text as a revocation block.
+	const reason = "release authorization revoked"
 	if err := task.Block(reason, taskStartTime); err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +318,8 @@ func TestAuthorizeRevisionInvalidatesChangedReleaseSelection(t *testing.T) {
 			task := newLedgerTask(t, "task", taskStartTime)
 			task.Phase = PhaseReleasePreflight
 			task.Authorization.VersionPolicy, task.Authorization.Version = "exact", "1.2.3"
-			recordLedgerCheck(t, &task, Check{Name: "release_selection", Evidence: "v1.2.3", Passed: true, RecordedAt: taskStartTime})
+			recordLedgerCheck(t, &task, Check{Name: "release_selection", Evidence: "v1.2.3", Passed: true, RecordedAt: taskStartTime, ReleaseCommit: "merged-main", ReleasePlanRevision: new(0)})
+			recordLedgerCheck(t, &task, Check{Name: "release_preflight", Passed: true, RecordedAt: taskStartTime, ReleaseCommit: "merged-main", ReleasePlanRevision: new(0)})
 			rev := AuthorizationRevision{By: "maintainer", Reason: "revise release", Release: true, VersionPolicy: tc.policy, Version: tc.version}
 			if err := task.AuthorizeRevision(rev, taskStartTime.Add(time.Minute)); err != nil {
 				t.Fatal(err)
@@ -315,9 +328,71 @@ func TestAuthorizeRevisionInvalidatesChangedReleaseSelection(t *testing.T) {
 			if retained == tc.changed {
 				t.Errorf("retained old release selection = %t after %s revision", retained, tc.name)
 			}
+			if _, retained := task.Checks["release_preflight"]; retained == tc.changed {
+				t.Errorf("retained old preflight check = %t after %s revision", retained, tc.name)
+			}
 			event := task.History[len(task.History)-1]
 			if recorded := strings.Contains(event.Detail, "re-selection required"); recorded != tc.changed {
 				t.Errorf("re-selection event = %+v", event)
+			}
+		})
+	}
+}
+
+func TestReleasePreflightBindsChecksToVersionPlanAndMergedCommit(t *testing.T) {
+	task := newLedgerTask(t, "task", taskStartTime)
+	task.Phase, task.Candidate = PhaseReleasePreflight, "reviewed-head"
+	check := Check{Name: "release_selection", Candidate: "reviewed-head", ReleaseCommit: "merged-main", ReleasePlanRevision: new(0), Passed: true, RecordedAt: taskStartTime}
+	recordLedgerCheck(t, &task, check)
+	if err := task.AuthorizeRevision(AuthorizationRevision{By: "maintainer", Reason: "revise version", Release: true, VersionPolicy: "exact", Version: "1.2.4"}, taskStartTime); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"release_selection", "release_preflight"} {
+		check.Name = name
+		if err := task.RecordCheck(check); err == nil {
+			t.Errorf("accepted delayed %s recorded for the previous version plan", name)
+		}
+	}
+	check.ReleasePlanRevision = new(1)
+	recordLedgerCheck(t, &task, check)
+	check.Name, check.ReleaseCommit = "release_selection", "another-commit"
+	recordLedgerCheck(t, &task, check)
+	if err := task.Advance(PhaseTag, taskStartTime); err == nil {
+		t.Fatal("accepted selection and preflight for different merged commits")
+	}
+	check.ReleaseCommit = "merged-main"
+	recordLedgerCheck(t, &task, check)
+	advanceLedgerTask(t, &task, PhaseTag, taskStartTime)
+	if task.Candidate != "reviewed-head" {
+		t.Errorf("release overwrote the reviewed candidate: %q", task.Candidate)
+	}
+}
+
+func TestAuthorizeRevisionKeepsSelectedVersionAfterPreflight(t *testing.T) {
+	for _, phase := range []Phase{PhaseTag, PhasePublish, PhaseVerify} {
+		t.Run(string(phase), func(t *testing.T) {
+			task := newLedgerTask(t, "task", taskStartTime)
+			task.Phase, task.Candidate = PhaseReleasePreflight, "candidate"
+			task.Authorization.VersionPolicy, task.Authorization.Version = "exact", "1.2.3"
+			selection := Check{Name: "release_selection", Candidate: task.Candidate, Evidence: "v1.2.3", Passed: true, RecordedAt: taskStartTime, ReleaseCommit: "merged-main", ReleasePlanRevision: new(0)}
+			recordLedgerCheck(t, &task, selection)
+			task.Phase = phase
+			if err := task.Revoke("maintainer", taskStartTime); err != nil {
+				t.Fatal(err)
+			}
+			revision := AuthorizationRevision{By: "maintainer", Reason: "restore approval", Release: true, VersionPolicy: "exact", Version: "1.2.4"}
+			if err := task.AuthorizeRevision(revision, taskStartTime); err == nil {
+				t.Error("accepted a version change after release preflight")
+			}
+			if got := task.Checks["release_selection"]; got.Evidence != selection.Evidence || task.Authorization.RevokedAt == nil || task.Authorization.Version != "1.2.3" {
+				t.Fatalf("rejected revision changed the release selection or authorization: %+v", task)
+			}
+			revision.Version = "1.2.3"
+			if err := task.AuthorizeRevision(revision, taskStartTime); err != nil {
+				t.Fatal(err)
+			}
+			if err := task.Resume(taskStartTime); err != nil || task.Checks["release_selection"].Evidence != selection.Evidence {
+				t.Fatalf("same-version authorization failed to restore a resumable release: %v", err)
 			}
 		})
 	}

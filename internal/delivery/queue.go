@@ -92,8 +92,8 @@ func (s *Store) ReleaseReleaseWindow(id string) error {
 	return os.Remove(s.releaseWindowPath())
 }
 
-// RecoverReleaseWindow records a maintainer's recovery after returning main to
-// its release baseline. The task stays blocked for further reconciliation.
+// RecoverReleaseWindow records a maintainer's recovery after verifying that
+// main stayed at or was returned to its release baseline. The task stays blocked.
 func (s *Store) RecoverReleaseWindow(id, by, reason string) error {
 	by, reason = strings.TrimSpace(by), strings.TrimSpace(reason)
 	if by == "" || reason == "" {
@@ -113,13 +113,14 @@ func (s *Store) RecoverReleaseWindow(id, by, reason string) error {
 	if err != nil {
 		return err
 	}
-	if task.Status != StatusBlocked || !isReleasePhase(task.Phase) {
-		return fmt.Errorf("task %q must be blocked in a release phase to recover its window", id)
+	if task.Status != StatusBlocked {
+		return fmt.Errorf("task %q must be blocked to recover its window", id)
 	}
 	if err := s.requireReleaseWindow(task); err != nil {
 		return err
 	}
 	task.recordEvent(releaseWindowRecovered, fmt.Sprintf("%s: %s", by, reason), time.Now().UTC())
+	task.StoreRevision++
 	if err := writeTask(path, task); err != nil {
 		return err
 	}

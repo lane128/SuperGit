@@ -112,6 +112,7 @@ func TestInspectZipSafetyHandlesBackslashes(t *testing.T) {
 		{"normal", `SuperGit.app\Contents\Resources\note.txt`, true},
 		{"traversal", `SuperGit.app\..\SuperGit.app\note.txt`, false},
 		{"absolute", `\SuperGit.app\file`, false},
+		{"directory with payload", `SuperGit.app\Contents\`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			archive := filepath.Join(t.TempDir(), "fixture.zip")
@@ -120,8 +121,14 @@ func TestInspectZipSafetyHandlesBackslashes(t *testing.T) {
 				t.Fatal(err)
 			}
 			zw := zip.NewWriter(f)
-			if _, err := zw.Create(tc.entry); err != nil {
+			entry, err := zw.Create(tc.entry)
+			if err != nil {
 				t.Fatal(err)
+			}
+			if tc.name == "directory with payload" {
+				if _, err := entry.Write([]byte("unexpected data")); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if err := zw.Close(); err != nil {
 				t.Fatal(err)
@@ -150,6 +157,7 @@ func TestExtractAppNormalizesBackslashEntries(t *testing.T) {
 	}
 	zw := zip.NewWriter(f)
 	for name, data := range map[string]string{
+		`SuperGit.app\Contents\`:               "",
 		`SuperGit.app\Contents\Info.plist`:     `<plist><dict><key>CFBundleIdentifier</key><string>` + ExpectedBundleID + `</string><key>CFBundleExecutable</key><string>supergit</string></dict></plist>`,
 		`SuperGit.app\Contents\MacOS\supergit`: "fixture executable",
 	} {
@@ -169,6 +177,17 @@ func TestExtractAppNormalizesBackslashEntries(t *testing.T) {
 	}
 	if _, err := ExtractAndVerifyApp(t.Context(), path, filepath.Join(dir, "extract"), ExpectedBundleID, func(context.Context, string) error { return nil }); err != nil {
 		t.Fatalf("extract safe backslash entries: %v", err)
+	}
+}
+
+func TestVerifyAppBundleMetadataUsesExactExecutableName(t *testing.T) {
+	app, _ := makeFakeInstalledApp(t, t.TempDir(), ExpectedBundleID, "existing executable")
+	plist := `<plist><dict><key>CFBundleIdentifier</key><string>` + ExpectedBundleID + `</string><key>CFBundleExecutable</key><string> supergit&#32;</string></dict></plist>`
+	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), []byte(plist), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyAppBundleMetadata(app, ExpectedBundleID); !errors.Is(err, ErrBundleMismatch) {
+		t.Fatalf("padded executable name verified against an unpadded file: %v", err)
 	}
 }
 

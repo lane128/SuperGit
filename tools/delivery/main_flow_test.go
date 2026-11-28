@@ -141,6 +141,14 @@ func TestRunRevokeThenAuthorizeRevision(t *testing.T) {
 	if rev := auth.Revisions[0]; rev.By != "reviewer" || rev.Reason != "approval restored" || rev.At.IsZero() {
 		t.Fatalf("authorization revision = %+v", rev)
 	}
+	var status taskStatusResponse
+	out := runFlowCommand(t, state, 0, "status", "-id", "task-a", "-json")
+	if err := json.Unmarshal([]byte(out), &status); err != nil {
+		t.Fatal(err)
+	}
+	if got := status.Authorization; got.VersionPolicy != "exact" || got.Version != "9.9.9" || got.ReleasePlanRevision != 1 {
+		t.Fatalf("expected version policy, version and revision from the same snapshot, got %+v", got)
+	}
 }
 
 func TestRunRejectsRepositoryStateRoot(t *testing.T) {
@@ -256,7 +264,7 @@ func TestRunStatusJSONHasOnlyPublicFields(t *testing.T) {
 		"authorization", "base_branch", "blocked_reason", "candidate", "checks", "history_count", "id", "phase",
 		"pr", "repository", "request", "status", "tag", "tier", "version",
 	})
-	auth := assertStatusJSONFields(t, status["authorization"], []string{"authorized_by", "release", "revoked"})
+	auth := assertStatusJSONFields(t, status["authorization"], []string{"authorized_by", "release", "release_plan_revision", "revoked", "version", "version_policy"})
 	if string(auth["authorized_by"]) != `"maintainer"` || string(auth["release"]) != "true" || string(auth["revoked"]) != "true" {
 		t.Errorf("authorization values = %s", status["authorization"])
 	}

@@ -59,18 +59,19 @@ const (
 const revocationBlockReason = "release authorization revoked"
 
 type Authorization struct {
-	AuthorizedBy    string
-	Mode            string
-	Autonomy        string
-	Release         bool
-	VersionPolicy   string
-	Version         string
-	Channel         string
-	AcceptanceItems []string
-	PolicyVersion   string
-	GrantedAt       time.Time
-	RevokedAt       *time.Time
-	Revisions       []AuthorizationRevision
+	AuthorizedBy        string
+	Mode                string
+	Autonomy            string
+	Release             bool
+	VersionPolicy       string
+	Version             string
+	Channel             string
+	AcceptanceItems     []string
+	PolicyVersion       string
+	GrantedAt           time.Time
+	RevokedAt           *time.Time
+	Revisions           []AuthorizationRevision
+	ReleasePlanRevision int `json:",omitempty"`
 }
 
 type AuthorizationRevision struct {
@@ -90,33 +91,37 @@ type Event struct {
 }
 
 type Check struct {
-	Name       string
-	Phase      Phase
-	Candidate  string
-	Passed     bool
-	Evidence   string
-	RecordedAt time.Time
+	Name                string
+	Phase               Phase
+	Candidate           string
+	Passed              bool
+	Evidence            string
+	RecordedAt          time.Time
+	ReleaseCommit       string `json:",omitempty"`
+	ReleasePlanRevision *int   `json:",omitempty"`
 }
 
 type Task struct {
-	ID            string
-	Request       string
-	Repository    string
-	BaseBranch    string
-	Tier          string
-	Phase         Phase
-	Status        Status
-	Authorization Authorization
-	Candidate     string
-	Checks        map[string]Check
-	PR            int
-	Version       string
-	Tag           string
-	BlockedReason string
-	ReviewRounds  int
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	History       []Event
+	ID              string
+	Request         string
+	Repository      string
+	BaseBranch      string
+	Tier            string
+	Phase           Phase
+	Status          Status
+	Authorization   Authorization
+	Candidate       string
+	Checks          map[string]Check
+	PR              int
+	Version         string
+	Tag             string
+	BlockedReason   string
+	RevocationBlock bool   `json:",omitempty"`
+	StoreRevision   uint64 `json:",omitempty"`
+	ReviewRounds    int
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	History         []Event
 }
 
 type StartRequest struct {
@@ -186,6 +191,17 @@ func (t *Task) RecordCheck(c Check) error {
 	if err := t.ensureMutable(); err != nil {
 		return err
 	}
+	if c.Name == "release_selection" || c.Name == "release_preflight" {
+		if t.Phase != PhaseReleasePreflight {
+			return fmt.Errorf("check %q can only be recorded during release preflight", c.Name)
+		}
+		if err := t.validateReleaseCheck(c); err != nil {
+			return err
+		}
+		// Keep recorded evidence immutable if a caller reuses their input.
+		revision := *c.ReleasePlanRevision
+		c.ReleasePlanRevision = &revision
+	}
 	if t.Checks == nil {
 		t.Checks = make(map[string]Check)
 	}
@@ -245,9 +261,24 @@ func (t *Task) Advance(to Phase, now time.Time) error {
 	if err := t.requirePassingCheck(phaseGates[from].check); err != nil {
 		return err
 	}
-	if t.Phase == PhaseCodeReview {
+	switch t.Phase {
+	case PhaseCodeReview:
 		if err := t.requirePassingCheck("tests"); err != nil {
 			return err
+		}
+	case PhaseReleasePreflight:
+		if err := t.requirePassingCheck("release_selection"); err != nil {
+			return err
+		}
+		selection, preflight := t.Checks["release_selection"], t.Checks["release_preflight"]
+		if err := t.validateReleaseCheck(selection); err != nil {
+			return err
+		}
+		if err := t.validateReleaseCheck(preflight); err != nil {
+			return err
+		}
+		if selection.ReleaseCommit != preflight.ReleaseCommit {
+			return errors.New("release selection and preflight must cover the same release commit")
 		}
 	}
 
@@ -265,6 +296,16 @@ func (t *Task) Advance(to Phase, now time.Time) error {
 
 	t.Phase = to
 	t.recordEvent("advance", detail, now)
+	return nil
+}
+
+func (t *Task) validateReleaseCheck(c Check) error {
+	if strings.TrimSpace(c.ReleaseCommit) == "" {
+		return fmt.Errorf("check %q requires the merged release commit", c.Name)
+	}
+	if c.ReleasePlanRevision == nil || *c.ReleasePlanRevision != t.Authorization.ReleasePlanRevision {
+		return fmt.Errorf("check %q requires the current release plan revision (%d)", c.Name, t.Authorization.ReleasePlanRevision)
+	}
 	return nil
 }
 
@@ -288,6 +329,7 @@ func (t *Task) Block(reason string, now time.Time) error {
 	}
 	t.Status = StatusBlocked
 	t.BlockedReason = reason
+	t.RevocationBlock = false
 	t.recordEvent("block", reason, now)
 	return nil
 }
@@ -302,6 +344,7 @@ func (t *Task) Resume(now time.Time) error {
 	reason := t.BlockedReason
 	t.Status = StatusActive
 	t.BlockedReason = ""
+	t.RevocationBlock = false
 	t.recordEvent("resume", reason, now)
 	return nil
 }
@@ -314,6 +357,7 @@ func (t *Task) Revoke(by string, now time.Time) error {
 	if phaseIndex(t.Phase) >= phaseIndex(PhasePullRequest) && t.Status != StatusBlocked {
 		t.Status = StatusBlocked
 		t.BlockedReason = revocationBlockReason
+		t.RevocationBlock = true
 	}
 	t.recordEvent("revoke", by, now)
 	return nil
@@ -335,7 +379,12 @@ func (t *Task) AuthorizeRevision(rev AuthorizationRevision, now time.Time) error
 	auth := &t.Authorization
 	detail := fmt.Sprintf("%s: %s", rev.By, rev.Reason)
 	if auth.VersionPolicy != rev.VersionPolicy || auth.Version != rev.Version {
+		if phaseIndex(t.Phase) > phaseIndex(PhaseReleasePreflight) {
+			return fmt.Errorf("cannot change release version policy or version during phase %q after release preflight", t.Phase)
+		}
+		auth.ReleasePlanRevision++
 		delete(t.Checks, "release_selection")
+		delete(t.Checks, "release_preflight")
 		detail += "; release re-selection required"
 	}
 	auth.Revisions = append(auth.Revisions, rev)
@@ -343,9 +392,10 @@ func (t *Task) AuthorizeRevision(rev AuthorizationRevision, now time.Time) error
 	auth.VersionPolicy = rev.VersionPolicy
 	auth.Version = rev.Version
 	auth.RevokedAt = nil
-	if t.Status == StatusBlocked && t.BlockedReason == revocationBlockReason {
+	if t.Status == StatusBlocked && t.RevocationBlock && t.requirePhaseAuthorization(t.Phase) == nil {
 		t.Status = StatusActive
 		t.BlockedReason = ""
+		t.RevocationBlock = false
 	}
 	t.recordEvent("authorize", detail, now)
 	return nil

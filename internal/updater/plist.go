@@ -60,6 +60,11 @@ func ReadAppPlist(appPath string) (AppPlist, error) {
 
 // String reads one direct string value. Missing keys return an empty string.
 func (p AppPlist) String(key string) (string, error) {
+	value, err := p.exactString(key)
+	return strings.TrimSpace(value), err
+}
+
+func (p AppPlist) exactString(key string) (string, error) {
 	value, ok := p.entries[key]
 	if !ok {
 		return "", nil
@@ -67,12 +72,12 @@ func (p AppPlist) String(key string) (string, error) {
 	if value.XMLName != (xml.Name{Local: "string"}) || strings.Contains(value.Raw, "<") {
 		return "", fmt.Errorf("Info.plist %s must be a plain string", key)
 	}
-	return strings.TrimSpace(value.Text), nil
+	return value.Text, nil
 }
 
 // ExecutablePath resolves a regular bundle executable named by the plist.
 func (p AppPlist) ExecutablePath(appPath string) (string, error) {
-	name, err := p.String("CFBundleExecutable")
+	name, err := p.exactString("CFBundleExecutable")
 	if err != nil {
 		return "", err
 	}
@@ -94,7 +99,7 @@ var bundleVersionPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+){0,2}$`)
 
 // ReleaseVersion reads and validates the bundle's short version and build.
 func (p AppPlist) ReleaseVersion() (string, int, error) {
-	version, err := p.String("CFBundleShortVersionString")
+	version, err := p.exactString("CFBundleShortVersionString")
 	if err != nil {
 		return "", 0, err
 	}
@@ -104,7 +109,7 @@ func (p AppPlist) ReleaseVersion() (string, int, error) {
 	if _, err := ParseVersion(version); err != nil {
 		return "", 0, fmt.Errorf("invalid CFBundleShortVersionString: %w", err)
 	}
-	buildText, err := p.String("CFBundleVersion")
+	buildText, err := p.exactString("CFBundleVersion")
 	if err != nil {
 		return "", 0, err
 	}

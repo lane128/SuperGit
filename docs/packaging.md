@@ -126,6 +126,7 @@ open build/SuperGit.app
      git tag -a "$RELEASE_TAG" "$RELEASE_COMMIT" -m "SuperGit $RELEASE_TAG"
    ```
 3. **构建并交接受保护的打包步骤**。恢复构建或打包前，重新运行 `check_release_checkout` 并确认通过。在选定提交上运行 `make app RELEASE_VERSION="${RELEASE_TAG#v}" UPDATE_PUBKEY="$PUBKEY"`并检查产物。将构建产物、校验和、公钥、tag、提交及预期下载 URL 交给受保护的执行器。执行器验证交接记录，使用固定版本的 `releasepack -tag "$RELEASE_TAG"` 打包已交接的 `.app`，并核对应用内置公钥与签名私钥。执行器只读取产物，禁止运行候选二进制、脚本和 Makefile。仓库的组合目标 `make release-pack RELEASE_TAG=...` 会运行 `release-preflight` 并构建 `app`，仅适用于维护者已确认可信的普通发布 checkout。
+   如果安装 ZIP 与 `update.json` 的过程中断，使用同一应用、签名密钥、打包参数和 `RELEASE_OUT` 重试。`releasepack` 从输出目录的 `.release-pack-pending` 恢复之前验证过的 ZIP 和清单。输入或已有文件发生冲突时，工具会报错并保留现场。旧工具留下的单独 ZIP 缺少已签名清单和恢复记录，需要先核对并保留该文件，再到独立输出目录重新打包。
 4. **验证待发布资产**。执行器从固定版本的发布工具运行 `make verify-release RELEASE_OUT="$RELEASE_OUT" UPDATE_PUBKEY="$PUBKEY"`。默认产物为 `build/release/SuperGit-<version>-darwin-arm64.zip` 和 `build/release/update.json`。验包通过后，从已验证的解包应用读取 `CFBundleShortVersionString`，与 `update.json` 的 `version` 一起比对去除 `v` 的选定 tag。核对归档文件名及 `platforms.darwin-arm64.url` 与该 tag 的预期发布 URL 相符，包括 `SuperGit-<version>-darwin-arm64.zip`。任一不符便暂停。记录归档 SHA-256 与清单。
 5. **发布并回下载核验**。上传前从远端读取 tag，确认 annotated tag 解析后的提交与记录中的提交相同。执行器将已验证的归档和 `update.json` 上传到该 tag 对应的 GitHub Release。从公开 URL 下载两份资产，核对归档哈希和清单是否与本地记录一致，再用固定版本的工具运行 `make verify-release RELEASE_OUT=/path/to/downloads UPDATE_PUBKEY="$PUBKEY"`。
 
