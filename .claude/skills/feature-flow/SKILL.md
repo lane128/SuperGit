@@ -20,7 +20,7 @@ Choose a tier before starting and state it explicitly (along with any skipped st
   - Run Phase 3 as a quick `make app` check (light/dark themes and target window sizes for UI changes); `docs/acceptance/` write-ups are optional unless requested.
   - Finish with Phase 4 commit & push.
 - **T3 (Full workflow)** — new features, whole-page or major UI redesigns, Git write operations, conflict handling, persistence/config migrations, update signing, permissions, release flow, or cross-package refactors.
-  - Follow Phases 1 → 4 below without skipping Stop checkpoints.
+  - In ordinary mode, follow Phases 1 → 4 and their Stop checkpoints. T3 work may hand off to `/auto-delivery` when the user explicitly requests 自动交付 or invokes that skill. Its per-request authorization and phase gates then apply.
 
 ---
 
@@ -49,8 +49,8 @@ Complete implementation, automated tests, and code review **before** real-app ac
    - Keep changes strictly within scope; if scope expands noticeably, discuss (and update the T3 design doc) first.
    - Keep Go files `gofmt`-clean; match approved mockup tokens/spacing for UI changes.
 2. **Verify (single-pass, avoid redundant reruns)**:
-   - **T2**: `gofmt`, `go vet ./...`, and targeted tests (`go test -run ... ./<pkg>`); run full `make test` only if shared/core code changed.
-   - **T3**: run `go test -cover ./...` once (do **not** run `make test` and then `go test -cover ./...` separately — `internal/lobedesk` takes ~4 min per full run and `-cover` does not share cache). For cross-package, low-level, or build-related changes, run `make check`.
+   - **T2**: run `gofmt`, targeted `go vet`, and targeted tests (`go test -run ... ./<pkg>`) within the Makefile's `SOURCE_PKGS` scope. Run full `make test` only if shared/core code changed.
+   - **T3**: run `go test -cover ./cmd/... ./internal/... ./tools/...` once using the Makefile's `SOURCE_PKGS` list. Skip a separate `make test` run because `internal/lobedesk` takes ~4 min and `-cover` does not share its cache. For cross-package, low-level, or build-related changes, run `make check`.
    - Report any failure honestly; do not move on while verification is failing.
 3. **Code review (before acceptance)**:
    - **T1 / T2**: fast inline `git diff` self-check in the main session (correctness, edge cases, stale copy/references, formatting, secrets). Do **not** spawn a review subagent.
@@ -108,4 +108,4 @@ For T3 UI changes (and as a lightweight sanity check for T2 UI polish):
 
 ## Output requirements
 
-At the end of each phase, state: what was done, where the artifacts are, what was skipped, and what the user needs to confirm next. Do not skip any "Stop" checkpoint on T3 work.
+At the end of each phase, report what was done, where the artifacts are, and what was skipped. In ordinary T3 work, state what the user needs to confirm at each Stop checkpoint.

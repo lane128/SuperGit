@@ -33,7 +33,7 @@ Classify each change into one of three tiers before starting, and state the chos
 
 1. **Tests & avoiding redundant full reruns**:
    - New behavior requires unit tests; bug fixes require a regression test reproducing the original issue.
-   - Do not run `make test` and `go test -cover ./...` back-to-back (`internal/lobedesk` takes ~4 min per full run and `-cover` does not share cache). When coverage is needed, run `go test -cover ./...` once; use `make check` for cross-package, low-level, or build-related changes.
+   - When coverage is needed, run `go test -cover ./cmd/... ./internal/... ./tools/...` once using the Makefile's `SOURCE_PKGS` list. Skip a separate `make test` run because `internal/lobedesk` takes ~4 min and `-cover` does not share its cache. Use `make check` for cross-package, low-level, or build-related changes.
    - After review fixes touching only tests, docs, or trivial styling, run `go vet` + targeted tests instead of re-running the full `internal/lobedesk` suite.
 2. **Code review before acceptance**:
    - Complete code review (inline `git diff` check for T1/T2; scoped read-only independent review for T3) **before** presenting the build for final real-app acceptance, so approved builds commit cleanly without post-acceptance edits.
@@ -42,9 +42,13 @@ Classify each change into one of three tiers before starting, and state the chos
    - User-visible T2/T3 changes must be verified by launching `make app` (`build/SuperGit.app`). T3 changes record evidence in `docs/acceptance/<YYYY-MM-DD>/`.
 4. **Git operations**:
    - Ordinary `commit` and `push` (fast-forward on the current branch) do not require extra confirmation once verification/acceptance passes; always state the change, verification, and rollback, and keep commit messages in English.
-   - Destructive or release Git operations (`tag`, `reset`, `clean`, force-push, creating a Release) **always** require explicit user confirmation first.
+   - Destructive Git operations (`reset`, `clean`, force-push) always require explicit user confirmation first. In ordinary mode, `tag` and creating a Release also require explicit confirmation.
 5. **Secrets**:
    - Never commit private keys, `.env` files, or acceptance credentials; `update.key` must never enter the repository.
+
+### Automated delivery
+
+Only a direct request for 自动交付 or invocation of `/auto-delivery` starts automated delivery. One authorization per request covers merge and release. `tools/delivery` persists task state outside the repository. Ordinary work keeps the confirmation rules above. Use the Makefile's `SOURCE_PKGS` for Go checks across the source tree.
 
 ### Release packaging order
 

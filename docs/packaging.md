@@ -88,17 +88,8 @@ open build/SuperGit.app
 
 按顺序执行，全部通过才算可发布：
 
-1. **格式与静态检查**
-   ```sh
-   gofmt -l internal cmd tools
-   go vet ./...
-   ```
-   `gofmt` 必须无输出。
-2. **测试**（`make check` 包含后两项，多包并行时比逐条跑快）
-   ```sh
-   go test ./...
-   go test -race ./...
-   ```
+1. **格式检查**。运行 `gofmt -l internal cmd tools`，应无输出。
+2. **测试与静态检查**。运行 `make check`，按 Makefile 的 `SOURCE_PKGS` 范围运行测试、race 检查和 `go vet`，并检查 MyGo SDK。
 3. **构建与签名**
    ```sh
    make app
@@ -108,30 +99,50 @@ open build/SuperGit.app
 4. **图标**：按上一节验证成品尺寸、`.icns` 档位与日夜 Dock 切换。
 5. **e2e 冒烟**。运行 `make native-check` 验证标准包和 `make desktop-native-check` 验证旧桌面回退入口。系统目录选择框的选择和取消，以及重启后的系统「最近打开」菜单需在 macOS 图形会话中人工核对。
 6. **版本号**：`make app` 调用 `tools/appversion`，只改写 bundle 内的 plist 副本。`CFBundleShortVersionString` 取最近标签，去掉前缀 `v` 后仅接受 1–3 段数字；`CFBundleVersion` 取 `git rev-list --count HEAD`。标签 / 提交数不可用或格式非法时，对应字段沿用 `packaging/Info.plist` 的值；源码 plist 不会被自动修改。相同 HEAD 的未提交构建可能拥有同样的包版本，试用记录还需标明源码日期和未提交状态。
-7. **已知边界复核**：读一遍 `README.md` 的「当前边界与后续」，确认这次改动没有让其中任何一条过期（例如签名状态、预览版能力表）。
 
-## 自动更新签名与发布清单
+## 自动更新签名与发布顺序
 
 应用内检查更新默认读取 `https://github.com/lane128/SuperGit/releases/latest/download/update.json`，并通过内置的 Ed25519 公钥校验安装包 SHA-256 摘要签名，再结合 `codesign --verify --deep --strict` 完成 macOS 包校验与原地原子替换。
 
-1. **一次性生成签名密钥对**（私钥保存在本机安全位置，**切勿提交到仓库**）：
+首次配置时，生成签名密钥对。私钥保存在受保护的本机路径，权限为 `0600`，切勿提交到仓库。
+
+```sh
+mkdir -p ~/.config/supergit-release
+go run ./tools/releasepack -genkey -priv ~/.config/supergit-release/update.key -pub ~/.config/supergit-release/update.pub
+```
+
+1. **确认 `main` 干净且已同步**。合入已验证的改动后，在 `main` checkout 获取远端状态。以下检查必须全部通过。
    ```sh
-   go run ./tools/releasepack -genkey -priv ~/.config/supergit-release/update.key -pub ~/.config/supergit-release/update.pub
+   git fetch origin main &&
+     test "$(git branch --show-current)" = main &&
+     test -z "$(git status --porcelain)" &&
+     test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
    ```
-2. **构建内置公钥的应用并生成 `update.json` 与 `.zip`**：
+2. **创建 annotated tag**。使用已授权的 `vX.Y.Z` 版本。以下版本仅为示例。恢复任务时，同名 tag 指向当前 `HEAD` 且符合授权版本才可复用。遇到 tag 或 Release 不一致时停止并保留现场。
+   ```sh
+   RELEASE_TAG=v1.2.3
+   git tag -a "$RELEASE_TAG" -m "SuperGit $RELEASE_TAG"
+   ```
+3. **打包签名更新**。`make release-pack RELEASE_TAG=...` 先运行 `release-preflight`。预检重新获取 `origin/main`，检查分支、工作树、tag 指向和签名密钥是否匹配，再构建内置公钥的应用并生成归档与清单。
    ```sh
    PUBKEY=$(cat ~/.config/supergit-release/update.pub)
    make release-pack \
-     RELEASE_TAG=v1.2.3 \
+     RELEASE_TAG="$RELEASE_TAG" \
      UPDATE_PUBKEY="$PUBKEY" \
      UPDATE_PRIVKEY=~/.config/supergit-release/update.key \
      RELEASE_NOTES_ZH="本次更新内容" \
      RELEASE_NOTES_EN="Release notes"
    ```
-   产物会输出到 `build/release/`（包含 `SuperGit-<version>-darwin-arm64.zip` 与 `update.json`），发布 GitHub Release 时一并上传即可。
-3. **本地端到端验证**：可用环境变量临时指向本地 HTTP 目录进行实机验收（仅显式指定回环地址时允许本地 HTTP）：
+4. **验证待发布资产**。使用与打包相同的公钥及输出目录。默认产物为 `build/release/SuperGit-<version>-darwin-arm64.zip` 和 `build/release/update.json`。验包通过后记录归档 SHA-256 与清单。
    ```sh
-   SUPERGIT_UPDATE_URL="http://127.0.0.1:8765/update.json" \
-   SUPERGIT_UPDATE_PUBKEY="$PUBKEY" \
-   open -n /path/to/test/SuperGit.app
+   make verify-release UPDATE_PUBKEY="$PUBKEY"
    ```
+5. **发布并回下载核验**。将已验证的归档与 `update.json` 一起上传到该 tag 对应的 GitHub Release。从公开 URL 下载两份资产，核对归档哈希和清单是否与本地记录一致，再用相同公钥运行 `make verify-release RELEASE_OUT=/path/to/downloads UPDATE_PUBKEY="$PUBKEY"`。
+
+本地端到端验收可临时指向 HTTP 目录。仅显式指定回环地址时允许本地 HTTP。
+
+```sh
+SUPERGIT_UPDATE_URL="http://127.0.0.1:8765/update.json" \
+SUPERGIT_UPDATE_PUBKEY="$PUBKEY" \
+open -n /path/to/test/SuperGit.app
+```
