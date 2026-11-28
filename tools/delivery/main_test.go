@@ -1,10 +1,16 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +19,158 @@ import (
 	"testing"
 
 	"supergit/internal/delivery"
+	"supergit/internal/updater"
 )
+
+func TestRunVerifyReleaseReportsAndExits(t *testing.T) {
+	args, archivePath, digest := verifyReleaseFixture(t)
+	verifySignature := func(context.Context, string) error { return nil }
+
+	t.Run("text success", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runVerifyRelease(args[1:], &stdout, &stderr, verifySignature)
+		if code != 0 || stderr.Len() != 0 {
+			t.Fatalf("exit code = %d, want 0; stdout = %q, stderr = %q", code, &stdout, &stderr)
+		}
+		const checks = "PASS manifest\nPASS size\nPASS sha256\nPASS ed25519\nPASS zip_safety\nPASS extract\nPASS codesign\n"
+		if !strings.HasPrefix(stdout.String(), checks) {
+			t.Errorf("missing ordered passing checks; stdout = %q", &stdout)
+		}
+		for _, want := range []string{"Version 1.2.3", "Build 42", "Archive " + archivePath, "SHA-256 " + digest, "Bundle ", "SuperGit.app"} {
+			if !strings.Contains(stdout.String(), want) {
+				t.Errorf("missing %q; stdout = %q", want, &stdout)
+			}
+		}
+	})
+
+	t.Run("JSON success", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runVerifyRelease(append(args[1:], "-json"), &stdout, &stderr, verifySignature)
+		if code != 0 || stderr.Len() != 0 {
+			t.Fatalf("exit code = %d, want 0; stdout = %q, stderr = %q", code, &stdout, &stderr)
+		}
+		var report delivery.ReleaseVerification
+		if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+			t.Fatalf("decode stdout as a single JSON report: %v; stdout = %q", err, &stdout)
+		}
+		if report.Version != "1.2.3" || report.Build != 42 || report.ArchivePath != archivePath || report.SHA256 != digest || len(report.Checks) != 7 || filepath.Base(report.BundlePath) != "SuperGit.app" {
+			t.Errorf("unexpected release report: %+v", report)
+		}
+	})
+
+	t.Run("multiline codesign failure", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runVerifyRelease(args[1:], &stdout, &stderr, func(context.Context, string) error {
+			return errors.New("signature rejected\nin subcomponent")
+		})
+		if code != 1 || stderr.Len() != 0 {
+			t.Fatalf("exit code = %d, want 1; stdout = %q, stderr = %q", code, &stdout, &stderr)
+		}
+		if !strings.Contains(stdout.String(), "FAIL codesign: ") || !strings.Contains(stdout.String(), "in subcomponent") || strings.Count(stdout.String(), "\n") != 7 {
+			t.Errorf("expected one line per check with the codesign detail; stdout = %q", &stdout)
+		}
+	})
+
+	t.Run("tampered archive", func(t *testing.T) {
+		data, err := os.ReadFile(archivePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data[0] ^= 1
+		if err := os.WriteFile(archivePath, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		var stdout, stderr bytes.Buffer
+		if code := run(args, &stdout, &stderr); code != 1 || stderr.Len() != 0 {
+			t.Fatalf("exit code = %d, want 1; stdout = %q, stderr = %q", code, &stdout, &stderr)
+		}
+		if !strings.HasPrefix(stdout.String(), "PASS manifest\nPASS size\nFAIL sha256: ") || strings.Count(stdout.String(), "\n") != 3 {
+			t.Errorf("expected the completed and failed checks; stdout = %q", &stdout)
+		}
+
+		stdout.Reset()
+		if code := run(append(args, "-json"), &stdout, &stderr); code != 1 || stderr.Len() != 0 {
+			t.Fatalf("exit code = %d, want 1; stdout = %q, stderr = %q", code, &stdout, &stderr)
+		}
+		var report delivery.ReleaseVerification
+		if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+			t.Fatalf("decode stdout as a single JSON report: %v; stdout = %q", err, &stdout)
+		}
+		if len(report.Checks) != 3 || report.Checks[2].Name != "sha256" || report.Checks[2].Passed || report.Checks[2].Detail == "" {
+			t.Errorf("unexpected release checks: %+v", report.Checks)
+		}
+	})
+
+	t.Run("missing public key", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		if code := run([]string{"verify-release", "-out", t.TempDir(), "-json"}, &stdout, &stderr); code != 2 {
+			t.Fatalf("exit code = %d, want 2; stdout = %q, stderr = %q", code, &stdout, &stderr)
+		}
+		if stdout.Len() != 0 || !strings.Contains(stderr.String(), "-pubkey is required") {
+			t.Errorf("expected a usage error on stderr; stdout = %q, stderr = %q", &stdout, &stderr)
+		}
+	})
+}
+
+func verifyReleaseFixture(t *testing.T) (args []string, archivePath, digest string) {
+	t.Helper()
+	root := t.TempDir()
+	for _, name := range []string{"TMPDIR", "TEMP", "TMP"} {
+		t.Setenv(name, root)
+	}
+	var archive bytes.Buffer
+	zw := zip.NewWriter(&archive)
+	for _, file := range []struct{ name, contents string }{
+		{"SuperGit.app/Contents/Info.plist", `<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>cc.supermix.supergit</string>
+<key>CFBundleExecutable</key><string>supergit</string>
+<key>CFBundleShortVersionString</key><string>1.2.3</string>
+<key>CFBundleVersion</key><string>42</string>
+</dict></plist>`},
+		{"SuperGit.app/Contents/MacOS/supergit", "fixture executable"},
+	} {
+		entry, err := zw.Create(file.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(entry, file.contents); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	archivePath = filepath.Join(root, "fixture.zip")
+	if err := os.WriteFile(archivePath, archive.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(archive.Bytes())
+	digest = hex.EncodeToString(sum[:])
+	manifest, err := json.Marshal(updater.Manifest{
+		Version: "1.2.3",
+		Build:   42,
+		Platforms: map[string]updater.PlatformAsset{"darwin-amd64": {
+			URL:     "https://example.invalid/releases/unavailable.zip",
+			SHA256:  digest,
+			Ed25519: base64.StdEncoding.EncodeToString(ed25519.Sign(priv, sum[:])),
+			Size:    int64(archive.Len()),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, "fixture.json")
+	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return []string{"verify-release", "-out", root, "-manifest", manifestPath, "-archive", archivePath,
+		"-platform", "darwin-amd64", "-pubkey", base64.StdEncoding.EncodeToString(pub)}, archivePath, digest
+}
 
 func TestRunPreflightReportsChecksAndExitCode(t *testing.T) {
 	if runtime.GOOS == "windows" {

@@ -6,7 +6,7 @@ DESKTOP_APP := build/SuperGit Desktop.app
 LOBE_APP := build/SuperGit Lobe Preview.app
 FOLDER_DOCUMENT_TYPES := [{"CFBundleTypeName":"Repository Folder","CFBundleTypeRole":"Editor","LSHandlerRank":"Alternate","LSItemContentTypes":["public.folder"]}]
 
-.PHONY: build app release-preflight release-pack run demo test check e2e-build native-check desktop-app desktop-e2e-build desktop-native-check lobe-build lobe-app lobe-run lobe-e2e-build icns icons
+.PHONY: build app release-preflight release-pack verify-release run demo test check e2e-build native-check desktop-app desktop-e2e-build desktop-native-check lobe-build lobe-app lobe-run lobe-e2e-build icns icons
 
 UPDATE_PUBKEY ?=
 RELEASE_TAG ?=
@@ -73,6 +73,10 @@ release-pack: release-preflight app
 		$(if $(RELEASE_BASE_URL),-base-url "$(RELEASE_BASE_URL)",) \
 		$(if $(RELEASE_NOTES_ZH),-notes-zh "$(RELEASE_NOTES_ZH)",) \
 		$(if $(RELEASE_NOTES_EN),-notes-en "$(RELEASE_NOTES_EN)",)
+
+verify-release:
+	@test -n "$(UPDATE_PUBKEY)" || (echo "UPDATE_PUBKEY is required" >&2; exit 2)
+	$(GO) run ./tools/delivery verify-release -out "$(RELEASE_OUT)" -pubkey "$(UPDATE_PUBKEY)"
 
 desktop-app:
 	@mkdir -p "$(DESKTOP_APP)/Contents/MacOS" "$(DESKTOP_APP)/Contents/Resources"
