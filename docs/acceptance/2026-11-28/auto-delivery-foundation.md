@@ -98,3 +98,44 @@ PASS delivery dry-run
 ```
 
 发布交接、归属和资产校验规则经过文档静态核对。受保护的执行器、真实 Agent 编排、网络 PR、合并及发布未在本阶段实跑。SuperGit 仓库未创建 tag 或 Release。
+
+## 第 2 轮审查修复复验
+
+修复基线为 `8c3414c`。技能要求每次进入 `tag` 及恢复构建或打包前重新 fetch，验证 `HEAD`、`origin/main` 和 `FETCH_HEAD` 都等于 `release_selection` 中的提交。发现推进或不匹配时记录预期和观察到的提交并暂停。打包说明的 tag 命令显式指定已记录的提交，并由同一检查控制执行。
+
+重跑上表两个 `rg` 命令，均退出 `0`。源码范围仍使用 `SOURCE_PKGS`，交付和验包入口均有引用。`git diff --check` 通过。
+
+从打包说明提取实际 shell 片段，在替代 Git 命令的测试环境中核对提交比较和 tag 参数。该检查没有创建任何 tag。
+
+```text
+PASS synchronized checkout passes and supplies the recorded commit to the tag command
+PASS resumed checkout blocks when only FETCH_HEAD reports advanced main
+PASS newer synchronized checkout blocks because the recorded commit differs
+```
+
+重跑上表的完整定向检查，`gofmt` 和 `go vet` 无输出，退出码 `0`。
+
+```text
+ok  	supergit/internal/delivery	11.001s
+ok  	supergit/tools/delivery	3.455s
+ok  	supergit/tools/releasepack	0.441s
+```
+
+重跑 `python3 -I scripts/check-delivery-dry-run.py`，退出码 `0`。
+
+```text
+PASS branch
+PASS clean
+PASS synced
+PASS tag
+PASS public_key
+PASS private_key
+Dirty worktree rejected by preflight.
+Task A holds the window and task B is blocked.
+Code review rejected the revised candidate until its tests were recorded.
+Task A completed and task B acquired the window.
+Repeated status and advance left state unchanged. The fixture still has only v9.9.9.
+PASS delivery dry-run
+```
+
+本轮只修改文档。未执行真实 Agent 编排、打包或发布，未对 SuperGit 仓库创建 tag、推送、合并或创建 Release。
