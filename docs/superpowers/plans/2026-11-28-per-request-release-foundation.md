@@ -266,15 +266,18 @@ git commit -m "feat(release): gate packaging on release preflight"
 
 ---
 
-### Task 5: 发布包核验逻辑
+### Task 5: 发布包核验逻辑与命令
 
 **Files:**
 - Create: `internal/delivery/release.go`
 - Test: `internal/delivery/release_test.go`
+- Modify: `tools/delivery/main.go`
+- Modify: `tools/delivery/main_test.go`
+- Modify: `Makefile`
 
 **Interfaces:**
 - Consumes: `updater.Manifest`、`updater.ParsePublicKey`、`updater.VerifyArchiveDigest`、`updater.InspectZipSafety`、`updater.ExtractAndVerifyApp`、`updater.VerifyAppBundleMetadata`、`updater.ExpectedBundleID`。
-- Produces:
+- Produces: `VerifyRelease`；CLI `verify-release` 参数 `-out`、`-archive`、`-manifest`、`-pubkey`、`-platform`；Makefile `verify-release` 目标读取 `$(RELEASE_OUT)` 和 `$(UPDATE_PUBKEY)`。
 
 ```go
 type VerifyOptions struct {
@@ -328,10 +331,29 @@ Expected: 编译失败，`VerifyRelease` 未定义。
 Run: `go test ./internal/delivery -run TestVerifyRelease -v`
 Expected: PASS。
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 接入 CLI 与 Makefile**
+
+在 `tools/delivery/main.go` 增加 `verify-release` 子命令，把标志映射到 `VerifyOptions`，使用默认 `codesign` 校验（`VerifySignature=nil`）。成功输出版本、构建号、归档路径、SHA-256 和 bundle 路径；失败逐项输出 `FAIL <name>` 并退出 1。
+
+在 `Makefile` 增加：
+
+```make
+verify-release:
+	@test -n "$(UPDATE_PUBKEY)" || (echo "UPDATE_PUBKEY is required" >&2; exit 2)
+	$(GO) run ./tools/delivery verify-release -out "$(RELEASE_OUT)" -pubkey "$(UPDATE_PUBKEY)"
+```
+
+在 `tools/delivery/main_test.go` 增加 `TestRunVerifyReleaseReportsAndExits`，断言成功退出 0、篡改归档退出 1、缺少 `-pubkey` 退出 2。
+
+- [ ] **Step 6: 运行命令测试**
+
+Run: `go test ./internal/delivery ./tools/delivery -run 'TestVerifyRelease|TestRunVerifyRelease' -v`
+Expected: PASS。
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add internal/delivery/release.go internal/delivery/release_test.go
+git add internal/delivery/release.go internal/delivery/release_test.go tools/delivery/main.go tools/delivery/main_test.go Makefile
 git commit -m "feat(delivery): verify signed release archives end to end"
 ```
 
@@ -486,7 +508,7 @@ Expected: 编译失败。
 - `Advance` 校验下一阶段合法；离开当前阶段的检查必须 `Passed`，且 `Check.Candidate == T.Candidate`（intake/analysis 阶段允许空候选）。
 - 跳过设计：`analysis→implementation` 允许，但必须存在 `design` 检查且 `Evidence` 以 `skipped:` 开头。
 - 进入 `merge` 要求授权未撤销且 `Release` 为 true；`merge` 及之后撤销授权立即把状态置为 `blocked`。
-- `AuthorizeRevision` 追加修订、清空 `RevokedAt`、状态恢复 `active`。
+- `AuthorizeRevision` 追加修订，并用修订中的 `Release`、`VersionPolicy`、`Version` 覆盖授权字段；清空 `RevokedAt`、状态恢复 `active`。
 - 每次变更追加 `Event` 并更新 `UpdatedAt`。
 - `Store` 使用 `<root>/tasks/<id>.json`，目录 0700，临时文件同目录写入后 `os.Rename`；ID 只允许 `[a-z0-9-]`。
 
@@ -549,7 +571,7 @@ Expected: 编译失败。
 - [ ] **Step 3: 实现队列与命令**
 
 - 队列文件 `<root>/queue.json`；持有者不匹配时 `Acquire` 返回错误；`Advance` 进入 `merge` 前必须当前任务持有窗口；`verify→complete` 自动释放窗口。
-- `start` 参数：`-id -request -repo -by -version-policy -version -channel -acceptance -release`；`-release` 默认 true。
+- `start` 参数：`-id -request -repo -by -version-policy -version -channel -acceptance -release`；`-release` 默认 true，本阶段不接受 `false`，否则退出 2。
 - `check` 参数：`-id -name -candidate -passed -evidence`。
 - `advance` 参数：`-id -to -candidate`（候选变化时自动 `SetCandidate` 并要求重新记录检查）。
 - `queue` 参数：`-acquire -release -id`。
@@ -609,7 +631,8 @@ git commit -m "feat(delivery): serialize the merge-to-release window"
 - 设计审查使用 `.claude/agents/design-reviewer.md` 或 `delivery-ui-reviewer`；代码审查使用 `.claude/agents/delivery-code-reviewer.md`；审查者只读，不跑测试。
 - 原生验收使用 `make app`、`make e2e-build` 和 `scripts/native-lobe-*.py`；记录标准包与 e2e 包分别验证了什么。
 - 合并前 `git fetch` 并验证集成候选；发布窗口未取得时暂停。
-- 发布前确认 `RELEASE_TAG` 指向当前 HEAD，`UPDATE_PUBKEY` 与私钥匹配；`make release-pack` 后运行 `tools/delivery verify-release`。
+- 版本选择：读取最近 tag，按授权策略递增 patch 或 minor；`exact` 使用授权中的版本。在干净且同步的 `main` 创建 annotated tag `vX.Y.Z`。同名 tag 已存在且指向当前 HEAD 时复用；指向其他提交或版本不一致时停止并保留现场。
+- 发布前确认 `RELEASE_TAG` 指向当前 HEAD，`UPDATE_PUBKEY` 与私钥匹配；运行 `make release-pack RELEASE_TAG=...` 后运行 `make verify-release`。上传前核对归档哈希与清单，发布后从公开 URL 回下载并再次核验。
 - 停止条件：需求范围变化、版本策略不明确、必须本人检查的关键流程、审查三轮后仍有阻塞项、tag/Release 内容不一致、授权被撤销。
 - 成功路径不重复请求批准；所有外部动作先写任务记录意图，再执行并回读真实状态。
 
