@@ -36,12 +36,23 @@ func TestRunTaskFlowPersistsAcrossInvocations(t *testing.T) {
 	runFlowCommand(t, state, 0, "advance", "-id", "task-a", "-to", "design", "-candidate", "new")
 	for _, step := range []struct{ check, to string }{
 		{"design", "design_review"}, {"design_review", "implementation"}, {"tests", "code_review"},
-		{"code_review", "acceptance"}, {"acceptance", "pull_request"},
 	} {
 		runFlowCommand(t, state, 0, "check", "-id", "task-a", "-name", step.check, "-candidate", "new", "-passed")
 		runFlowCommand(t, state, 0, "advance", "-id", "task-a", "-to", step.to)
 	}
-	runFlowCommand(t, state, 0, "check", "-id", "task-a", "-name", "remote_checks", "-candidate", "new", "-passed")
+	runFlowCommand(t, state, 0, "check", "-id", "task-a", "-name", "code_review", "-candidate", "revised", "-passed")
+	before = runFlowCommand(t, state, 0, "status", "-id", "task-a", "-json")
+	if out := runFlowCommand(t, state, 1, "advance", "-id", "task-a", "-to", "acceptance", "-candidate", "revised"); !strings.Contains(out, `"tests"`) {
+		t.Fatalf("review gate output = %q, want tests gate error", out)
+	}
+	if got := runFlowCommand(t, state, 0, "status", "-id", "task-a", "-json"); got != before {
+		t.Fatal("failed review advance changed the persisted task")
+	}
+	runFlowCommand(t, state, 0, "check", "-id", "task-a", "-name", "tests", "-candidate", "revised", "-passed", "-evidence", "tests rerun after review fixes")
+	runFlowCommand(t, state, 0, "advance", "-id", "task-a", "-to", "acceptance", "-candidate", "revised")
+	runFlowCommand(t, state, 0, "check", "-id", "task-a", "-name", "acceptance", "-candidate", "revised", "-passed")
+	runFlowCommand(t, state, 0, "advance", "-id", "task-a", "-to", "pull_request")
+	runFlowCommand(t, state, 0, "check", "-id", "task-a", "-name", "remote_checks", "-candidate", "revised", "-passed")
 	runFlowCommand(t, state, 1, "advance", "-id", "task-a", "-to", "merge")
 	startFlowTask(t, state, "task-b")
 	runFlowCommand(t, state, 2, "queue", "-id", "task-b", "-acquire", "-release")
@@ -51,7 +62,7 @@ func TestRunTaskFlowPersistsAcrossInvocations(t *testing.T) {
 	runFlowCommand(t, state, 0, "queue", "-id", "task-a", "-acquire")
 	runFlowCommand(t, state, 0, "advance", "-id", "task-a", "-to", "merge")
 	task := readFlowTask(t, state, "task-a")
-	if task.Phase != delivery.PhaseMerge || task.Candidate != "new" || task.Checks["remote_checks"].Phase != delivery.PhasePullRequest {
+	if task.Phase != delivery.PhaseMerge || task.Candidate != "revised" || task.Checks["remote_checks"].Phase != delivery.PhasePullRequest {
 		t.Fatalf("persisted phase = %s, candidate = %q, check phase = %s", task.Phase, task.Candidate, task.Checks["remote_checks"].Phase)
 	}
 }
@@ -261,6 +272,9 @@ func runFlowCommand(t *testing.T, state string, want int, args ...string) string
 	code := run(append(args, "-state", state), &stdout, &stderr)
 	if code != want || (want != 0 && (stdout.Len() != 0 || stderr.Len() == 0)) || (want == 0 && stderr.Len() != 0) {
 		t.Fatalf("run %q: exit = %d, want %d, stdout = %q, stderr = %q", args, code, want, stdout.String(), stderr.String())
+	}
+	if want != 0 {
+		return stderr.String()
 	}
 	return stdout.String()
 }

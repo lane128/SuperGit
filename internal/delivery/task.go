@@ -237,16 +237,13 @@ func (t *Task) Advance(to Phase, now time.Time) error {
 	if !skipDesign && (from < 0 || from+1 >= len(phaseGates) || phaseGates[from+1].phase != to) {
 		return fmt.Errorf("cannot advance from %q to %q", t.Phase, to)
 	}
-	name := phaseGates[from].check
-	check := t.Checks[name]
-	if !check.Passed {
-		return fmt.Errorf("phase %q requires a passing %q check", t.Phase, name)
+	if err := t.requirePassingCheck(phaseGates[from].check); err != nil {
+		return err
 	}
-	if check.Phase != t.Phase {
-		return fmt.Errorf("check %q must be recorded during phase %q", name, t.Phase)
-	}
-	if check.Candidate != t.Candidate || (check.Candidate == "" && t.Phase != PhaseIntake && t.Phase != PhaseAnalysis) {
-		return fmt.Errorf("check %q must match the current candidate for phase %q", name, t.Phase)
+	if t.Phase == PhaseCodeReview {
+		if err := t.requirePassingCheck("tests"); err != nil {
+			return err
+		}
 	}
 
 	detail := fmt.Sprintf("%s → %s", t.Phase, to)
@@ -263,6 +260,20 @@ func (t *Task) Advance(to Phase, now time.Time) error {
 
 	t.Phase = to
 	t.recordEvent("advance", detail, now)
+	return nil
+}
+
+func (t *Task) requirePassingCheck(name string) error {
+	check := t.Checks[name]
+	if !check.Passed {
+		return fmt.Errorf("phase %q requires a passing %q check", t.Phase, name)
+	}
+	if check.Phase != t.Phase {
+		return fmt.Errorf("check %q must be recorded during phase %q", name, t.Phase)
+	}
+	if check.Candidate != t.Candidate || (check.Candidate == "" && t.Phase != PhaseIntake && t.Phase != PhaseAnalysis) {
+		return fmt.Errorf("check %q must match the current candidate for phase %q", name, t.Phase)
+	}
 	return nil
 }
 

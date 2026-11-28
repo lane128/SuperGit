@@ -137,6 +137,9 @@ func TestAdvanceRequiresPassedCheckForCurrentCandidate(t *testing.T) {
 		{"public_verify", PhaseComplete},
 	} {
 		t.Run(step.check, func(t *testing.T) {
+			if step.phase == PhaseAcceptance {
+				recordLedgerCheck(t, &task, Check{Name: "tests", Candidate: "candidate-a", Passed: true, RecordedAt: later})
+			}
 			if err := task.Advance(step.phase, later); err == nil {
 				t.Fatalf("advance to %q succeeded without %q", step.phase, step.check)
 			}
@@ -152,6 +155,37 @@ func TestAdvanceRequiresPassedCheckForCurrentCandidate(t *testing.T) {
 	}
 	if task.Phase != PhaseComplete || task.Advance(PhaseComplete, later) == nil {
 		t.Fatalf("complete did not behave as the terminal phase: %q", task.Phase)
+	}
+}
+
+func TestCodeReviewRequiresCurrentTestsRecordedDuringReview(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		tests *Check
+	}{
+		{name: "missing"},
+		{name: "implementation phase", tests: &Check{Phase: PhaseImplementation, Candidate: "revised", Passed: true}},
+		{name: "previous candidate", tests: &Check{Phase: PhaseCodeReview, Candidate: "original", Passed: true}},
+		{name: "failed rerun", tests: &Check{Phase: PhaseCodeReview, Candidate: "revised"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := newLedgerTask(t, "task", taskStartTime)
+			task.Phase = PhaseCodeReview
+			task.Candidate = "revised"
+			later := taskStartTime.Add(time.Minute)
+			if tc.tests != nil {
+				task.Checks["tests"] = *tc.tests
+			}
+			recordLedgerCheck(t, &task, Check{Name: "code_review", Candidate: "revised", Passed: true, RecordedAt: later})
+			if err := task.Advance(PhaseAcceptance, later); err == nil || !strings.Contains(err.Error(), `"tests"`) {
+				t.Fatalf("advance to acceptance with %s tests = %v, want tests gate error", tc.name, err)
+			}
+			if task.Phase != PhaseCodeReview {
+				t.Fatalf("rejected advance changed phase to %q", task.Phase)
+			}
+			recordLedgerCheck(t, &task, Check{Name: "tests", Candidate: "revised", Passed: true, RecordedAt: later})
+			advanceLedgerTask(t, &task, PhaseAcceptance, later)
+		})
 	}
 }
 

@@ -201,6 +201,9 @@ func advanceWindowTaskToVerify(t *testing.T, store *Store, id string) {
 		{"remote_checks", PhaseMerge}, {"merge", PhaseReleasePreflight}, {"release_preflight", PhaseTag},
 		{"package", PhasePublish}, {"publish", PhaseVerify},
 	} {
+		if step.to == PhaseAcceptance {
+			recordWindowCheck(t, store, id, "tests")
+		}
 		recordWindowCheck(t, store, id, step.check)
 		if _, err := store.AdvanceTask(id, step.to, "", taskStartTime); err != nil {
 			t.Fatalf("advance to %s: %v", step.to, err)

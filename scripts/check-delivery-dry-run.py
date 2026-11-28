@@ -142,8 +142,21 @@ def dry_run(root):
         ("publish", "verify"),
         ("public_verify", "complete"),
     ):
+        if check == "code_review":
+            fixture.write_text("delivery fixture with review fix\n", encoding="utf-8")
+            git("add", "fixture.txt")
+            git("commit", "-m", "Apply fixture review fix")
+            candidate = git("rev-parse", "HEAD")
         task("check", "-id", "task-a", "-name", check, "-candidate", candidate,
              "-passed", "-evidence", f"Dry-run fixture for {check}")
+        if check == "code_review":
+            rejected = task("advance", "-id", "task-a", "-to", phase,
+                            "-candidate", candidate, expected=1)
+            require(rejected.stdout == "" and '"tests"' in rejected.stderr,
+                    "revised candidate was not rejected for missing review-phase tests")
+            task("check", "-id", "task-a", "-name", "tests", "-candidate", candidate,
+                 "-passed", "-evidence", "Dry-run fixture for tests rerun after review fix")
+            print("Code review rejected the revised candidate until its tests were recorded.")
         result = task("advance", "-id", "task-a", "-to", phase, "-candidate", candidate)
         require(result.stdout.strip() == phase, f"task A did not report phase {phase}")
     task("queue", "-id", "task-b", "-acquire")

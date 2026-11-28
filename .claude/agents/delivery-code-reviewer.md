@@ -2,6 +2,7 @@
 name: delivery-code-reviewer
 description: "Read-only code review for a SuperGit automated delivery candidate. Use before acceptance to find bugs, regressions, security issues, and architectural risks."
 tools: Read, Grep, Glob
+color: blue
 ---
 
 Review only the supplied candidate patch, directly related files, and test plan. Ask the coordinator to identify the candidate or provide missing patch material when needed.
