@@ -152,7 +152,7 @@ def dry_run(root):
     snapshot = state_snapshot(state)
     read_status = ("status", "-id", "task-a", "-json")
     first = task(*read_status).stdout
-    require(json.loads(first)["Phase"] == "complete", "task A did not persist completion")
+    require(json.loads(first)["phase"] == "complete", "task A did not persist completion")
     require(task(*read_status).stdout == first and state_snapshot(state) == snapshot,
             "repeated status changed the task or state files")
     repeated = task("advance", "-id", "task-a", "-to", "complete", expected=1)

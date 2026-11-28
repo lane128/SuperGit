@@ -192,10 +192,16 @@ func runTaskCommand(command string, args []string, stdout, stderr io.Writer) int
 	}
 
 	state, err := deliveryStateRoot(*root)
-	if err == nil {
-		err = perform(delivery.NewStore(state), time.Now().UTC())
-	}
 	if err != nil {
+		fmt.Fprintf(stderr, "%s: %v\n", command, err)
+		return 1
+	}
+	state, err = validateStateRoot(state)
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: invalid delivery state directory: %v\n", command, err)
+		return 2
+	}
+	if err := perform(delivery.NewStore(state), time.Now().UTC()); err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", command, err)
 		return 1
 	}
@@ -216,12 +222,88 @@ func deliveryStateRoot(root string) (string, error) {
 	return filepath.Join(config, "SuperGit", "delivery"), nil
 }
 
+// validateStateRoot finds the destination's checkout even when the process
+// starts elsewhere. A worktree's .git entry may be a directory or a file.
+func validateStateRoot(root string) (string, error) {
+	absolute, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	ancestor, suffix := absolute, ""
+	for {
+		_, err := os.Lstat(ancestor)
+		if err == nil {
+			break
+		}
+		parent := filepath.Dir(ancestor)
+		if !errors.Is(err, os.ErrNotExist) || parent == ancestor {
+			return "", err
+		}
+		suffix = filepath.Join(filepath.Base(ancestor), suffix)
+		ancestor = parent
+	}
+	ancestor, err = filepath.EvalSymlinks(ancestor)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(ancestor)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%q is not a directory", ancestor)
+	}
+	for dir := ancestor; ; dir = filepath.Dir(dir) {
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+			return "", fmt.Errorf("state must be outside Git repository %q", dir)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		if filepath.Dir(dir) == dir {
+			return filepath.Join(ancestor, suffix), nil
+		}
+	}
+}
+
 type taskSummary struct {
 	ID      string          `json:"id"`
 	Phase   delivery.Phase  `json:"phase"`
 	Status  delivery.Status `json:"status"`
 	Version string          `json:"version"`
 	Tag     string          `json:"tag"`
+}
+
+type taskStatusResponse struct {
+	ID            string                     `json:"id"`
+	Request       string                     `json:"request"`
+	Repository    string                     `json:"repository"`
+	BaseBranch    string                     `json:"base_branch"`
+	Tier          string                     `json:"tier"`
+	Phase         delivery.Phase             `json:"phase"`
+	Status        delivery.Status            `json:"status"`
+	Candidate     string                     `json:"candidate"`
+	Version       string                     `json:"version"`
+	Tag           string                     `json:"tag"`
+	PR            int                        `json:"pr"`
+	BlockedReason string                     `json:"blocked_reason"`
+	Authorization taskStatusAuthorization    `json:"authorization"`
+	Checks        map[string]taskStatusCheck `json:"checks"`
+	HistoryCount  int                        `json:"history_count"`
+}
+
+type taskStatusAuthorization struct {
+	AuthorizedBy string `json:"authorized_by"`
+	Release      bool   `json:"release"`
+	Revoked      bool   `json:"revoked"`
+}
+
+type taskStatusCheck struct {
+	Name       string         `json:"name"`
+	Phase      delivery.Phase `json:"phase"`
+	Candidate  string         `json:"candidate"`
+	Passed     bool           `json:"passed"`
+	Evidence   string         `json:"evidence"`
+	RecordedAt time.Time      `json:"recorded_at"`
 }
 
 func writeTaskStatus(out io.Writer, store *delivery.Store, id string, jsonOutput bool) error {
@@ -250,10 +332,24 @@ func writeTaskStatus(out io.Writer, store *delivery.Store, id string, jsonOutput
 		return err
 	}
 	if jsonOutput {
-		return json.NewEncoder(out).Encode(struct {
-			delivery.Task
-			HistoryCount int
-		}{task, len(task.History)})
+		checks := make(map[string]taskStatusCheck, len(task.Checks))
+		for name, check := range task.Checks {
+			checks[name] = taskStatusCheck{
+				Name: check.Name, Phase: check.Phase, Candidate: check.Candidate,
+				Passed: check.Passed, Evidence: check.Evidence, RecordedAt: check.RecordedAt,
+			}
+		}
+		return json.NewEncoder(out).Encode(taskStatusResponse{
+			ID: task.ID, Request: task.Request, Repository: task.Repository, BaseBranch: task.BaseBranch,
+			Tier: task.Tier, Phase: task.Phase, Status: task.Status, Candidate: task.Candidate,
+			Version: task.Version, Tag: task.Tag, PR: task.PR, BlockedReason: task.BlockedReason,
+			Authorization: taskStatusAuthorization{
+				AuthorizedBy: task.Authorization.AuthorizedBy,
+				Release:      task.Authorization.Release,
+				Revoked:      task.Authorization.RevokedAt != nil,
+			},
+			Checks: checks, HistoryCount: len(task.History),
+		})
 	}
 	if _, err := fmt.Fprintf(out, "Task %s\nPhase %s\nStatus %s\nCandidate %q\nVersion %q\nTag %q\nPR %d\nBlocked reason %q\nAuthorization release=%t revoked=%t\nHistory entries %d\n",
 		task.ID, task.Phase, task.Status, task.Candidate, task.Version, task.Tag, task.PR, task.BlockedReason,

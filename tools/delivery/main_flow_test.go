@@ -3,6 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -57,12 +61,17 @@ func TestRunStatusJSONIncludesPhaseAndAuthorization(t *testing.T) {
 	runFlowCommand(t, state, 2, "start", "-id", "task-z", "-request", "fixture", "-by", "maintainer", "-version-policy", "patch", "-release=false")
 	startFlowTask(t, state, "task-z")
 	startFlowTask(t, state, "task-a")
-	task := readFlowTask(t, state, "task-z")
-	if task.Phase != delivery.PhaseIntake || !task.Authorization.Release || task.Authorization.RevokedAt != nil || task.BaseBranch != "main" {
-		t.Fatalf("phase = %s, authorization = %+v, branch = %q", task.Phase, task.Authorization, task.BaseBranch)
+	detail := runFlowCommand(t, state, 0, "status", "-id", "task-z", "-json")
+	var status taskStatusResponse
+	if err := json.Unmarshal([]byte(detail), &status); err != nil {
+		t.Fatalf("decode task status: %v", err)
 	}
-	if !slices.Equal(task.Authorization.AcceptanceItems, []string{"first", "second"}) {
-		t.Fatalf("acceptance items = %q", task.Authorization.AcceptanceItems)
+	if status.Phase != delivery.PhaseIntake || !status.Authorization.Release || status.Authorization.Revoked || status.BaseBranch != "main" {
+		t.Fatalf("phase = %s, authorization = %+v, branch = %q", status.Phase, status.Authorization, status.BaseBranch)
+	}
+	items := readFlowTask(t, state, "task-z").Authorization.AcceptanceItems
+	if !slices.Equal(items, []string{"first", "second"}) {
+		t.Fatalf("acceptance items = %q", items)
 	}
 	out := runFlowCommand(t, state, 0, "status", "-json")
 	var summaries []struct {
@@ -93,6 +102,91 @@ func TestRunRevokeThenAuthorizeRevision(t *testing.T) {
 	}
 }
 
+func TestRunRejectsRepositoryStateRoot(t *testing.T) {
+	for _, tc := range []struct {
+		name, path string
+		inRepo     bool
+		useEnv     bool
+	}{
+		{name: "current repository", path: ".", inRepo: true},
+		{name: "repository from outside", path: "repo"},
+		{name: "missing repository subdirectory", path: "repo/missing/state"},
+		{name: "symlink into repository", path: "alias/missing/state"},
+		{name: "environment default", path: "alias", useEnv: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			outside := t.TempDir()
+			repo := filepath.Join(outside, "repo")
+			git := exec.CommandContext(t.Context(), "git", "init", "--quiet", repo)
+			git.Env = []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull}
+			if out, err := git.CombinedOutput(); err != nil {
+				t.Fatalf("git init: %v\n%s", err, out)
+			}
+			if err := os.Symlink(repo, filepath.Join(outside, "alias")); err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir(outside)
+			state := filepath.Join(outside, tc.path)
+			if tc.inRepo {
+				t.Chdir(repo)
+				state = tc.path
+			}
+			args := []string{"start", "-id", "task-a", "-request", "fixture", "-by", "maintainer", "-version-policy", "patch"}
+			if tc.useEnv {
+				t.Setenv("SUPERGIT_DELIVERY_STATE", state)
+			} else {
+				args = append(args, "-state", state)
+			}
+			var stdout, stderr bytes.Buffer
+			if code := run(args, &stdout, &stderr); code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "repository") {
+				t.Errorf("exit = %d, want 2, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
+			}
+			entries, err := os.ReadDir(repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || entries[0].Name() != ".git" {
+				t.Errorf("checkout changed after rejecting -state: %v", entries)
+			}
+			startFlowTask(t, filepath.Join(outside, "safe-state"), "task-safe")
+		})
+	}
+}
+
+func TestRunStatusJSONHasOnlyPublicFields(t *testing.T) {
+	state := t.TempDir()
+	startFlowTask(t, state, "task-a")
+	runFlowCommand(t, state, 0, "check", "-id", "task-a", "-name", "intake", "-evidence", "old")
+	runFlowCommand(t, state, 0, "check", "-id", "task-a", "-name", "intake", "-passed", "-evidence", "latest")
+	runFlowCommand(t, state, 0, "revoke", "-id", "task-a", "-by", "maintainer")
+	out := runFlowCommand(t, state, 0, "status", "-id", "task-a", "-json")
+	status := assertStatusJSONFields(t, []byte(out), []string{
+		"authorization", "base_branch", "blocked_reason", "candidate", "checks", "history_count", "id", "phase",
+		"pr", "repository", "request", "status", "tag", "tier", "version",
+	})
+	auth := assertStatusJSONFields(t, status["authorization"], []string{"authorized_by", "release", "revoked"})
+	if string(auth["authorized_by"]) != `"maintainer"` || string(auth["release"]) != "true" || string(auth["revoked"]) != "true" {
+		t.Errorf("authorization values = %s", status["authorization"])
+	}
+	checks := assertStatusJSONFields(t, status["checks"], []string{"intake"})
+	check := assertStatusJSONFields(t, checks["intake"], []string{"candidate", "evidence", "name", "passed", "phase", "recorded_at"})
+	if string(check["evidence"]) != `"latest"` || string(check["passed"]) != "true" || string(status["history_count"]) != "4" {
+		t.Errorf("latest check = %s, history count = %s", checks["intake"], status["history_count"])
+	}
+}
+
+func assertStatusJSONFields(t *testing.T, data []byte, want []string) map[string]json.RawMessage {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatalf("decode status fields: %v", err)
+	}
+	if got := slices.Sorted(maps.Keys(fields)); !slices.Equal(got, want) {
+		t.Fatalf("fields = %v, want %v", got, want)
+	}
+	return fields
+}
+
 func startFlowTask(t *testing.T, state, id string) {
 	t.Helper()
 	out := runFlowCommand(t, state, 0, "start", "-id", id, "-request", "fixture", "-repo", "local/repo", "-by", "maintainer", "-version-policy", "patch", "-channel", "darwin-arm64", "-acceptance", " first, , second ")
@@ -103,10 +197,9 @@ func startFlowTask(t *testing.T, state, id string) {
 
 func readFlowTask(t *testing.T, state, id string) delivery.Task {
 	t.Helper()
-	out := runFlowCommand(t, state, 0, "status", "-id", id, "-json")
-	var task delivery.Task
-	if err := json.Unmarshal([]byte(out), &task); err != nil {
-		t.Fatalf("decode task status: %v", err)
+	task, err := delivery.NewStore(state).Load(id)
+	if err != nil {
+		t.Fatal(err)
 	}
 	return task
 }

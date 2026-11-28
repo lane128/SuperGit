@@ -37,7 +37,7 @@ func (s *Store) Create(t Task) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return writeTask(path, t)
+	return s.persistTask(path, t)
 }
 
 // Load returns an error matching os.ErrNotExist when there is no task for id.
@@ -59,7 +59,7 @@ func (s *Store) Save(t Task) error {
 		return err
 	}
 	defer lock.Close()
-	return writeTask(path, t)
+	return s.persistTask(path, t)
 }
 
 // Update holds the write lock while fn runs. The callback can change the
@@ -85,10 +85,21 @@ func (s *Store) Update(id string, fn func(*Task) error) (Task, error) {
 	if t.ID != id {
 		return Task{}, fmt.Errorf("cannot change task ID from %q to %q", id, t.ID)
 	}
-	if err := writeTask(path, t); err != nil {
+	if err := s.persistTask(path, t); err != nil {
 		return Task{}, err
 	}
 	return t, nil
+}
+
+// persistTask runs with the writer lock held so ownership cannot change before
+// the task is published. Publishing completion also expires the window.
+func (s *Store) persistTask(path string, task Task) error {
+	if isReleasePhase(task.Phase) {
+		if err := s.requireReleaseWindow(task); err != nil {
+			return err
+		}
+	}
+	return writeTask(path, task)
 }
 
 func (s *Store) List() ([]Task, error) {

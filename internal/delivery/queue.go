@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-var ErrNoReleaseWindow = errors.New("no release window is held")
+var (
+	ErrNoReleaseWindow       = errors.New("no release window is held")
+	ErrReleaseWindowRequired = errors.New("release window ownership is required")
+)
 
 type ReleaseWindow struct {
 	TaskID string
@@ -68,6 +71,13 @@ func (s *Store) ReleaseReleaseWindow(id string) error {
 	if window.TaskID != id {
 		return fmt.Errorf("release window is held by task %q", window.TaskID)
 	}
+	task, err := s.Load(id)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if isReleasePhase(task.Phase) && task.Phase != PhaseComplete {
+		return fmt.Errorf("task %q cannot release its window during phase %q", id, task.Phase)
+	}
 	return os.Remove(s.releaseWindowPath())
 }
 
@@ -101,8 +111,7 @@ func (s *Store) CurrentReleaseWindow() (ReleaseWindow, error) {
 	return record.ReleaseWindow, nil
 }
 
-// AdvanceTask validates and persists a phase transition under the store's
-// writer lock, including the window check for entry into merge.
+// AdvanceTask persists a candidate change and phase transition together.
 func (s *Store) AdvanceTask(id string, to Phase, candidate string, now time.Time) (Task, error) {
 	return s.Update(id, func(task *Task) error {
 		if candidate != "" && candidate != task.Candidate {
@@ -110,21 +119,22 @@ func (s *Store) AdvanceTask(id string, to Phase, candidate string, now time.Time
 				return err
 			}
 		}
-		if err := task.Advance(to, now); err != nil {
-			return err
-		}
-		if to != PhaseMerge {
-			return nil
-		}
-		window, err := s.CurrentReleaseWindow()
-		if err != nil {
-			return fmt.Errorf("task %q cannot enter merge: %w", id, err)
-		}
-		if window.TaskID != id {
-			return fmt.Errorf("task %q cannot enter merge: release window is held by task %q", id, window.TaskID)
-		}
-		return nil
+		return task.Advance(to, now)
 	})
+}
+
+func (s *Store) requireReleaseWindow(task Task) error {
+	window, err := s.CurrentReleaseWindow()
+	if errors.Is(err, ErrNoReleaseWindow) {
+		return fmt.Errorf("task %q at phase %q: %w: %w", task.ID, task.Phase, ErrReleaseWindowRequired, err)
+	}
+	if err != nil {
+		return err
+	}
+	if window.TaskID != task.ID {
+		return fmt.Errorf("task %q at phase %q: %w: held by task %q", task.ID, task.Phase, ErrReleaseWindowRequired, window.TaskID)
+	}
+	return nil
 }
 
 func (s *Store) releaseTaskComplete(id string) (bool, error) {

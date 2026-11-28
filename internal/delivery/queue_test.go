@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -88,6 +89,97 @@ func TestReleaseWindowReleasedOnComplete(t *testing.T) {
 	if window, err := store.CurrentReleaseWindow(); err != nil || window.TaskID != "task-a" {
 		t.Fatalf("new window after completion = %+v, err = %v", window, err)
 	}
+}
+
+func TestStoreReleasePhaseWritesRequireWindow(t *testing.T) {
+	for _, method := range []string{"Update", "Save"} {
+		t.Run(method, func(t *testing.T) {
+			store := NewStore(t.TempDir())
+			createWindowTaskAtPullRequest(t, store)
+			before := readWindowTaskFile(t, store)
+			var err error
+			if method == "Update" {
+				_, err = store.Update("task-a", func(task *Task) error {
+					return task.Advance(PhaseMerge, taskStartTime)
+				})
+			} else {
+				task, loadErr := store.Load("task-a")
+				if loadErr != nil {
+					t.Fatal(loadErr)
+				}
+				advanceLedgerTask(t, &task, PhaseMerge, taskStartTime)
+				err = store.Save(task)
+			}
+			if !errors.Is(err, ErrReleaseWindowRequired) {
+				t.Errorf("%s error = %v, want ErrReleaseWindowRequired", method, err)
+			}
+			if !bytes.Equal(before, readWindowTaskFile(t, store)) {
+				t.Error("rejected phase write changed the task file")
+			}
+		})
+	}
+}
+
+func TestReleaseWindowCannotBeReleasedDuringDelivery(t *testing.T) {
+	for _, scenario := range []string{"release while in merge", "later transition with another holder"} {
+		t.Run(scenario, func(t *testing.T) {
+			store := NewStore(t.TempDir())
+			createWindowTaskAtPullRequest(t, store)
+			if err := store.AcquireReleaseWindow("task-a", taskStartTime); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.AdvanceTask("task-a", PhaseMerge, "", taskStartTime); err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "release while in merge" {
+				if err := store.ReleaseReleaseWindow("task-a"); err == nil {
+					t.Error("released the window during merge")
+				}
+				if err := store.AcquireReleaseWindow("task-b", taskStartTime); err == nil {
+					t.Error("task B acquired the window during task A's merge")
+				}
+				return
+			}
+
+			recordWindowCheck(t, store, "task-a", "merge")
+			before := readWindowTaskFile(t, store)
+			// Simulate a queue replaced outside the API after a task entered merge.
+			if err := os.Remove(filepath.Join(store.Root, "queue.json")); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.AcquireReleaseWindow("task-b", taskStartTime); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.AdvanceTask("task-a", PhaseReleasePreflight, "", taskStartTime); err == nil {
+				t.Error("advanced to release_preflight while task B held the window")
+			}
+			if !bytes.Equal(before, readWindowTaskFile(t, store)) {
+				t.Error("rejected release transition changed the task file")
+			}
+		})
+	}
+}
+
+func createWindowTaskAtPullRequest(t *testing.T, store *Store) {
+	t.Helper()
+	task := newLedgerTask(t, "task-a", taskStartTime)
+	task.Phase = PhasePullRequest
+	if err := task.SetCandidate("candidate", taskStartTime); err != nil {
+		t.Fatal(err)
+	}
+	recordLedgerCheck(t, &task, Check{Name: "remote_checks", Candidate: "candidate", Passed: true, RecordedAt: taskStartTime})
+	if err := store.Create(task); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readWindowTaskFile(t *testing.T, store *Store) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(store.Root, "tasks", "task-a.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func advanceWindowTaskToVerify(t *testing.T, store *Store, id string) {
