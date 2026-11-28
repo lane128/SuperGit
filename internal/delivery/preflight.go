@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
+	"time"
 
 	"supergit/internal/updater"
 )
@@ -19,7 +21,7 @@ import (
 type PreflightOptions struct {
 	RepoDir     string // default "."
 	Branch      string // default "main"
-	Remote      string // default "origin"
+	Remote      string // configured remote name; default "origin"
 	Tag         string
 	PublicKey   string
 	PrivKeyPath string
@@ -50,11 +52,17 @@ func (r PreflightReport) OK() bool {
 	return true
 }
 
+const preflightFetchTimeout = time.Minute
+
 var errPreflightGit = errors.New("cannot execute Git preflight")
 
 // Preflight checks a release checkout against the freshly fetched branch,
 // verifies the release tag, and checks the signing key pair.
 func Preflight(ctx context.Context, opts PreflightOptions) (PreflightReport, error) {
+	return preflight(ctx, opts, preflightFetchTimeout)
+}
+
+func preflight(ctx context.Context, opts PreflightOptions, fetchTimeout time.Duration) (PreflightReport, error) {
 	if opts.RepoDir == "" {
 		opts.RepoDir = "."
 	}
@@ -91,7 +99,7 @@ func Preflight(ctx context.Context, opts PreflightOptions) (PreflightReport, err
 			}
 			return nil
 		}},
-		{"synced", func() error { return git.checkSynced(opts.Remote, opts.Branch) }},
+		{"synced", func() error { return git.checkSynced(opts.Remote, opts.Branch, fetchTimeout) }},
 		{"tag", func() error { return git.checkTag(opts.Tag) }},
 		{"public_key", func() error {
 			var err error
@@ -122,7 +130,27 @@ type preflightGit struct {
 }
 
 func (git preflightGit) run(args ...string) (string, error) {
-	cmd := exec.CommandContext(git.ctx, "git", append([]string{"-C", git.repoDir}, args...)...)
+	argv := []string{"-C", git.repoDir}
+	if args[0] == "fetch" {
+		argv = append(argv, "-c", "credential.interactive=false", "-c", "core.askPass=")
+	}
+	cmd := exec.CommandContext(git.ctx, "git", append(argv, args...)...)
+	// A transport or credential helper can keep output pipes open after Git exits.
+	cmd.WaitDelay = time.Second
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		// Match gitrepo's routing exclusions; -C alone does not override them.
+		switch strings.ToUpper(name) {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX":
+			continue
+		}
+		cmd.Env = append(cmd.Env, entry)
+	}
+	if args[0] == "fetch" {
+		// Force OpenSSH away from the TTY and give it no executable askpass.
+		cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=",
+			"SSH_ASKPASS_REQUIRE=force", "SSH_ASKPASS="+os.DevNull)
+	}
 	out, err := cmd.Output()
 	if err == nil {
 		return strings.TrimSpace(string(out)), nil
@@ -146,21 +174,32 @@ func (git preflightGit) resolve(ref string) (string, error) {
 	return sha, nil
 }
 
-func (git preflightGit) checkSynced(remote, branch string) error {
+func (git preflightGit) checkSynced(remote, branch string, fetchTimeout time.Duration) error {
+	remotes, err := git.run("remote")
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(strings.Split(remotes, "\n"), remote) {
+		return errors.New("expected a configured Git remote name")
+	}
+	trackingRef := "refs/remotes/" + remote + "/" + branch
+	if _, err := git.run("check-ref-format", trackingRef); err != nil {
+		return fmt.Errorf("validate remote tracking ref: %w", err)
+	}
 	branchRef := "refs/heads/" + branch
 	if _, err := git.run("check-ref-format", branchRef); err != nil {
 		return fmt.Errorf("validate branch name %q: %w", branch, err)
 	}
-	if _, err := git.run("fetch", "--quiet", "--no-tags", "--", remote, branchRef); err != nil {
+	if err := git.fetch(remote, branchRef, fetchTimeout); err != nil {
 		return err
 	}
 	head, err := git.resolve("HEAD")
 	if err != nil {
 		return err
 	}
-	tracked, err := git.resolve("refs/remotes/" + remote + "/" + branch)
+	tracked, err := git.run("rev-parse", "--verify", "--end-of-options", trackingRef)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve remote tracking ref: %w", err)
 	}
 	// A custom fetch refspec can leave the standard tracking ref stale.
 	fetched, err := git.resolve("FETCH_HEAD")
@@ -168,9 +207,21 @@ func (git preflightGit) checkSynced(remote, branch string) error {
 		return err
 	}
 	if head != tracked || head != fetched {
-		return fmt.Errorf("HEAD is not synced with %s/%s", remote, branch)
+		return errors.New("HEAD is not synced with the remote branch")
 	}
 	return nil
+}
+
+func (git preflightGit) fetch(remote, branchRef string, timeout time.Duration) error {
+	parent := git.ctx
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	git.ctx = ctx
+	_, err := git.run("fetch", "--quiet", "--no-tags", "--", remote, branchRef)
+	if errors.Is(err, context.DeadlineExceeded) && parent.Err() == nil {
+		return errors.New("git fetch timed out")
+	}
+	return err
 }
 
 func (git preflightGit) checkTag(tag string) error {

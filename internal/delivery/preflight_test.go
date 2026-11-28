@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPreflightPassesCleanSyncedTaggedCheckout(t *testing.T) {
@@ -52,6 +53,110 @@ func TestPreflightRejectsStaleRemote(t *testing.T) {
 		preflightFixtureGit(t, opts.RepoDir, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
 		requirePreflightFailure(t, opts, "synced")
 	})
+}
+
+func TestPreflightIgnoresGitRepositoryRouting(t *testing.T) {
+	opts, _ := newPreflightFixture(t)
+	other := t.TempDir()
+	preflightFixtureGit(t, other, "init", "--initial-branch=unrelated")
+	if err := os.WriteFile(filepath.Join(opts.RepoDir, "release-change"), []byte("dirty\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_WORK_TREE", other)
+
+	report := requirePreflightFailure(t, opts, "clean")
+	for _, name := range []string{"branch", "synced", "tag"} {
+		if check := preflightCheck(t, report, name); !check.Passed {
+			t.Errorf("%s did not inspect the chosen checkout: %s", name, check.Detail)
+		}
+	}
+}
+
+func TestPreflightIgnoresGitIndexOverride(t *testing.T) {
+	opts, _ := newPreflightFixture(t)
+	file := filepath.Join(opts.RepoDir, "alternate-index-only")
+	if err := os.WriteFile(file, []byte("not in the release index\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(t.TempDir(), "index"))
+	preflightFixtureGit(t, opts.RepoDir, "add", "alternate-index-only")
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+
+	report := runPreflight(t, opts)
+	if check := preflightCheck(t, report, "clean"); !check.Passed {
+		t.Fatalf("checkout was judged using the alternate index: %s", check.Detail)
+	}
+}
+
+func TestPreflightOmitsCredentialsFromRemoteFailure(t *testing.T) {
+	opts, remote := newPreflightFixture(t)
+	const marker = "synthetic-password"
+	opts.Remote = "https://fixture:" + marker + "@example.invalid/repo"
+	// Exercise Git's URL handling using only the local fixture remote.
+	preflightFixtureGit(t, opts.RepoDir, "config", "url."+filepath.ToSlash(remote)+".insteadOf", opts.Remote)
+
+	report := requirePreflightFailure(t, opts, "synced")
+	for _, check := range report.Checks {
+		if strings.Contains(check.Detail, marker) {
+			t.Errorf("%s check exposed remote credentials", check.Name)
+		}
+	}
+}
+
+func TestPreflightFetchDisablesTerminalPrompt(t *testing.T) {
+	opts, _ := newPreflightFixture(t)
+	setPreflightUploadPack(t, opts.RepoDir, `test "$GIT_TERMINAL_PROMPT" = 0 || exit 41
+# Force OpenSSH away from the controlling terminal, without a usable askpass program.
+test "$SSH_ASKPASS_REQUIRE" = force && test -n "$SSH_ASKPASS" && test ! -x "$SSH_ASKPASS" || exit 42
+exec git-upload-pack "$@"`)
+	t.Setenv("GIT_TERMINAL_PROMPT", "1")
+	t.Setenv("SSH_ASKPASS", "/bin/sh")
+
+	report := runPreflight(t, opts)
+	if check := preflightCheck(t, report, "synced"); !check.Passed {
+		t.Fatalf("non-interactive fetch failed: %s", check.Detail)
+	}
+}
+
+func TestPreflightFetchTimeoutFailsOnlySyncedCheck(t *testing.T) {
+	opts, _ := newPreflightFixture(t)
+	setPreflightUploadPack(t, opts.RepoDir, "exec sleep 5")
+	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Second)
+	defer cancel()
+
+	report, err := preflight(ctx, opts, 250*time.Millisecond)
+	if err != nil {
+		t.Fatalf("expected a timed-out check, not a preflight error: %v", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("fetch did not return before the caller deadline")
+	}
+	assertPreflightCheckOrder(t, report)
+	check := preflightCheck(t, report, "synced")
+	if report.OK() || check.Passed || !strings.Contains(check.Detail, "timed out") {
+		t.Fatalf("expected a timed-out synced check: %+v", check)
+	}
+	for _, name := range []string{"branch", "clean", "tag", "public_key"} {
+		if check := preflightCheck(t, report, name); !check.Passed {
+			t.Errorf("fetch timeout affected %s: %s", name, check.Detail)
+		}
+	}
+}
+
+func setPreflightUploadPack(t *testing.T, repo, body string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("upload-pack fixture uses a Unix shell")
+	}
+	path := filepath.Join(t.TempDir(), "upload-pack")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	quoted := "'" + strings.ReplaceAll(path, "'", "'\\''") + "'"
+	preflightFixtureGit(t, repo, "config", "remote.origin.uploadpack", quoted)
 }
 
 func TestPreflightRejectsWrongBranch(t *testing.T) {
@@ -260,6 +365,12 @@ func runPreflight(t *testing.T, opts PreflightOptions) PreflightReport {
 	if err != nil {
 		t.Fatalf("preflight returned an error: %v", err)
 	}
+	assertPreflightCheckOrder(t, report)
+	return report
+}
+
+func assertPreflightCheckOrder(t *testing.T, report PreflightReport) {
+	t.Helper()
 	var names []string
 	for _, check := range report.Checks {
 		names = append(names, check.Name)
@@ -267,7 +378,6 @@ func runPreflight(t *testing.T, opts PreflightOptions) PreflightReport {
 	if want := []string{"branch", "clean", "synced", "tag", "public_key", "private_key"}; !slices.Equal(names, want) {
 		t.Fatalf("check names = %v, want %v", names, want)
 	}
-	return report
 }
 
 func requirePreflightFailure(t *testing.T, opts PreflightOptions, name string) PreflightReport {
