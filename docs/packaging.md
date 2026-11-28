@@ -122,6 +122,7 @@ open build/SuperGit.app
    ```sh
    PUBKEY=$(cat ~/.config/supergit-release/update.pub)
    make release-pack \
+     RELEASE_TAG=v1.2.3 \
      UPDATE_PUBKEY="$PUBKEY" \
      UPDATE_PRIVKEY=~/.config/supergit-release/update.key \
      RELEASE_NOTES_ZH="本次更新内容" \

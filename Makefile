@@ -6,7 +6,7 @@ DESKTOP_APP := build/SuperGit Desktop.app
 LOBE_APP := build/SuperGit Lobe Preview.app
 FOLDER_DOCUMENT_TYPES := [{"CFBundleTypeName":"Repository Folder","CFBundleTypeRole":"Editor","LSHandlerRank":"Alternate","LSItemContentTypes":["public.folder"]}]
 
-.PHONY: build app release-pack run demo test check e2e-build native-check desktop-app desktop-e2e-build desktop-native-check lobe-build lobe-app lobe-run lobe-e2e-build icns icons
+.PHONY: build app release-preflight release-pack run demo test check e2e-build native-check desktop-app desktop-e2e-build desktop-native-check lobe-build lobe-app lobe-run lobe-e2e-build icns icons
 
 UPDATE_PUBKEY ?=
 BUILD_LDFLAGS := $(if $(UPDATE_PUBKEY),-X supergit/internal/updater.DefaultPublicKeyBase64=$(UPDATE_PUBKEY),)
@@ -49,8 +49,26 @@ RELEASE_OUT ?= build/release
 RELEASE_BASE_URL ?=
 RELEASE_NOTES_ZH ?=
 RELEASE_NOTES_EN ?=
-release-pack: app
-	@test -n "$(UPDATE_PRIVKEY)" || (echo "UPDATE_PRIVKEY is required (generate with: go run ./tools/releasepack -genkey -priv path/to/update.key -pub path/to/update.pub)" >&2; exit 2)
+RELEASE_TAG ?=
+
+# Catch a missing tag even when a dry run skips the release recipes.
+ifneq ($(filter release-preflight release-pack,$(MAKECMDGOALS)),)
+ifeq ($(strip $(RELEASE_TAG)),)
+$(error RELEASE_TAG is required)
+endif
+endif
+
+release-preflight:
+	@test -n "$(RELEASE_TAG)" || (echo "RELEASE_TAG is required" >&2; exit 2)
+	@test -n "$(UPDATE_PUBKEY)" || (echo "UPDATE_PUBKEY is required" >&2; exit 2)
+	@test -n "$(UPDATE_PRIVKEY)" || (echo "UPDATE_PRIVKEY is required" >&2; exit 2)
+	$(GO) run ./tools/delivery preflight -tag "$(RELEASE_TAG)" -pubkey "$(UPDATE_PUBKEY)" -privkey "$(UPDATE_PRIVKEY)"
+
+# Older GNU Make versions treat .NOTPARALLEL as global.
+ifneq ($(filter release-pack,$(MAKECMDGOALS)),)
+.NOTPARALLEL: release-pack
+endif
+release-pack: release-preflight app
 	$(GO) run ./tools/releasepack -app "$(APP)" -out "$(RELEASE_OUT)" -priv "$(UPDATE_PRIVKEY)" \
 		$(if $(RELEASE_BASE_URL),-base-url "$(RELEASE_BASE_URL)",) \
 		$(if $(RELEASE_NOTES_ZH),-notes-zh "$(RELEASE_NOTES_ZH)",) \
