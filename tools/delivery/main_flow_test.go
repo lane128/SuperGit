@@ -153,6 +153,57 @@ func TestRunRejectsRepositoryStateRoot(t *testing.T) {
 	}
 }
 
+func TestRunRejectsRepositoryTaskDirectory(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		symlink bool
+	}{
+		{name: "nested checkout"},
+		{name: "symlinked checkout", symlink: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			state := filepath.Join(root, "state")
+			tasks := filepath.Join(state, "tasks")
+			checkout := tasks
+			if tc.symlink {
+				checkout = filepath.Join(root, "checkout")
+				if err := os.Mkdir(state, 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.MkdirAll(filepath.Join(checkout, ".git"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if tc.symlink {
+				if err := os.Symlink(checkout, tasks); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			args := []string{"start", "-id", "task-a", "-request", "fixture", "-by", "maintainer", "-version-policy", "patch", "-state", state}
+			var stdout, stderr bytes.Buffer
+			if code := run(args, &stdout, &stderr); code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "repository") {
+				t.Errorf("exit = %d, want 2, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
+			}
+			entries, err := os.ReadDir(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || entries[0].Name() != "tasks" {
+				t.Errorf("state directory gained ledger files: %v", entries)
+			}
+			entries, err = os.ReadDir(checkout)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || entries[0].Name() != ".git" {
+				t.Errorf("task checkout changed: %v", entries)
+			}
+		})
+	}
+}
+
 func TestRunStatusJSONHasOnlyPublicFields(t *testing.T) {
 	state := t.TempDir()
 	startFlowTask(t, state, "task-a")

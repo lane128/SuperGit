@@ -222,9 +222,20 @@ func deliveryStateRoot(root string) (string, error) {
 	return filepath.Join(config, "SuperGit", "delivery"), nil
 }
 
-// validateStateRoot finds the destination's checkout even when the process
-// starts elsewhere. A worktree's .git entry may be a directory or a file.
 func validateStateRoot(root string) (string, error) {
+	state, err := validateStateDirectory(root)
+	if err != nil {
+		return "", err
+	}
+	if _, err := validateStateDirectory(filepath.Join(state, "tasks")); err != nil {
+		return "", fmt.Errorf("tasks directory: %w", err)
+	}
+	return state, nil
+}
+
+// validateStateDirectory finds the destination's checkout even when the process
+// starts elsewhere. A worktree's .git entry may be a directory or a file.
+func validateStateDirectory(root string) (string, error) {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return "", err
