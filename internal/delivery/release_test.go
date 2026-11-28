@@ -95,28 +95,31 @@ func TestVerifyReleaseRejectsUnavailableCodeSign(t *testing.T) {
 	t.Cleanup(func() { nativeCodeSignAvailable = original })
 	nativeCodeSignAvailable = func() bool { return false }
 
-	// The wrong bundle ID would fail extraction if the platform guard ran too late.
-	opts, _ := releaseFixture(t, "invalid.example.bundle", false)
-	opts.VerifySignature = nil
-	report, err := VerifyRelease(t.Context(), opts)
-	const detail = "code signature verification requires macOS"
-	if err == nil || !strings.Contains(err.Error(), detail) {
-		t.Fatalf("VerifyRelease error = %v, want unavailable codesign error; checks = %+v", err, report.Checks)
-	}
-	if len(report.Checks) != 6 {
-		t.Fatalf("checks = %+v, want five completed checks and failed codesign", report.Checks)
-	}
-	for i, check := range report.Checks[:5] {
-		if check.Name != releaseCheckOrder[i] || !check.Passed {
-			t.Errorf("check %d = %+v, want passing %s", i, check, releaseCheckOrder[i])
+	t.Run("valid bundle passes extraction before codesign fails", func(t *testing.T) {
+		opts, _ := releaseFixture(t, "cc.supermix.supergit", false)
+		opts.VerifySignature = nil
+		report, err := VerifyRelease(t.Context(), opts)
+		const detail = "code signature verification requires macOS"
+		if err == nil || !strings.Contains(err.Error(), detail) {
+			t.Fatalf("VerifyRelease error = %v, want unavailable codesign error; checks = %+v", err, report.Checks)
 		}
-	}
-	if check := report.Checks[5]; check.Name != "codesign" || check.Passed || check.Detail != detail {
-		t.Errorf("check = %+v, want failed codesign with detail %q", check, detail)
-	}
-	if report.BundlePath != "" {
-		t.Errorf("unexpected extracted bundle path %q", report.BundlePath)
-	}
+		assertReleaseChecks(t, report, 7, true)
+		if detail := report.Checks[5].Detail; !filepath.IsAbs(detail) || filepath.Base(detail) != "SuperGit.app" {
+			t.Errorf("extract detail = %q, want absolute path to SuperGit.app", detail)
+		}
+		if check := report.Checks[6]; !strings.Contains(check.Detail, detail) {
+			t.Errorf("codesign detail = %q, want %q", check.Detail, detail)
+		}
+		if report.BundlePath != "" {
+			t.Errorf("unexpected retained bundle path %q", report.BundlePath)
+		}
+	})
+
+	t.Run("wrong bundle identifier fails extraction", func(t *testing.T) {
+		opts, _ := releaseFixture(t, "invalid.example.bundle", false)
+		opts.VerifySignature = nil
+		assertReleaseFailure(t, opts, 6, updater.ErrBundleMismatch)
+	})
 }
 
 func TestVerifyReleaseRejectsOversizedManifest(t *testing.T) {

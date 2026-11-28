@@ -148,16 +148,18 @@ func VerifyRelease(ctx context.Context, opts VerifyOptions) (ReleaseVerification
 	}
 	pass("zip_safety", "zip safe")
 
-	if opts.VerifySignature == nil && !nativeCodeSignAvailable() {
-		return fail("codesign", errors.New("code signature verification requires macOS"))
-	}
 	var verifySignature func(context.Context, string) error
-	if opts.VerifySignature != nil {
+	switch {
+	case opts.VerifySignature != nil:
 		verifySignature = func(ctx context.Context, appPath string) error {
 			if err := opts.VerifySignature(ctx, appPath); err != nil {
 				return fmt.Errorf("%w: %w", updater.ErrCodeSignVerify, err)
 			}
 			return nil
+		}
+	case !nativeCodeSignAvailable():
+		verifySignature = func(context.Context, string) error {
+			return fmt.Errorf("%w: code signature verification requires macOS", updater.ErrCodeSignVerify)
 		}
 	}
 	bundleDir := filepath.Join(workspace, "bundle")
