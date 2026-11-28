@@ -185,6 +185,17 @@ func TestPreflightRejectsMismatchedPrivateKey(t *testing.T) {
 	requirePreflightFailure(t, opts, "private_key")
 }
 
+func TestPreflightRedactsPrivateKeyPath(t *testing.T) {
+	const sentinel = "synthetic-private-key-path"
+	err := checkPreflightPrivateKey(filepath.Join(t.TempDir(), sentinel), nil)
+	if err == nil || err.Error() == "" {
+		t.Fatal("expected a private key file access error with detail")
+	}
+	if strings.Contains(err.Error(), sentinel) {
+		t.Error("private key check exposed the synthetic path")
+	}
+}
+
 func TestPreflightRejectsWorldReadablePrivateKey(t *testing.T) {
 	requirePrivateKeyModeSupport(t)
 	opts, _ := newPreflightFixture(t)

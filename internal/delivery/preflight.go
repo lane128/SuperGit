@@ -247,16 +247,17 @@ func (git preflightGit) checkTag(tag string) error {
 }
 
 func checkPreflightPrivateKey(path string, pub ed25519.PublicKey) error {
+	// File errors include the supplied path, which may contain key material.
 	info, err := os.Stat(path)
 	if err != nil {
-		return fmt.Errorf("stat private key: %w", err)
+		return errors.New("cannot access private key file")
 	}
 	if info.Mode() != 0o600 {
 		return fmt.Errorf("private key must be a regular file with mode 0600 (got %v)", info.Mode())
 	}
 	encoded, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("read private key: %w", err)
+		return errors.New("cannot read private key file")
 	}
 	raw, err := base64.StdEncoding.AppendDecode(nil, bytes.TrimSpace(encoded))
 	if err != nil {

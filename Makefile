@@ -9,9 +9,10 @@ FOLDER_DOCUMENT_TYPES := [{"CFBundleTypeName":"Repository Folder","CFBundleTypeR
 .PHONY: build app release-preflight release-pack run demo test check e2e-build native-check desktop-app desktop-e2e-build desktop-native-check lobe-build lobe-app lobe-run lobe-e2e-build icns icons
 
 UPDATE_PUBKEY ?=
+RELEASE_TAG ?=
 BUILD_LDFLAGS := $(if $(UPDATE_PUBKEY),-X supergit/internal/updater.DefaultPublicKeyBase64=$(UPDATE_PUBKEY),)
 
-build:
+build: $(if $(strip $(RELEASE_TAG)),release-preflight,)
 	@mkdir -p "$(dir $(APP_BINARY))"
 	$(GO) build $(if $(BUILD_LDFLAGS),-ldflags "$(BUILD_LDFLAGS)",) -o "$(APP_BINARY)" ./cmd/supergit
 
@@ -49,7 +50,6 @@ RELEASE_OUT ?= build/release
 RELEASE_BASE_URL ?=
 RELEASE_NOTES_ZH ?=
 RELEASE_NOTES_EN ?=
-RELEASE_TAG ?=
 
 # Catch a missing tag even when a dry run skips the release recipes.
 ifneq ($(filter release-preflight release-pack,$(MAKECMDGOALS)),)

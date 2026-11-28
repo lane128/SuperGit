@@ -95,6 +95,70 @@ func TestRunPreflightRequiresTagAndKeys(t *testing.T) {
 	}
 }
 
+func TestRunPreflightRedactsPrivateKeyPath(t *testing.T) {
+	const sentinel = "synthetic-private-key-argument"
+	args := append(preflightFixtureArgs(t), "-privkey", filepath.Join(t.TempDir(), sentinel))
+
+	for _, format := range []string{"text", "json"} {
+		t.Run(format, func(t *testing.T) {
+			command := args
+			if format == "json" {
+				command = append(command, "-json")
+			}
+			var stdout, stderr bytes.Buffer
+			if code := run(command, &stdout, &stderr); code != 1 {
+				t.Fatalf("exit code = %d, want 1", code)
+			}
+			if strings.Contains(stdout.String(), sentinel) || strings.Contains(stderr.String(), sentinel) {
+				t.Error("preflight output exposed the synthetic private key argument")
+			}
+			if stderr.Len() != 0 {
+				t.Error("expected a failed check report on stdout only")
+			}
+			if format == "text" {
+				if !strings.Contains(stdout.String(), "FAIL private_key: ") {
+					t.Error("expected a failed private_key check with detail")
+				}
+				return
+			}
+
+			var report delivery.PreflightReport
+			if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+				t.Fatalf("decode stdout as a single JSON report: %v", err)
+			}
+			if report.OK() || len(report.Checks) != 6 {
+				t.Fatal("expected a failing report with all six checks")
+			}
+			check := report.Checks[5]
+			if check.Name != "private_key" || check.Passed || check.Detail == "" {
+				t.Error("expected the last check to be a failed private_key check with detail")
+			}
+		})
+	}
+}
+
+func TestRunPreflightFixtureIgnoresGitRouting(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("preflight requires Unix private key permissions")
+	}
+	blockedPath := filepath.Join(t.TempDir(), "not-a-git-directory")
+	if err := os.WriteFile(blockedPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+		"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX",
+	} {
+		t.Setenv(name, blockedPath)
+	}
+
+	args := preflightFixtureArgs(t)
+	var stdout, stderr bytes.Buffer
+	if code := run(args, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d, want 0; stdout = %q, stderr = %q", code, &stdout, &stderr)
+	}
+}
+
 func preflightFixtureArgs(t *testing.T) []string {
 	t.Helper()
 	root := t.TempDir()
@@ -106,6 +170,15 @@ func preflightFixtureArgs(t *testing.T) []string {
 		t.Helper()
 		cmd := exec.CommandContext(t.Context(), "git", args...)
 		cmd.Dir = root
+		for _, entry := range cmd.Environ() {
+			name, _, _ := strings.Cut(entry, "=")
+			switch strings.ToUpper(name) {
+			case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+				"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX":
+				continue
+			}
+			cmd.Env = append(cmd.Env, entry)
+		}
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
