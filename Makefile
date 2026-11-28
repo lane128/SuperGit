@@ -1,4 +1,5 @@
 GO ?= go
+SOURCE_PKGS ?= ./cmd/... ./internal/... ./tools/...
 APP := build/SuperGit.app
 APP_BINARY := build/supergit
 DESKTOP_APP := build/SuperGit Desktop.app
@@ -73,7 +74,7 @@ demo: app
 	@read -r repo < build/demo-root.txt; open -n "$(APP)" --args "$$repo"
 
 test:
-	$(GO) test ./...
+	$(GO) test $(SOURCE_PKGS)
 
 # Rendering-heavy lobedesk tests exceed Go's default 10-minute per-package
 # race timeout on a developer laptop; the limit is for a hang, not a budget.
@@ -81,12 +82,12 @@ RACE_TIMEOUT ?= 20m
 
 check:
 	python3 scripts/check-mygo-input-snapshot.py
-	$(GO) test github.com/egoist/mygo/ui ./...
-	$(GO) test -race -timeout $(RACE_TIMEOUT) ./...
+	$(GO) test github.com/egoist/mygo/ui $(SOURCE_PKGS)
+	$(GO) test -race -timeout $(RACE_TIMEOUT) $(SOURCE_PKGS)
 # Exact allocation counts are measured by the full ordinary SDK suite above.
 # Race instrumentation changes those counts; keep all other SDK race tests.
 	$(GO) test -race -timeout $(RACE_TIMEOUT) github.com/egoist/mygo/ui -skip '^(TestDiffFrameAllocs|TestPathContains)$$'
-	$(GO) vet github.com/egoist/mygo/ui ./...
+	$(GO) vet github.com/egoist/mygo/ui $(SOURCE_PKGS)
 
 e2e-build:
 	@mkdir -p build
