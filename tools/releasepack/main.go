@@ -26,9 +26,10 @@ import (
 )
 
 var (
-	plistShortVerRE = regexp.MustCompile(`<key>CFBundleShortVersionString</key>\s*<string>([^<]*)</string>`)
-	plistBuildVerRE = regexp.MustCompile(`<key>CFBundleVersion</key>\s*<string>([^<]*)</string>`)
-	plistMinOSRE    = regexp.MustCompile(`<key>LSMinimumSystemVersion</key>\s*<string>([^<]*)</string>`)
+	plistShortVerRE     = regexp.MustCompile(`<key>CFBundleShortVersionString</key>\s*<string>([^<]*)</string>`)
+	plistBuildVerRE     = regexp.MustCompile(`<key>CFBundleVersion</key>\s*<string>([^<]*)</string>`)
+	plistMinOSRE        = regexp.MustCompile(`<key>LSMinimumSystemVersion</key>\s*<string>([^<]*)</string>`)
+	plistUpdatePubKeyRE = regexp.MustCompile(`<key>SuperGitUpdatePublicKey</key>\s*<string>([^<]*)</string>`)
 )
 
 func main() {
@@ -126,6 +127,14 @@ func packageRelease(opts packOptions) error {
 	if err != nil {
 		return err
 	}
+	pubBase64 := base64.StdEncoding.EncodeToString(pub)
+	embeddedPubKey := extractPlistValue(plistBytes, plistUpdatePubKeyRE)
+	if embeddedPubKey == "" {
+		return fmt.Errorf("embedded update public key is missing or empty in Info.plist")
+	}
+	if embeddedPubKey != pubBase64 {
+		return fmt.Errorf("embedded update public key in Info.plist does not match the signing key")
+	}
 	shortVer := extractPlistValue(plistBytes, plistShortVerRE)
 	if _, err := updater.ParseVersion(shortVer); err != nil {
 		return fmt.Errorf("invalid CFBundleShortVersionString %q: %w", shortVer, err)
@@ -217,7 +226,7 @@ func packageRelease(opts packOptions) error {
 	fmt.Printf("Packaged %s (%d bytes)\n", archivePath, size)
 	fmt.Printf("Manifest %s (v%s build %d)\n", manifestPath, shortVer, buildNum)
 	fmt.Printf("SHA-256  %s\n", sumHex)
-	fmt.Printf("PubKey   %s\n", base64.StdEncoding.EncodeToString(pub))
+	fmt.Printf("PubKey   %s\n", pubBase64)
 	return nil
 }
 

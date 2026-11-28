@@ -37,6 +37,7 @@ app: build
 	cp "$(APP_BINARY)" "$(APP)/Contents/MacOS/supergit"
 	$(GO) run ./tools/appversion -in packaging/Info.plist -out "$(APP)/Contents/Info.plist"
 	plutil -insert CFBundleDocumentTypes -json '$(FOLDER_DOCUMENT_TYPES)' "$(APP)/Contents/Info.plist"
+	$(if $(UPDATE_PUBKEY),plutil -insert SuperGitUpdatePublicKey -string "$(UPDATE_PUBKEY)" "$(APP)/Contents/Info.plist",)
 	cp packaging/SuperGit.icns "$(APP)/Contents/Resources/SuperGit.icns"
 	cp internal/lobedesk/fonts/OFL.txt "$(APP)/Contents/Resources/Font-Licenses.txt"
 	codesign --force --sign - "$(APP)"
