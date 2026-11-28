@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"supergit/internal/delivery"
 )
@@ -65,6 +66,35 @@ func TestRunTaskFlowPersistsAcrossInvocations(t *testing.T) {
 	if task.Phase != delivery.PhaseMerge || task.Candidate != "revised" || task.Checks["remote_checks"].Phase != delivery.PhasePullRequest {
 		t.Fatalf("persisted phase = %s, candidate = %q, check phase = %s", task.Phase, task.Candidate, task.Checks["remote_checks"].Phase)
 	}
+}
+
+func TestRunQueueRecoversBlockedReleaseWindow(t *testing.T) {
+	state := t.TempDir()
+	startFlowTask(t, state, "task-a")
+	startFlowTask(t, state, "task-b")
+	runFlowCommand(t, state, 0, "queue", "-id", "task-a", "-acquire")
+	store := delivery.NewStore(state)
+	if _, err := store.Update("task-a", func(task *delivery.Task) error {
+		task.Phase = delivery.PhaseMerge
+		return task.Revoke("maintainer", task.UpdatedAt.Add(time.Second))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, fields := range [][]string{nil, {"-by", "maintainer"}, {"-reason", "main reverted"}} {
+		args := append([]string{"queue", "-id", "task-a", "-release"}, fields...)
+		runFlowCommand(t, state, 2, args...)
+	}
+	runFlowCommand(t, state, 1, "queue", "-id", "task-b", "-acquire")
+	runFlowCommand(t, state, 0, "queue", "-id", "task-a", "-release", "-by", "maintainer", "-reason", "main reverted")
+	task := readFlowTask(t, state, "task-a")
+	event := task.History[len(task.History)-1]
+	if task.Status != delivery.StatusBlocked || task.Authorization.RevokedAt == nil || event.Action != "recover_release_window" || !strings.Contains(event.Detail, "maintainer") || !strings.Contains(event.Detail, "main reverted") {
+		t.Fatalf("recovered task status or audit event is wrong: %s, %+v", task.Status, event)
+	}
+	if _, err := os.Stat(filepath.Join(state, "queue.json")); !os.IsNotExist(err) {
+		t.Errorf("queue record still present: %v", err)
+	}
+	runFlowCommand(t, state, 0, "queue", "-id", "task-b", "-acquire")
 }
 
 func TestRunStatusJSONIncludesPhaseAndAuthorization(t *testing.T) {

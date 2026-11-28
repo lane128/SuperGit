@@ -265,19 +265,77 @@ func TestSkipDesignRecordsReason(t *testing.T) {
 	}
 }
 
+func TestRevokedAuthorizationBlocksEnteringPullRequest(t *testing.T) {
+	task := newLedgerTask(t, "task", taskStartTime)
+	task.Phase, task.Candidate = PhaseAcceptance, "candidate"
+	recordLedgerCheck(t, &task, Check{Name: "acceptance", Candidate: task.Candidate, Passed: true, RecordedAt: taskStartTime})
+	if err := task.Revoke("maintainer", taskStartTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Advance(PhasePullRequest, taskStartTime); err == nil {
+		t.Error("revoked task entered pull_request")
+	}
+}
+
+func TestAuthorizeRevisionPreservesUnrelatedBlock(t *testing.T) {
+	task := newLedgerTask(t, "task", taskStartTime)
+	task.Phase = PhasePullRequest
+	const reason = "waiting for remote checks"
+	if err := task.Block(reason, taskStartTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.Revoke("maintainer", taskStartTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := task.AuthorizeRevision(AuthorizationRevision{By: "maintainer", Reason: "restore approval", Release: true, VersionPolicy: "patch"}, taskStartTime); err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != StatusBlocked || task.BlockedReason != reason {
+		t.Fatalf("revision removed unrelated block: %s, %q", task.Status, task.BlockedReason)
+	}
+}
+
+func TestAuthorizeRevisionInvalidatesChangedReleaseSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name, policy, version string
+		changed               bool
+	}{
+		{"policy", "minor", "1.2.3", true}, {"version", "exact", "1.2.4", true}, {"unchanged", "exact", "1.2.3", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := newLedgerTask(t, "task", taskStartTime)
+			task.Phase = PhaseReleasePreflight
+			task.Authorization.VersionPolicy, task.Authorization.Version = "exact", "1.2.3"
+			recordLedgerCheck(t, &task, Check{Name: "release_selection", Evidence: "v1.2.3", Passed: true, RecordedAt: taskStartTime})
+			rev := AuthorizationRevision{By: "maintainer", Reason: "revise release", Release: true, VersionPolicy: tc.policy, Version: tc.version}
+			if err := task.AuthorizeRevision(rev, taskStartTime.Add(time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			_, retained := task.Checks["release_selection"]
+			if retained == tc.changed {
+				t.Errorf("retained old release selection = %t after %s revision", retained, tc.name)
+			}
+			event := task.History[len(task.History)-1]
+			if recorded := strings.Contains(event.Detail, "re-selection required"); recorded != tc.changed {
+				t.Errorf("re-selection event = %+v", event)
+			}
+		})
+	}
+}
+
 func TestRevokedAuthorizationBlocksMerge(t *testing.T) {
 	task := newLedgerTask(t, "task", taskStartTime)
 	later := taskStartTime.Add(time.Minute)
-	task.Phase = PhasePullRequest
-	if err := task.SetCandidate("candidate-a", later); err != nil {
-		t.Fatal(err)
-	}
+	task.Phase, task.Candidate = PhasePullRequest, "candidate-a"
 	recordLedgerCheck(t, &task, Check{Name: "remote_checks", Candidate: "candidate-a", Passed: true, RecordedAt: later})
 	if err := task.Revoke("maintainer", later); err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != StatusActive || task.Authorization.RevokedAt == nil || !task.Authorization.RevokedAt.Equal(later) || task.Advance(PhaseMerge, later) == nil {
+	if task.Status != StatusBlocked || task.Authorization.RevokedAt == nil || !task.Authorization.RevokedAt.Equal(later) || task.Advance(PhaseMerge, later) == nil {
 		t.Fatalf("revoked authorization did not prevent merge: %+v", task)
+	}
+	if err := task.Resume(later); err == nil {
+		t.Fatal("resumed pull_request with revoked authorization")
 	}
 	if err := task.AuthorizeRevision(AuthorizationRevision{By: "maintainer", Reason: "pause release", VersionPolicy: "patch"}, later); err != nil {
 		t.Fatal(err)

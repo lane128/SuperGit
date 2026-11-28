@@ -56,6 +56,8 @@ const (
 	StatusCancelled Status = "cancelled"
 )
 
+const revocationBlockReason = "release authorization revoked"
+
 type Authorization struct {
 	AuthorizedBy    string
 	Mode            string
@@ -201,6 +203,9 @@ func (t *Task) SetCandidate(candidate string, now time.Time) error {
 	if err := t.ensureMutable(); err != nil {
 		return err
 	}
+	if candidate != t.Candidate && phaseIndex(t.Phase) > phaseIndex(PhaseCodeReview) {
+		return fmt.Errorf("cannot change candidate during phase %q after code review", t.Phase)
+	}
 	t.Candidate = candidate
 	t.recordEvent("candidate", candidate, now)
 	return nil
@@ -254,8 +259,8 @@ func (t *Task) Advance(to Phase, now time.Time) error {
 		}
 		detail += "; design " + design.Evidence
 	}
-	if isReleasePhase(to) && !t.hasReleaseAuthorization() {
-		return fmt.Errorf("phase %q requires active release authorization", to)
+	if err := t.requirePhaseAuthorization(to); err != nil {
+		return err
 	}
 
 	t.Phase = to
@@ -291,8 +296,8 @@ func (t *Task) Resume(now time.Time) error {
 	if err := t.ensureMutable(); err != nil {
 		return err
 	}
-	if isReleasePhase(t.Phase) && !t.hasReleaseAuthorization() {
-		return fmt.Errorf("phase %q requires active release authorization", t.Phase)
+	if err := t.requirePhaseAuthorization(t.Phase); err != nil {
+		return err
 	}
 	reason := t.BlockedReason
 	t.Status = StatusActive
@@ -306,9 +311,9 @@ func (t *Task) Revoke(by string, now time.Time) error {
 		return err
 	}
 	t.Authorization.RevokedAt = &now
-	if isReleasePhase(t.Phase) {
+	if phaseIndex(t.Phase) >= phaseIndex(PhasePullRequest) && t.Status != StatusBlocked {
 		t.Status = StatusBlocked
-		t.BlockedReason = "release authorization revoked"
+		t.BlockedReason = revocationBlockReason
 	}
 	t.recordEvent("revoke", by, now)
 	return nil
@@ -328,14 +333,21 @@ func (t *Task) AuthorizeRevision(rev AuthorizationRevision, now time.Time) error
 		rev.At = now
 	}
 	auth := &t.Authorization
+	detail := fmt.Sprintf("%s: %s", rev.By, rev.Reason)
+	if auth.VersionPolicy != rev.VersionPolicy || auth.Version != rev.Version {
+		delete(t.Checks, "release_selection")
+		detail += "; release re-selection required"
+	}
 	auth.Revisions = append(auth.Revisions, rev)
 	auth.Release = rev.Release
 	auth.VersionPolicy = rev.VersionPolicy
 	auth.Version = rev.Version
 	auth.RevokedAt = nil
-	t.Status = StatusActive
-	t.BlockedReason = ""
-	t.recordEvent("authorize", fmt.Sprintf("%s: %s", rev.By, rev.Reason), now)
+	if t.Status == StatusBlocked && t.BlockedReason == revocationBlockReason {
+		t.Status = StatusActive
+		t.BlockedReason = ""
+	}
+	t.recordEvent("authorize", detail, now)
 	return nil
 }
 
@@ -365,8 +377,14 @@ func isReleasePhase(phase Phase) bool {
 	return phaseIndex(phase) >= phaseIndex(PhaseMerge)
 }
 
-func (t *Task) hasReleaseAuthorization() bool {
-	return t.Authorization.Release && t.Authorization.RevokedAt == nil
+func (t *Task) requirePhaseAuthorization(phase Phase) error {
+	if phaseIndex(phase) >= phaseIndex(PhasePullRequest) && t.Authorization.RevokedAt != nil {
+		return fmt.Errorf("phase %q requires unrevoked authorization", phase)
+	}
+	if isReleasePhase(phase) && !t.Authorization.Release {
+		return fmt.Errorf("phase %q requires active release authorization", phase)
+	}
+	return nil
 }
 
 func (t *Task) ensureMutable() error {

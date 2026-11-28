@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+var ErrStaleTask = errors.New("stale task snapshot")
+
 // Store persists tasks under the tasks directory in Root. Writers sharing a
 // root take an advisory file lock across processes. Load and List stay
 // lock-free because each task is published with an atomic rename.
@@ -46,9 +48,13 @@ func (s *Store) Load(id string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
+	if _, err := taskDirectoryInfo(s.tasksDir()); err != nil {
+		return Task{}, err
+	}
 	return readTask(path, id)
 }
 
+// Save persists a task with the current timestamp. Use Update for mutations.
 func (s *Store) Save(t Task) error {
 	path, err := s.taskPath(t.ID)
 	if err != nil {
@@ -59,6 +65,13 @@ func (s *Store) Save(t Task) error {
 		return err
 	}
 	defer lock.Close()
+	current, err := readTask(path, t.ID)
+	if err != nil {
+		return err
+	}
+	if !t.UpdatedAt.Equal(current.UpdatedAt) {
+		return fmt.Errorf("task %q: %w", t.ID, ErrStaleTask)
+	}
 	return s.persistTask(path, t)
 }
 
@@ -104,6 +117,9 @@ func (s *Store) persistTask(path string, task Task) error {
 
 func (s *Store) List() ([]Task, error) {
 	dir := s.tasksDir()
+	if _, err := taskDirectoryInfo(dir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return []Task{}, nil
@@ -144,13 +160,17 @@ func (s *Store) lockWrites() (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	file, err := openTaskStoreLock(path)
 	if err != nil {
 		return nil, err
 	}
 	if err := lockTaskStoreFile(file); err != nil {
 		file.Close()
 		return nil, fmt.Errorf("lock task store %s: %w", path, err)
+	}
+	if err := ensureTaskDirectory(s.tasksDir()); err != nil {
+		file.Close()
+		return nil, err
 	}
 	return file, nil
 }
@@ -181,20 +201,33 @@ func readTask(path, id string) (Task, error) {
 	return task, nil
 }
 
-func writeTask(path string, task Task) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+func taskDirectoryInfo(dir string) (os.FileInfo, error) {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("tasks path %s must be a real directory", dir)
+	}
+	return info, nil
+}
+
+func ensureTaskDirectory(dir string) error {
+	if err := os.Mkdir(dir, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 		return err
 	}
-	info, err := os.Stat(dir)
+	info, err := taskDirectoryInfo(dir)
 	if err != nil {
 		return err
 	}
 	if info.Mode().Perm() != 0700 {
-		if err := os.Chmod(dir, 0700); err != nil {
-			return err
-		}
+		return os.Chmod(dir, 0700)
 	}
+	return nil
+}
+
+func writeTask(path string, task Task) error {
+	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, ".task-*")
 	if err != nil {
 		return err

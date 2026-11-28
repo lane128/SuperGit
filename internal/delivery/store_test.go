@@ -93,6 +93,41 @@ func TestStoreRestrictsExistingTaskDirectory(t *testing.T) {
 	}
 }
 
+func TestStoreRejectsSymlinkedTaskDirectory(t *testing.T) {
+	store := NewStore(t.TempDir())
+	other := t.TempDir()
+	dir := filepath.Join(store.Root, "tasks")
+	if err := os.Symlink(other, dir); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := store.Create(newLedgerTask(t, "task", taskStartTime)); err == nil {
+		t.Error("created task through a tasks symlink")
+	}
+	if _, err := store.Load("task"); err == nil || errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Load accepted symlinked tasks directory: %v", err)
+	}
+	if _, err := store.List(); err == nil {
+		t.Error("listed tasks through a symlink")
+	}
+	if entries, err := os.ReadDir(other); err != nil || len(entries) != 0 {
+		t.Errorf("other directory was modified: %v, %v", entries, err)
+	}
+}
+
+func TestStoreRejectsSymlinkedWriterLock(t *testing.T) {
+	store := NewStore(t.TempDir())
+	target := filepath.Join(t.TempDir(), "external-lock")
+	if err := os.Symlink(target, filepath.Join(store.Root, ".tasks.lock")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := store.Create(newLedgerTask(t, "task", taskStartTime)); err == nil {
+		t.Error("created task with a symlinked writer lock")
+	}
+	if _, err := os.Stat(target); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("writer lock opened symlink target: %v", err)
+	}
+}
+
 func TestStoreRejectsDuplicateTaskAndBadID(t *testing.T) {
 	store := NewStore(t.TempDir())
 	task := newLedgerTask(t, "task-1", taskStartTime)
@@ -159,6 +194,31 @@ func TestStoreUpdatePersistsOnlySuccessfulChanges(t *testing.T) {
 	}
 	if _, err := store.Load("different"); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Update created a task under a different ID: %v", err)
+	}
+}
+
+func TestStoreSaveRejectsSnapshotBeforeRevocation(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task := newLedgerTask(t, "task", taskStartTime)
+	if err := store.Create(task); err != nil {
+		t.Fatal(err)
+	}
+	old, err := store.Load(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := store.Update(task.ID, func(current *Task) error {
+		return current.Revoke("maintainer", taskStartTime.Add(time.Minute))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(old); !errors.Is(err, ErrStaleTask) {
+		t.Errorf("Save error = %v, want ErrStaleTask", err)
+	}
+	persisted, err := store.Load(task.ID)
+	if err != nil || !reflect.DeepEqual(persisted, revoked) {
+		t.Fatalf("Save changed the revocation or history: %+v, %v", persisted, err)
 	}
 }
 

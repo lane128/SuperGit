@@ -73,14 +73,43 @@ func TestPreflightIgnoresGitRepositoryRouting(t *testing.T) {
 	}
 }
 
+func TestPreflightFixtureGitIgnoresGitDir(t *testing.T) {
+	opts, _ := newPreflightFixture(t)
+	other := t.TempDir()
+	preflightFixtureGit(t, other, "init", "--initial-branch=unrelated")
+	config := filepath.Join(other, ".git", "config")
+	before, err := os.ReadFile(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	preflightFixtureGit(t, opts.RepoDir, "config", "fixture.marker", "written to the selected checkout")
+	after, err := os.ReadFile(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Error("fixture wrote its configuration to the unrelated repository")
+	}
+	intended, err := os.ReadFile(filepath.Join(opts.RepoDir, ".git", "config"))
+	if err != nil || !strings.Contains(string(intended), "written to the selected checkout") {
+		t.Errorf("requested repository did not receive fixture marker: %v", err)
+	}
+}
+
 func TestPreflightIgnoresGitIndexOverride(t *testing.T) {
 	opts, _ := newPreflightFixture(t)
 	file := filepath.Join(opts.RepoDir, "alternate-index-only")
 	if err := os.WriteFile(file, []byte("not in the release index\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("GIT_INDEX_FILE", filepath.Join(t.TempDir(), "index"))
-	preflightFixtureGit(t, opts.RepoDir, "add", "alternate-index-only")
+	index := filepath.Join(t.TempDir(), "index")
+	t.Setenv("GIT_INDEX_FILE", index)
+	cmd := exec.CommandContext(t.Context(), "git", "-C", opts.RepoDir, "add", "alternate-index-only")
+	cmd.Env = append(preflightGitEnvironment(cmd.Environ()), "GIT_INDEX_FILE="+index)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add alternate index: %v\n%s", err, out)
+	}
 	if err := os.Remove(file); err != nil {
 		t.Fatal(err)
 	}
@@ -193,6 +222,15 @@ func TestPreflightRedactsPrivateKeyPath(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), sentinel) {
 		t.Error("private key check exposed the synthetic path")
+	}
+}
+
+func TestPreflightRejectsPrivateKeyDirectory(t *testing.T) {
+	opts, _ := newPreflightFixture(t)
+	opts.PrivKeyPath = t.TempDir()
+	report := requirePreflightFailure(t, opts, "private_key")
+	if check := preflightCheck(t, report, "private_key"); !strings.Contains(check.Detail, "regular file") {
+		t.Errorf("private key directory check = %+v", check)
 	}
 }
 
@@ -345,6 +383,7 @@ func configurePreflightFixtureAuthor(t *testing.T, repo string) {
 func preflightFixtureGit(t *testing.T, repo string, args ...string) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", repo}, args...)...)
+	cmd.Env = preflightGitEnvironment(cmd.Environ())
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}

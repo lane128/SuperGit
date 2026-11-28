@@ -10,6 +10,70 @@ import (
 	"time"
 )
 
+func TestAdvanceTaskRejectsCandidateChangeAfterCodeReview(t *testing.T) {
+	for _, step := range []struct {
+		from, to Phase
+		check    string
+	}{
+		{PhaseAcceptance, PhasePullRequest, "acceptance"},
+		{PhasePullRequest, PhaseMerge, "remote_checks"},
+	} {
+		t.Run(string(step.from), func(t *testing.T) {
+			store := NewStore(t.TempDir())
+			task := newLedgerTask(t, "task-a", taskStartTime)
+			task.Phase, task.Candidate = step.from, "reviewed"
+			recordLedgerCheck(t, &task, Check{Name: step.check, Candidate: "unreviewed", Passed: true, RecordedAt: taskStartTime})
+			if err := store.Create(task); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.AcquireReleaseWindow(task.ID, taskStartTime); err != nil {
+				t.Fatal(err)
+			}
+			before := readWindowTaskFile(t, store)
+			if _, err := store.AdvanceTask(task.ID, step.to, "unreviewed", taskStartTime.Add(time.Minute)); err == nil {
+				t.Error("accepted a candidate change after code review")
+			}
+			if !bytes.Equal(before, readWindowTaskFile(t, store)) {
+				t.Error("rejected candidate change modified the persisted task")
+			}
+		})
+	}
+}
+
+func TestCodeReviewCandidateChangeRequiresNewChecks(t *testing.T) {
+	task := newLedgerTask(t, "task-a", taskStartTime)
+	task.Phase, task.Candidate = PhaseCodeReview, "original"
+	at := taskStartTime.Add(time.Minute)
+	for _, name := range []string{"code_review", "tests"} {
+		recordLedgerCheck(t, &task, Check{Name: name, Candidate: "original", Passed: true, RecordedAt: taskStartTime})
+	}
+	if err := task.SetCandidate("revised", at); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"code_review", "tests"} {
+		if err := task.Advance(PhaseAcceptance, at); err == nil || !strings.Contains(err.Error(), name) {
+			t.Fatalf("advance before fresh %s = %v", name, err)
+		}
+		recordLedgerCheck(t, &task, Check{Name: name, Candidate: "revised", Passed: true, RecordedAt: at})
+	}
+	advanceLedgerTask(t, &task, PhaseAcceptance, at)
+}
+
+func TestAcquireReleaseWindowRejectsUnknownAndTerminalTasks(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.AcquireReleaseWindow("missing", taskStartTime); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("acquire unknown task = %v, want missing task error", err)
+	}
+	task := newLedgerTask(t, "cancelled", taskStartTime)
+	task.Status = StatusCancelled
+	if err := store.Create(task); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AcquireReleaseWindow(task.ID, taskStartTime); err == nil {
+		t.Error("cancelled task acquired a window")
+	}
+}
+
 func TestReleaseWindowBlocksSecondTask(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)
@@ -83,11 +147,8 @@ func TestReleaseWindowReleasedOnComplete(t *testing.T) {
 	if _, err := NewStore(store.Root).CurrentReleaseWindow(); !errors.Is(err, ErrNoReleaseWindow) {
 		t.Fatalf("completed window error = %v", err)
 	}
-	if err := store.AcquireReleaseWindow("task-a", taskStartTime); err != nil {
-		t.Fatalf("acquire unheld window: %v", err)
-	}
-	if window, err := store.CurrentReleaseWindow(); err != nil || window.TaskID != "task-a" {
-		t.Fatalf("new window after completion = %+v, err = %v", window, err)
+	if err := store.AcquireReleaseWindow("task-a", taskStartTime); err == nil {
+		t.Fatal("completed task acquired a new window")
 	}
 }
 
@@ -125,6 +186,9 @@ func TestReleaseWindowCannotBeReleasedDuringDelivery(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			store := NewStore(t.TempDir())
 			createWindowTaskAtPullRequest(t, store)
+			if err := store.Create(newLedgerTask(t, "task-b", taskStartTime)); err != nil {
+				t.Fatal(err)
+			}
 			if err := store.AcquireReleaseWindow("task-a", taskStartTime); err != nil {
 				t.Fatal(err)
 			}
@@ -163,10 +227,7 @@ func TestReleaseWindowCannotBeReleasedDuringDelivery(t *testing.T) {
 func createWindowTaskAtPullRequest(t *testing.T, store *Store) {
 	t.Helper()
 	task := newLedgerTask(t, "task-a", taskStartTime)
-	task.Phase = PhasePullRequest
-	if err := task.SetCandidate("candidate", taskStartTime); err != nil {
-		t.Fatal(err)
-	}
+	task.Phase, task.Candidate = PhasePullRequest, "candidate"
 	recordLedgerCheck(t, &task, Check{Name: "remote_checks", Candidate: "candidate", Passed: true, RecordedAt: taskStartTime})
 	if err := store.Create(task); err != nil {
 		t.Fatal(err)

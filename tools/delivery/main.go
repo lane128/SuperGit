@@ -149,6 +149,8 @@ func runTaskCommand(command string, args []string, stdout, stderr io.Writer) int
 	case "queue":
 		acquire := flags.Bool("acquire", false, "acquire the release window")
 		release := flags.Bool("release", false, "release the release window")
+		by := flags.String("by", "", "maintainer recovering a blocked release window")
+		reason := flags.String("reason", "", "reason for recovering a blocked release window")
 		validate = func() error {
 			if *acquire == *release {
 				return errors.New("exactly one of -acquire and -release is required")
@@ -163,10 +165,14 @@ func runTaskCommand(command string, args []string, stdout, stderr io.Writer) int
 				_, err := fmt.Fprintln(stdout, *id, "acquired the release window")
 				return err
 			}
-			if err := store.ReleaseReleaseWindow(*id); err != nil {
+			err := store.ReleaseReleaseWindow(*id)
+			if errors.Is(err, delivery.ErrReleaseWindowBlocked) {
+				err = store.RecoverReleaseWindow(*id, *by, *reason)
+			}
+			if err != nil {
 				return err
 			}
-			_, err := fmt.Fprintln(stdout, *id, "released the release window")
+			_, err = fmt.Fprintln(stdout, *id, "released the release window")
 			return err
 		}
 	}
@@ -203,6 +209,9 @@ func runTaskCommand(command string, args []string, stdout, stderr io.Writer) int
 	}
 	if err := perform(delivery.NewStore(state), time.Now().UTC()); err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", command, err)
+		if errors.Is(err, delivery.ErrRecoveryDetailsRequired) {
+			return 2
+		}
 		return 1
 	}
 	return 0

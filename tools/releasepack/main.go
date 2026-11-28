@@ -3,13 +3,13 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/xml"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,19 +17,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
 	"supergit/internal/updater"
-)
-
-var (
-	plistShortVerRE = regexp.MustCompile(`<key>CFBundleShortVersionString</key>\s*<string>([^<]*)</string>`)
-	plistBuildVerRE = regexp.MustCompile(`<key>CFBundleVersion</key>\s*<string>([^<]*)</string>`)
-	plistMinOSRE    = regexp.MustCompile(`<key>LSMinimumSystemVersion</key>\s*<string>([^<]*)</string>`)
 )
 
 func main() {
@@ -38,6 +30,7 @@ func main() {
 	pubPath := flag.String("pub", "", "path to write base64-encoded Ed25519 public key (used with -genkey)")
 	appPath := flag.String("app", "build/SuperGit.app", "path to the built .app bundle")
 	outDir := flag.String("out", "build/release", "output directory for zip and update.json")
+	tag := flag.String("tag", "", "selected release tag, which must match the bundle version")
 	platform := flag.String("platform", runtime.GOOS+"-"+runtime.GOARCH, "platform key in update.json")
 	baseURL := flag.String("base-url", "", "download base URL for the release assets")
 	notesURL := flag.String("notes-url", "", "release notes web URL")
@@ -58,6 +51,7 @@ func main() {
 		OutDir:   *outDir,
 		PrivPath: *privPath,
 		Platform: *platform,
+		Tag:      *tag,
 		BaseURL:  *baseURL,
 		NotesURL: *notesURL,
 		NotesZH:  *notesZH,
@@ -106,6 +100,7 @@ type packOptions struct {
 	OutDir   string
 	PrivPath string
 	Platform string
+	Tag      string
 	BaseURL  string
 	NotesURL string
 	NotesZH  string
@@ -120,56 +115,76 @@ func packageRelease(opts packOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := updater.VerifyAppBundleMetadata(opts.AppPath, updater.ExpectedBundleID); err != nil {
-		return err
-	}
-	plistBytes, err := os.ReadFile(filepath.Join(opts.AppPath, "Contents", "Info.plist"))
+	plist, err := updater.ReadAppPlist(opts.AppPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("embedded update public key: %w", err)
 	}
 	pubBase64 := base64.StdEncoding.EncodeToString(pub)
-	embeddedPubKey, err := extractEmbeddedUpdatePublicKey(plistBytes)
+	embeddedPubKey, err := plist.String("SuperGitUpdatePublicKey")
 	if err != nil {
 		return fmt.Errorf("embedded update public key: %w", err)
 	}
 	if embeddedPubKey == "" {
-		return fmt.Errorf("embedded update public key is missing or empty in Info.plist")
+		return fmt.Errorf("embedded update public key: missing or empty in Info.plist")
 	}
 	if embeddedPubKey != pubBase64 {
-		return fmt.Errorf("embedded update public key in Info.plist does not match the signing key")
+		return fmt.Errorf("embedded update public key: Info.plist key does not match the signing key")
 	}
-	shortVer := extractPlistValue(plistBytes, plistShortVerRE)
-	if _, err := updater.ParseVersion(shortVer); err != nil {
-		return fmt.Errorf("invalid CFBundleShortVersionString %q: %w", shortVer, err)
+	executable, err := plist.ExecutablePath(opts.AppPath)
+	if err != nil {
+		return fmt.Errorf("embedded update public key: %w", err)
 	}
-	shortVer = updater.NormalizeVersion(shortVer)
-	buildNum, _ := strconv.Atoi(extractPlistValue(plistBytes, plistBuildVerRE))
-	minOS := extractPlistValue(plistBytes, plistMinOSRE)
+	binary, err := os.ReadFile(executable)
+	if err != nil {
+		return fmt.Errorf("embedded update public key: read executable: %w", err)
+	}
+	if !bytes.Contains(binary, []byte(pubBase64)) {
+		return errors.New("embedded update public key: executable does not contain the signing public key")
+	}
+	if err := plist.VerifyBundleID(updater.ExpectedBundleID); err != nil {
+		return err
+	}
+	shortVer, buildNum, err := plist.ReleaseVersion()
+	if err != nil {
+		return err
+	}
+	if opts.Tag != "" && shortVer != strings.TrimPrefix(opts.Tag, "v") {
+		return fmt.Errorf("CFBundleShortVersionString %q does not match release tag %q", shortVer, opts.Tag)
+	}
+	minOS, err := plist.String("LSMinimumSystemVersion")
+	if err != nil {
+		return err
+	}
 
 	if err := os.MkdirAll(opts.OutDir, 0o755); err != nil {
 		return err
 	}
 
-	archiveName := fmt.Sprintf("SuperGit-%s-%s.zip", shortVer, opts.Platform)
-	archivePath := filepath.Join(opts.OutDir, archiveName)
-	_ = os.Remove(archivePath)
-
-	if err := archiveAppBundle(opts.AppPath, archivePath); err != nil {
+	if opts.Platform == "" || strings.ContainsAny(opts.Platform, `/\`) {
+		return errors.New("invalid platform for release archive")
+	}
+	stage, err := os.MkdirTemp(opts.OutDir, ".release-pack-*")
+	if err != nil {
 		return err
 	}
-	if _, err := updater.InspectZipSafety(archivePath); err != nil {
+	defer os.RemoveAll(stage)
+	archiveName := fmt.Sprintf("SuperGit-%s-%s.zip", shortVer, opts.Platform)
+	archivePath := filepath.Join(opts.OutDir, archiveName)
+	stagedArchive := filepath.Join(stage, archiveName)
+
+	if err := archiveAppBundle(opts.AppPath, stagedArchive); err != nil {
+		return err
+	}
+	if _, err := updater.InspectZipSafety(stagedArchive); err != nil {
 		return fmt.Errorf("generated archive failed safety check: %w", err)
 	}
 
-	sum, size, err := fileSHA256(archivePath)
+	sum, size, err := fileSHA256(stagedArchive)
 	if err != nil {
 		return err
 	}
 	sumHex := hex.EncodeToString(sum[:])
 	sigB64 := updater.SignDigest(priv, sum)
-	if err := updater.VerifyArchiveDigest(sum, sumHex, sigB64, pub); err != nil {
-		return fmt.Errorf("self-verification failed: %w", err)
-	}
 
 	baseURL := strings.TrimRight(strings.TrimSpace(opts.BaseURL), "/")
 	if baseURL == "" {
@@ -184,7 +199,7 @@ func packageRelease(opts packOptions) error {
 	var manifest updater.Manifest
 	if existing, err := os.ReadFile(manifestPath); err == nil {
 		var prev updater.Manifest
-		if json.Unmarshal(existing, &prev) == nil && updater.NormalizeVersion(prev.Version) == shortVer {
+		if json.Unmarshal(existing, &prev) == nil && prev.Version == shortVer {
 			manifest = prev
 		}
 	}
@@ -223,8 +238,47 @@ func packageRelease(opts packOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(manifestPath, append(encoded, '\n'), 0o644); err != nil {
+	stagedManifest := filepath.Join(stage, "update.json")
+	encoded = append(encoded, '\n')
+	if err := os.WriteFile(stagedManifest, encoded, 0o644); err != nil {
 		return err
+	}
+	stagedData, err := os.ReadFile(stagedManifest)
+	if err != nil {
+		return err
+	}
+	var verified updater.Manifest
+	if err := json.Unmarshal(stagedData, &verified); err != nil {
+		return fmt.Errorf("verify staged manifest: %w", err)
+	}
+	asset := verified.Platforms[opts.Platform]
+	if verified.Version != shortVer || verified.Build != buildNum || asset.Size != size {
+		return errors.New("staged manifest metadata does not match the archive")
+	}
+	if err := updater.VerifyArchiveDigest(sum, asset.SHA256, asset.Ed25519, pub); err != nil {
+		return fmt.Errorf("self-verification failed: %w", err)
+	}
+	artifacts := []struct {
+		staged, final string
+		digest        [sha256.Size]byte
+	}{{stagedArchive, archivePath, sum}, {stagedManifest, manifestPath, sha256.Sum256(stagedData)}}
+	// Check both destinations before publishing either staged file.
+	for _, artifact := range artifacts {
+		if err := compareArtifact(artifact.final, artifact.digest); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	for _, artifact := range artifacts {
+		// A hard link atomically installs a complete file and never clobbers a
+		// destination another attempt published after the initial checks.
+		if err := os.Link(artifact.staged, artifact.final); err != nil {
+			if !errors.Is(err, os.ErrExist) {
+				return err
+			}
+			if err := compareArtifact(artifact.final, artifact.digest); err != nil {
+				return err
+			}
+		}
 	}
 	fmt.Printf("Packaged %s (%d bytes)\n", archivePath, size)
 	fmt.Printf("Manifest %s (v%s build %d)\n", manifestPath, shortVer, buildNum)
@@ -236,7 +290,7 @@ func packageRelease(opts packOptions) error {
 func loadPrivateKey(path string) (ed25519.PrivateKey, ed25519.PublicKey, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.New("cannot read private key file")
 	}
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(data)))
 	if err != nil {
@@ -277,56 +331,20 @@ func fileSHA256(path string) ([sha256.Size]byte, int64, error) {
 	return sum, n, nil
 }
 
-func extractEmbeddedUpdatePublicKey(data []byte) (string, error) {
-	// Collect only direct children of the outer plist dictionary. Nested
-	// dictionaries and comments must not supply the installed app's key.
-	var plist struct {
-		XMLName xml.Name `xml:"plist"`
-		Values  []struct {
-			XMLName xml.Name
-			Entries []struct {
-				XMLName  xml.Name
-				Text     string     `xml:",chardata"`
-				Raw      string     `xml:",innerxml"`
-				Children []struct{} `xml:",any"`
-			} `xml:",any"`
-		} `xml:",any"`
+func compareArtifact(path string, expected [sha256.Size]byte) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
 	}
-	if err := xml.Unmarshal(data, &plist); err != nil || plist.XMLName != (xml.Name{Local: "plist"}) ||
-		len(plist.Values) != 1 || plist.Values[0].XMLName != (xml.Name{Local: "dict"}) {
-		return "", errors.New("invalid top-level dictionary in Info.plist")
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("existing artifact %s is not a regular file", path)
 	}
-	entries := plist.Values[0].Entries
-	if len(entries)%2 != 0 {
-		return "", errors.New("invalid key/value pairs in Info.plist")
+	sum, _, err := fileSHA256(path)
+	if err != nil {
+		return err
 	}
-	var embedded string
-	found := false
-	for i := 0; i < len(entries); i += 2 {
-		key, value := entries[i], entries[i+1]
-		if key.XMLName != (xml.Name{Local: "key"}) || len(key.Children) != 0 || value.XMLName.Local == "key" {
-			return "", errors.New("invalid key/value pairs in Info.plist")
-		}
-		if key.Text != "SuperGitUpdatePublicKey" {
-			continue
-		}
-		if found || value.XMLName != (xml.Name{Local: "string"}) {
-			return "", errors.New("expected one string entry in Info.plist")
-		}
-		// Decoded character data can join fragments around comments or CDATA.
-		if strings.Contains(value.Raw, "<") {
-			return "", errors.New("expected contiguous string text in Info.plist")
-		}
-		embedded = strings.TrimSpace(value.Raw)
-		found = true
+	if sum != expected {
+		return fmt.Errorf("existing artifact %s differs from the staged artifact", path)
 	}
-	return embedded, nil
-}
-
-func extractPlistValue(data []byte, re *regexp.Regexp) string {
-	m := re.FindSubmatch(data)
-	if m == nil {
-		return ""
-	}
-	return strings.TrimSpace(string(m[1]))
+	return nil
 }

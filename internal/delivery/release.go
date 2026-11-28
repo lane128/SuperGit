@@ -164,20 +164,32 @@ func VerifyRelease(ctx context.Context, opts VerifyOptions) (ReleaseVerification
 	}
 	bundleDir := filepath.Join(workspace, "bundle")
 	bundlePath, err := updater.ExtractAndVerifyApp(ctx, archiveCopy, bundleDir, updater.ExpectedBundleID, verifySignature)
-	if errors.Is(err, updater.ErrCodeSignVerify) {
-		// The updater only calls the signature verifier once extraction and
-		// the bundle metadata checks have succeeded.
-		pass("extract", filepath.Join(bundleDir, appName))
+	if err != nil && !errors.Is(err, updater.ErrCodeSignVerify) {
+		return fail("extract", err)
+	}
+	// A signature failure still leaves the extracted bundle available to check.
+	if err != nil {
+		bundlePath = filepath.Join(bundleDir, appName)
+	}
+	plist, plistErr := updater.ReadAppPlist(bundlePath)
+	if plistErr != nil {
+		return fail("extract", plistErr)
+	}
+	version, build, plistErr := plist.ReleaseVersion()
+	if plistErr != nil {
+		return fail("extract", plistErr)
+	}
+	if version != report.Version {
+		return fail("extract", fmt.Errorf("bundle version %q does not match manifest version %q", version, report.Version))
+	}
+	if build != report.Build {
+		return fail("extract", fmt.Errorf("bundle build %d does not match manifest build %d", build, report.Build))
+	}
+	pass("extract", bundlePath)
+	if err != nil {
 		return fail("codesign", err)
 	}
-	if err != nil {
-		return fail("extract", err)
-	}
-	if err := updater.VerifyAppBundleMetadata(bundlePath, updater.ExpectedBundleID); err != nil {
-		return fail("extract", err)
-	}
 	report.BundlePath = bundlePath
-	pass("extract", bundlePath)
 	pass("codesign", "code signature verified")
 	return report, nil
 }

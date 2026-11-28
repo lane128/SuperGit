@@ -28,10 +28,15 @@ var (
 func main() {
 	in := flag.String("in", "packaging/Info.plist", "the plist to read")
 	out := flag.String("out", "", "where to write the versioned plist (required)")
+	override := flag.String("version", "", "short bundle version to use in place of the nearest tag")
 	repo := flag.String("repo", ".", "the checkout git is asked about")
 	flag.Parse()
 	if *out == "" {
 		fmt.Fprintln(os.Stderr, "appversion: -out is required")
+		os.Exit(2)
+	}
+	if *override != "" && !shortVersionPattern.MatchString(*override) {
+		fmt.Fprintln(os.Stderr, "appversion: invalid -version, expected one to three dot-separated integers")
 		os.Exit(2)
 	}
 	src, err := os.ReadFile(*in)
@@ -50,6 +55,9 @@ func main() {
 		os.Exit(1)
 	}
 	tag, commits := gitVersion(*repo)
+	if *override != "" {
+		tag = *override
+	}
 	short, build := versionFields(tag, commits, shortFallback, buildFallback)
 	versioned := setPlistString(src, "CFBundleShortVersionString", short)
 	versioned = setPlistString(versioned, "CFBundleVersion", build)

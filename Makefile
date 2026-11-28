@@ -9,12 +9,31 @@ FOLDER_DOCUMENT_TYPES := [{"CFBundleTypeName":"Repository Folder","CFBundleTypeR
 .PHONY: build app release-preflight release-pack verify-release run demo test check e2e-build native-check desktop-app desktop-e2e-build desktop-native-check lobe-build lobe-app lobe-run lobe-e2e-build icns icons
 
 UPDATE_PUBKEY ?=
+UPDATE_PRIVKEY ?=
 RELEASE_TAG ?=
-BUILD_LDFLAGS := $(if $(UPDATE_PUBKEY),-X supergit/internal/updater.DefaultPublicKeyBase64=$(UPDATE_PUBKEY),)
+RELEASE_OUT ?= build/release
+RELEASE_BASE_URL ?=
+RELEASE_NOTES_ZH ?=
+RELEASE_NOTES_EN ?=
+
+# Preserve literal dollars in environment and command-line values.
+override UPDATE_PUBKEY := $(value UPDATE_PUBKEY)
+override UPDATE_PRIVKEY := $(value UPDATE_PRIVKEY)
+override RELEASE_TAG := $(value RELEASE_TAG)
+override RELEASE_OUT := $(value RELEASE_OUT)
+override RELEASE_BASE_URL := $(value RELEASE_BASE_URL)
+override RELEASE_NOTES_ZH := $(value RELEASE_NOTES_ZH)
+override RELEASE_NOTES_EN := $(value RELEASE_NOTES_EN)
+RELEASE_VERSION := $(patsubst v%,%,$(RELEASE_TAG))
+override RELEASE_VERSION := $(value RELEASE_VERSION)
+export GO APP RELEASE_TAG RELEASE_VERSION UPDATE_PUBKEY UPDATE_PRIVKEY
+export RELEASE_OUT RELEASE_BASE_URL RELEASE_NOTES_ZH RELEASE_NOTES_EN
 
 build: $(if $(strip $(RELEASE_TAG)),release-preflight,)
 	@mkdir -p "$(dir $(APP_BINARY))"
-	$(GO) build $(if $(BUILD_LDFLAGS),-ldflags "$(BUILD_LDFLAGS)",) -o "$(APP_BINARY)" ./cmd/supergit
+	@unset UPDATE_PRIVKEY MAKEFLAGS MAKEOVERRIDES; set --; \
+		if [ -n "$$UPDATE_PUBKEY" ]; then set -- -ldflags "-X supergit/internal/updater.DefaultPublicKeyBase64=$$UPDATE_PUBKEY"; fi; \
+		"$$GO" build "$$@" -o "$(APP_BINARY)" ./cmd/supergit
 
 # The drawings ship as full-bleed squares; the macOS icon needs them inside the
 # system's rounded-square grid. Re-run "make icons" (and then "make icns") after
@@ -30,26 +49,19 @@ icons:
 icns:
 	./scripts/make-icns.sh
 
-# The bundle version comes from the nearest tag and the commit count (see
-# tools/appversion); outside a checkout the values already in the plist stay.
+# The bundle version comes from the selected release tag or nearest tag, and
+# the build comes from the commit count. Exported trees can use plist defaults.
 # The source plist is never rewritten, so a local build leaves no diff.
 app: build
 	@mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
 	cp "$(APP_BINARY)" "$(APP)/Contents/MacOS/supergit"
-	$(GO) run ./tools/appversion -in packaging/Info.plist -out "$(APP)/Contents/Info.plist"
+	@unset UPDATE_PRIVKEY MAKEFLAGS MAKEOVERRIDES; "$$GO" run ./tools/appversion -in packaging/Info.plist -out "$(APP)/Contents/Info.plist" $(if $(RELEASE_VERSION),-version "$$RELEASE_VERSION",)
 	plutil -insert CFBundleDocumentTypes -json '$(FOLDER_DOCUMENT_TYPES)' "$(APP)/Contents/Info.plist"
-	$(if $(UPDATE_PUBKEY),plutil -insert SuperGitUpdatePublicKey -string "$(UPDATE_PUBKEY)" "$(APP)/Contents/Info.plist",)
+	@if [ -n "$$UPDATE_PUBKEY" ]; then plutil -insert SuperGitUpdatePublicKey -string "$$UPDATE_PUBKEY" "$(APP)/Contents/Info.plist"; fi
 	cp packaging/SuperGit.icns "$(APP)/Contents/Resources/SuperGit.icns"
 	cp internal/lobedesk/fonts/OFL.txt "$(APP)/Contents/Resources/Font-Licenses.txt"
 	codesign --force --sign - "$(APP)"
 	codesign --verify --verbose=2 "$(APP)"
-
-# Package a signed update archive and update.json manifest. Pass UPDATE_PRIVKEY
-# pointing to the local Ed25519 private key file (never commit private keys).
-RELEASE_OUT ?= build/release
-RELEASE_BASE_URL ?=
-RELEASE_NOTES_ZH ?=
-RELEASE_NOTES_EN ?=
 
 # Catch a missing tag even when a dry run skips the release recipes.
 ifneq ($(filter release-preflight release-pack,$(MAKECMDGOALS)),)
@@ -59,24 +71,18 @@ endif
 endif
 
 release-preflight:
-	@test -n "$(RELEASE_TAG)" || (echo "RELEASE_TAG is required" >&2; exit 2)
-	@test -n "$(UPDATE_PUBKEY)" || (echo "UPDATE_PUBKEY is required" >&2; exit 2)
-	@test -n "$(UPDATE_PRIVKEY)" || (echo "UPDATE_PRIVKEY is required" >&2; exit 2)
-	$(GO) run ./tools/delivery preflight -tag "$(RELEASE_TAG)" -pubkey "$(UPDATE_PUBKEY)" -privkey "$(UPDATE_PRIVKEY)"
+	@sh scripts/release-preflight.sh
 
 # Older GNU Make versions treat .NOTPARALLEL as global.
 ifneq ($(filter release-pack,$(MAKECMDGOALS)),)
 .NOTPARALLEL: release-pack
 endif
 release-pack: release-preflight app
-	$(GO) run ./tools/releasepack -app "$(APP)" -out "$(RELEASE_OUT)" -priv "$(UPDATE_PRIVKEY)" \
-		$(if $(RELEASE_BASE_URL),-base-url "$(RELEASE_BASE_URL)",) \
-		$(if $(RELEASE_NOTES_ZH),-notes-zh "$(RELEASE_NOTES_ZH)",) \
-		$(if $(RELEASE_NOTES_EN),-notes-en "$(RELEASE_NOTES_EN)",)
+	@sh scripts/release-pack.sh
 
 verify-release:
-	@test -n "$(UPDATE_PUBKEY)" || (echo "UPDATE_PUBKEY is required" >&2; exit 2)
-	$(GO) run ./tools/delivery verify-release -out "$(RELEASE_OUT)" -pubkey "$(UPDATE_PUBKEY)"
+	@: "$${UPDATE_PUBKEY:?UPDATE_PUBKEY is required}"; \
+		unset UPDATE_PRIVKEY MAKEFLAGS MAKEOVERRIDES; "$$GO" run ./tools/delivery verify-release -out "$$RELEASE_OUT" -pubkey "$$UPDATE_PUBKEY"
 
 desktop-app:
 	@mkdir -p "$(DESKTOP_APP)/Contents/MacOS" "$(DESKTOP_APP)/Contents/Resources"

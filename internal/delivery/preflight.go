@@ -137,15 +137,7 @@ func (git preflightGit) run(args ...string) (string, error) {
 	cmd := exec.CommandContext(git.ctx, "git", append(argv, args...)...)
 	// A transport or credential helper can keep output pipes open after Git exits.
 	cmd.WaitDelay = time.Second
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		// Match gitrepo's routing exclusions; -C alone does not override them.
-		switch strings.ToUpper(name) {
-		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX":
-			continue
-		}
-		cmd.Env = append(cmd.Env, entry)
-	}
+	cmd.Env = preflightGitEnvironment(cmd.Environ())
 	if args[0] == "fetch" {
 		// Force OpenSSH away from the TTY and give it no executable askpass.
 		cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=",
@@ -164,6 +156,20 @@ func (git preflightGit) run(args ...string) (string, error) {
 		return "", fmt.Errorf("git %s failed: %w", args[0], exitErr)
 	}
 	return "", fmt.Errorf("%w: git %s: %w", errPreflightGit, args[0], err)
+}
+
+func preflightGitEnvironment(environ []string) []string {
+	filtered := make([]string, 0, len(environ))
+	for _, entry := range environ {
+		name, _, _ := strings.Cut(entry, "=")
+		// Match gitrepo's routing exclusions; -C alone does not override them.
+		switch strings.ToUpper(name) {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX":
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 func (git preflightGit) resolve(ref string) (string, error) {

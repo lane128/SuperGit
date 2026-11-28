@@ -13,9 +13,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 )
@@ -23,14 +24,12 @@ import (
 const maxArchiveBytes = 512 << 20 // 512 MiB
 
 var (
-	ErrNoPublicKey        = errors.New("update verification public key is not configured")
-	ErrSignatureMismatch  = errors.New("update archive signature verification failed")
-	ErrChecksumMismatch   = errors.New("update archive SHA-256 checksum mismatch")
-	ErrInvalidArchive     = errors.New("update archive failed safety inspection")
-	ErrBundleMismatch     = errors.New("extracted bundle identifier does not match SuperGit")
-	ErrCodeSignVerify     = errors.New("extracted app bundle failed code signature verification")
-	plistBundleIDPattern  = regexp.MustCompile(`<key>CFBundleIdentifier</key>\s*<string>([^<]*)</string>`)
-	plistExecutableRegexp = regexp.MustCompile(`<key>CFBundleExecutable</key>\s*<string>([^<]*)</string>`)
+	ErrNoPublicKey       = errors.New("update verification public key is not configured")
+	ErrSignatureMismatch = errors.New("update archive signature verification failed")
+	ErrChecksumMismatch  = errors.New("update archive SHA-256 checksum mismatch")
+	ErrInvalidArchive    = errors.New("update archive failed safety inspection")
+	ErrBundleMismatch    = errors.New("extracted bundle identifier does not match SuperGit")
+	ErrCodeSignVerify    = errors.New("extracted app bundle failed code signature verification")
 )
 
 // ParsePublicKey decodes a base64-encoded Ed25519 public key.
@@ -194,47 +193,59 @@ func DownloadAndVerify(
 // InspectZipSafety verifies that every entry in a zip archive stays inside a
 // single top-level ".app" bundle directory with no path traversal.
 func InspectZipSafety(zipPath string) (string, error) {
+	appName, _, err := inspectZipSafety(zipPath)
+	return appName, err
+}
+
+func inspectZipSafety(zipPath string) (appRoot string, hasBackslashes bool, err error) {
 	zr, err := zip.OpenReader(zipPath)
-	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrInvalidArchive, err)
+	if err != nil && !errors.Is(err, zip.ErrInsecurePath) {
+		return "", false, fmt.Errorf("%w: %v", ErrInvalidArchive, err)
 	}
 	defer zr.Close()
 
-	var appRoot string
 	for _, f := range zr.File {
-		name := f.Name
-		if name == "" || strings.HasPrefix(name, "/") || strings.HasPrefix(name, `\`) || strings.Contains(name, `\`) {
-			return "", fmt.Errorf("%w: unsafe entry %q", ErrInvalidArchive, name)
+		clean, err := cleanZipEntry(f.Name)
+		if err != nil {
+			return "", false, err
 		}
-		clean := filepath.Clean(name)
-		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || filepath.IsAbs(clean) {
-			return "", fmt.Errorf("%w: path traversal entry %q", ErrInvalidArchive, name)
-		}
-		parts := strings.Split(clean, "/")
-		top := parts[0]
+		hasBackslashes = hasBackslashes || strings.Contains(f.Name, `\`)
+		top, _, _ := strings.Cut(clean, "/")
 		if top == "__MACOSX" {
 			continue
 		}
 		if !strings.HasSuffix(top, ".app") {
-			return "", fmt.Errorf("%w: unexpected top-level entry %q", ErrInvalidArchive, top)
+			return "", false, fmt.Errorf("%w: unexpected top-level entry %q", ErrInvalidArchive, top)
 		}
 		if appRoot == "" {
 			appRoot = top
 		} else if appRoot != top {
-			return "", fmt.Errorf("%w: multiple app bundles (%q and %q)", ErrInvalidArchive, appRoot, top)
+			return "", false, fmt.Errorf("%w: multiple app bundles (%q and %q)", ErrInvalidArchive, appRoot, top)
 		}
 	}
 	if appRoot == "" {
-		return "", fmt.Errorf("%w: archive contains no .app bundle", ErrInvalidArchive)
+		return "", false, fmt.Errorf("%w: archive contains no .app bundle", ErrInvalidArchive)
 	}
-	return appRoot, nil
+	return appRoot, hasBackslashes, nil
+}
+
+// Check both ZIP separators so Windows-style paths and traversal are
+// interpreted consistently, regardless of the host filesystem.
+func cleanZipEntry(name string) (string, error) {
+	normalized := strings.ReplaceAll(name, `\`, "/")
+	clean := path.Clean(normalized)
+	if path.IsAbs(normalized) || clean == "." || strings.Contains(normalized, ":") ||
+		slices.Contains(strings.Split(normalized, "/"), "..") {
+		return "", fmt.Errorf("%w: unsafe entry %q", ErrInvalidArchive, name)
+	}
+	return clean, nil
 }
 
 // ExtractAndVerifyApp validates the zip entries, extracts the .app bundle into
 // destDir, checks Info.plist bundle ID & executable, and runs code signature
 // verification on macOS.
 func ExtractAndVerifyApp(ctx context.Context, zipPath, destDir, expectedBundleID string, verifySign func(context.Context, string) error) (string, error) {
-	appName, err := InspectZipSafety(zipPath)
+	appName, hasBackslashes, err := inspectZipSafety(zipPath)
 	if err != nil {
 		return "", err
 	}
@@ -245,7 +256,9 @@ func ExtractAndVerifyApp(ctx context.Context, zipPath, destDir, expectedBundleID
 		return "", err
 	}
 
-	if runtime.GOOS == "darwin" {
+	// Ditto treats backslashes literally, so use the normalizing extractor for
+	// archives that need separator conversion.
+	if runtime.GOOS == "darwin" && !hasBackslashes {
 		cmd := exec.CommandContext(ctx, "ditto", "-x", "-k", zipPath, destDir)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return "", fmt.Errorf("extract archive failed: %v (%s)", err, strings.TrimSpace(string(out)))
@@ -271,27 +284,15 @@ func ExtractAndVerifyApp(ctx context.Context, zipPath, destDir, expectedBundleID
 
 // VerifyAppBundleMetadata verifies Info.plist bundle identifier and executable.
 func VerifyAppBundleMetadata(appPath, expectedBundleID string) error {
-	plistPath := filepath.Join(appPath, "Contents", "Info.plist")
-	data, err := os.ReadFile(plistPath)
+	plist, err := ReadAppPlist(appPath)
 	if err != nil {
-		return fmt.Errorf("%w: missing Info.plist: %v", ErrBundleMismatch, err)
+		return fmt.Errorf("%w: %v", ErrBundleMismatch, err)
 	}
-	idMatch := plistBundleIDPattern.FindSubmatch(data)
-	if idMatch == nil || strings.TrimSpace(string(idMatch[1])) != expectedBundleID {
-		return ErrBundleMismatch
+	if err := plist.VerifyBundleID(expectedBundleID); err != nil {
+		return err
 	}
-	exeMatch := plistExecutableRegexp.FindSubmatch(data)
-	if exeMatch == nil {
-		return fmt.Errorf("%w: missing CFBundleExecutable", ErrBundleMismatch)
-	}
-	exeName := strings.TrimSpace(string(exeMatch[1]))
-	if exeName == "" || strings.ContainsAny(exeName, `/\`) || exeName == "." || exeName == ".." {
-		return fmt.Errorf("%w: invalid executable name %q", ErrBundleMismatch, exeName)
-	}
-	exePath := filepath.Join(appPath, "Contents", "MacOS", exeName)
-	info, err := os.Stat(exePath)
-	if err != nil || info.IsDir() {
-		return fmt.Errorf("%w: missing executable %s", ErrBundleMismatch, exeName)
+	if _, err := plist.ExecutablePath(appPath); err != nil {
+		return fmt.Errorf("%w: %v", ErrBundleMismatch, err)
 	}
 	return nil
 }
@@ -309,16 +310,20 @@ func defaultVerifyCodeSign(ctx context.Context, appPath string) error {
 
 func extractZipPureGo(zipPath, destDir string) error {
 	zr, err := zip.OpenReader(zipPath)
-	if err != nil {
+	if err != nil && !errors.Is(err, zip.ErrInsecurePath) {
 		return err
 	}
 	defer zr.Close()
 	for _, f := range zr.File {
-		clean := filepath.Clean(f.Name)
-		if strings.HasPrefix(clean, "__MACOSX") {
+		clean, err := cleanZipEntry(f.Name)
+		if err != nil {
+			return err
+		}
+		top, _, _ := strings.Cut(clean, "/")
+		if top == "__MACOSX" {
 			continue
 		}
-		target := filepath.Join(destDir, clean)
+		target := filepath.Join(destDir, filepath.FromSlash(clean))
 		if !strings.HasPrefix(target, filepath.Clean(destDir)+string(os.PathSeparator)) {
 			return fmt.Errorf("%w: unsafe extraction path %q", ErrInvalidArchive, f.Name)
 		}

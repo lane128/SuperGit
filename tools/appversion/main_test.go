@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -94,5 +95,44 @@ func TestGitVersionReadsTheCheckout(t *testing.T) {
 	short, build := versionFields(tag, commits, "0.1.0", "1")
 	if short != "1.2.3" || build != "2" {
 		t.Errorf("versionFields from the checkout = %q/%q; want 1.2.3/2", short, build)
+	}
+}
+
+func TestAppVersionOverride(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "in.plist")
+	if err := os.WriteFile(in, []byte(fixturePlist), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		version string
+		valid   bool
+	}{{"2.3.4", true}, {"v2.3.4", false}, {"2.3.4-rc1", false}} {
+		t.Run(tc.version, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "out.plist")
+			cmd := exec.Command("go", "run", ".", "-in", in, "-out", out, "-repo", dir, "-version", tc.version)
+			log, err := cmd.CombinedOutput()
+			if !tc.valid {
+				if err == nil || !strings.Contains(string(log), "invalid -version") {
+					t.Fatalf("appversion error = %v, output = %s", err, log)
+				}
+				if _, err := os.Stat(out); !os.IsNotExist(err) {
+					t.Errorf("invalid version wrote output: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("appversion: %v, %s", err, log)
+			}
+			data, err := os.ReadFile(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			short, _ := plistString(data, "CFBundleShortVersionString")
+			build, _ := plistString(data, "CFBundleVersion")
+			if short != tc.version || build != "1" {
+				t.Fatalf("version/build = %q/%q", short, build)
+			}
+		})
 	}
 }

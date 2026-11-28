@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -27,7 +30,7 @@ func TestGenerateKeypairAndPackageRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	pubBase64 := strings.TrimSpace(string(pubRaw))
-	appDir := writeAppBundle(t, tmp, "<key>SuperGitUpdatePublicKey</key><string>"+pubBase64+"</string>")
+	appDir := writeAppBundle(t, tmp, "<key>SuperGitUpdatePublicKey</key><string>"+pubBase64+"</string>", pubBase64)
 
 	outDir := filepath.Join(tmp, "dist")
 	if err := packageRelease(packOptions{
@@ -94,9 +97,10 @@ func TestPackageReleaseRequiresMatchingEmbeddedPublicKey(t *testing.T) {
 	mid := len(pubBase64) / 2
 	left, right := pubBase64[:mid], pubBase64[mid:]
 	for _, tc := range []struct {
-		name     string
-		keyEntry string
-		wantErr  bool
+		name          string
+		keyEntry      string
+		executableKey *string
+		wantErr       bool
 	}{
 		{name: "missing", wantErr: true},
 		{name: "empty", keyEntry: "<key>SuperGitUpdatePublicKey</key><string></string>", wantErr: true},
@@ -106,19 +110,35 @@ func TestPackageReleaseRequiresMatchingEmbeddedPublicKey(t *testing.T) {
 		{name: "comment_in_string", keyEntry: keyStringStart + left + "<!-- split -->" + right + "</string>", wantErr: true},
 		{name: "cdata_in_string", keyEntry: keyStringStart + left + "<![CDATA[" + right + "]]></string>", wantErr: true},
 		{name: "wrong", keyEntry: "<key>SuperGitUpdatePublicKey</key><string>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</string>", wantErr: true},
+		{name: "binary_mismatch", keyEntry: matchingKeyEntry, executableKey: new("wrong key"), wantErr: true},
+		{name: "binary_missing", keyEntry: matchingKeyEntry, executableKey: new(""), wantErr: true},
 		{name: "correct", keyEntry: matchingKeyEntry},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tmp := t.TempDir()
+			key := pubBase64
+			if tc.executableKey != nil {
+				key = *tc.executableKey
+			}
+			outDir := filepath.Join(tmp, "dist")
+			app := writeAppBundle(t, tmp, tc.keyEntry, key)
+			if tc.name == "binary_missing" {
+				if err := os.Remove(filepath.Join(app, "Contents", "MacOS", "supergit")); err != nil {
+					t.Fatal(err)
+				}
+			}
 			err := packageRelease(packOptions{
-				AppPath:  writeAppBundle(t, tmp, tc.keyEntry),
-				OutDir:   filepath.Join(tmp, "dist"),
+				AppPath:  app,
+				OutDir:   outDir,
 				PrivPath: privPath,
 				Platform: "darwin-arm64",
 			})
 			if tc.wantErr {
 				if err == nil || !strings.HasPrefix(err.Error(), "embedded update public key") {
-					t.Fatalf("packageRelease error = %v, want an embedded update public key error", err)
+					t.Errorf("packageRelease error = %v, want an embedded update public key error", err)
+				}
+				if _, err := os.Stat(outDir); !errors.Is(err, os.ErrNotExist) {
+					t.Errorf("output directory exists or could not be checked: %v", err)
 				}
 			} else if err != nil {
 				t.Fatalf("packageRelease: %v", err)
@@ -127,7 +147,124 @@ func TestPackageReleaseRequiresMatchingEmbeddedPublicKey(t *testing.T) {
 	}
 }
 
-func writeAppBundle(t *testing.T, dir, keyEntry string) string {
+func TestPackageReleaseRedactsInaccessiblePrivateKeyPath(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "dist")
+	const supplied = "input-that-must-not-appear-in-errors"
+	err := packageRelease(packOptions{OutDir: out, PrivPath: filepath.Join(t.TempDir(), supplied)})
+	if err == nil || strings.Contains(err.Error(), supplied) {
+		t.Error("missing private key error disclosed its supplied path or was absent")
+	}
+	if _, err := os.Stat(out); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("key error created output directory: %v", err)
+	}
+}
+
+func TestPackageReleaseRejectsTagVersionMismatch(t *testing.T) {
+	tmp := t.TempDir()
+	priv, pub := filepath.Join(tmp, "update.key"), filepath.Join(tmp, "update.pub")
+	if err := generateKeypair(priv, pub); err != nil {
+		t.Fatal(err)
+	}
+	publicKey, err := os.ReadFile(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := strings.TrimSpace(string(publicKey))
+	app := writeAppBundle(t, tmp, "<key>SuperGitUpdatePublicKey</key><string>"+key+"</string>", key)
+	out := filepath.Join(tmp, "dist")
+	cmd := exec.Command("go", "run", ".", "-app", app, "-priv", priv, "-out", out, "-tag", "v0.2.1")
+	log, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(log), "CFBundleShortVersionString") || !strings.Contains(string(log), "v0.2.1") {
+		t.Fatalf("package release error = %v, output = %s", err, log)
+	}
+	if _, err := os.Stat(out); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("mismatching tag created the output directory: %v", err)
+	}
+}
+
+func TestPackageReleaseRejectsNonTopLevelVersion(t *testing.T) {
+	tmp := t.TempDir()
+	priv, pub := filepath.Join(tmp, "update.key"), filepath.Join(tmp, "update.pub")
+	if err := generateKeypair(priv, pub); err != nil {
+		t.Fatal(err)
+	}
+	publicKey, err := os.ReadFile(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := strings.TrimSpace(string(publicKey))
+	const version = "<key>CFBundleShortVersionString</key><string>0.2.0</string>"
+	for _, tc := range []struct{ name, value string }{
+		{"commented", "<!-- " + version + " -->"},
+		{"nested", "<key>Other</key><dict>" + version + "</dict>"},
+		{"split", "<key>CFBundleShortVersionString</key><string>0.2.<!-- split -->0</string>"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			app := writeAppBundle(t, root, "<key>SuperGitUpdatePublicKey</key><string>"+key+"</string>", key)
+			file := filepath.Join(app, "Contents", "Info.plist")
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, []byte(strings.Replace(string(data), version, tc.value, 1)), 0600); err != nil {
+				t.Fatal(err)
+			}
+			out := filepath.Join(root, "dist")
+			err = packageRelease(packOptions{AppPath: app, OutDir: out, PrivPath: priv, Platform: "darwin-arm64"})
+			if err == nil || !strings.Contains(err.Error(), "CFBundleShortVersionString") {
+				t.Errorf("packageRelease = %v, want version error", err)
+			}
+			if _, err := os.Stat(out); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("invalid version created output directory: %v", err)
+			}
+		})
+	}
+}
+
+func TestPackageReleasePreservesExistingArtifacts(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("releasepack uses macOS ditto")
+	}
+	for _, name := range []string{"SuperGit-0.2.0-darwin-arm64.zip", "update.json"} {
+		t.Run(name, func(t *testing.T) {
+			tmp := t.TempDir()
+			priv, pub := filepath.Join(tmp, "update.key"), filepath.Join(tmp, "update.pub")
+			if err := generateKeypair(priv, pub); err != nil {
+				t.Fatal(err)
+			}
+			pubBytes, err := os.ReadFile(pub)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := strings.TrimSpace(string(pubBytes))
+			app := writeAppBundle(t, tmp, "<key>SuperGitUpdatePublicKey</key><string>"+key+"</string>", key)
+			out := filepath.Join(tmp, "dist")
+			if err := os.Mkdir(out, 0700); err != nil {
+				t.Fatal(err)
+			}
+			existing := filepath.Join(out, name)
+			const sentinel = "existing verified artifact"
+			if err := os.WriteFile(existing, []byte(sentinel), 0600); err != nil {
+				t.Fatal(err)
+			}
+			err = packageRelease(packOptions{AppPath: app, OutDir: out, PrivPath: priv, Platform: "darwin-arm64"})
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("packageRelease = %v, want conflict for %s", err, name)
+			}
+			data, err := os.ReadFile(existing)
+			if err != nil || string(data) != sentinel {
+				t.Errorf("existing artifact overwritten, read error = %v", err)
+			}
+			entries, err := os.ReadDir(out)
+			if err != nil || len(entries) != 1 {
+				t.Errorf("packaging conflict left additional artifacts: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
+func writeAppBundle(t *testing.T, dir, keyEntry, executableKey string) string {
 	t.Helper()
 	appDir := filepath.Join(dir, "SuperGit.app")
 	if err := os.MkdirAll(filepath.Join(appDir, "Contents", "MacOS"), 0o755); err != nil {
@@ -145,8 +282,59 @@ func writeAppBundle(t *testing.T, dir, keyEntry string) string {
 	if err := os.WriteFile(filepath.Join(appDir, "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(appDir, "Contents", "MacOS", "supergit"), []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(appDir, "Contents", "MacOS", "supergit"), []byte("#!/bin/sh\n# "+executableKey+"\necho ok\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return appDir
+}
+
+func TestReleaseMakePassesArgumentsWithoutEchoingValues(t *testing.T) {
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make unavailable")
+	}
+	tmp := t.TempDir()
+	stub := filepath.Join(tmp, "go-stub")
+	captured := filepath.Join(tmp, "args")
+	if err := os.WriteFile(stub, []byte(`#!/bin/sh
+printf '%s\000' "$@" > "$CAPTURED_ARGS"
+`), 0700); err != nil {
+		t.Fatal(err)
+	}
+	const privatePath = `/tmp/key path with "quotes" and $HOME`
+	const notes = "Line one \"quoted\" and $HOME\nLine two"
+	const publicKey = "fixture-public-key"
+	t.Setenv("CAPTURED_ARGS", captured)
+	t.Setenv("MAKEFLAGS", "")
+	t.Setenv("MAKEOVERRIDES", "")
+	t.Setenv("RELEASE_BASE_URL", "https://example.invalid/download")
+	t.Setenv("RELEASE_NOTES_EN", notes)
+	t.Setenv("RELEASE_NOTES_ZH", "更新说明")
+	t.Setenv("RELEASE_OUT", tmp)
+	for _, tc := range []struct {
+		name       string
+		args, want []string
+	}{
+		{"preflight", []string{"release-preflight"}, []string{"run", "./tools/delivery", "preflight", "-tag", "v0.2.0", "-pubkey", publicKey, "-privkey", privatePath}},
+		{"pack", []string{"-o", "app", "-o", "release-preflight", "release-pack"}, []string{"run", "./tools/releasepack", "-app", "build/SuperGit.app", "-tag", "v0.2.0", "-out", tmp, "-priv", privatePath, "-base-url", "https://example.invalid/download", "-notes-zh", "更新说明", "-notes-en", notes}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := append([]string{"GO=" + stub, "RELEASE_TAG=v0.2.0", "UPDATE_PUBKEY=" + publicKey, "UPDATE_PRIVKEY=" + privatePath}, tc.args...)
+			cmd := exec.Command("make", args...)
+			cmd.Dir = "../.."
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Errorf("make failed: %v", err)
+			}
+			if len(output) != 0 {
+				t.Error("release recipe emitted output with a silent tool stub")
+			}
+			data, err := os.ReadFile(captured)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := []byte(strings.Join(tc.want, "\x00") + "\x00"); !bytes.Equal(data, want) {
+				t.Error("arguments differed from the literal input values")
+			}
+		})
+	}
 }

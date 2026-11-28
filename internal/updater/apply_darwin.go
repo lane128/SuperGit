@@ -96,12 +96,16 @@ func StageAndLaunchApply(stagedApp, targetApp string, waitPID int) error {
 	if err := moveAppBundle(stagedApp, sibling); err != nil {
 		return fmt.Errorf("stage update beside target app: %w", err)
 	}
-	exeName, err := bundleExecutableName(sibling)
+	plist, err := ReadAppPlist(sibling)
 	if err != nil {
 		_ = os.RemoveAll(sibling)
 		return err
 	}
-	helperBin := filepath.Join(sibling, "Contents", "MacOS", exeName)
+	helperBin, err := plist.ExecutablePath(sibling)
+	if err != nil {
+		_ = os.RemoveAll(sibling)
+		return err
+	}
 	cmd := exec.Command(helperBin,
 		"--apply-update",
 		"--pid", fmt.Sprintf("%d", waitPID),
@@ -126,22 +130,6 @@ func moveAppBundle(src, dst string) error {
 	}
 	_ = os.RemoveAll(src)
 	return nil
-}
-
-func bundleExecutableName(appPath string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(appPath, "Contents", "Info.plist"))
-	if err != nil {
-		return "", err
-	}
-	m := plistExecutableRegexp.FindSubmatch(data)
-	if m == nil {
-		return "", errors.New("missing CFBundleExecutable")
-	}
-	name := strings.TrimSpace(string(m[1]))
-	if name == "" || strings.ContainsAny(name, `/\`) {
-		return "", fmt.Errorf("invalid CFBundleExecutable %q", name)
-	}
-	return name, nil
 }
 
 // RunApplyHelper executes the detached --apply-update workflow.

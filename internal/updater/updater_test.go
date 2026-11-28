@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -100,6 +101,74 @@ func TestInspectZipSafetyRejectsTraversal(t *testing.T) {
 
 	if _, err := InspectZipSafety(zipPath); err == nil {
 		t.Fatal("expected Zip Slip traversal archive to be rejected")
+	}
+}
+
+func TestInspectZipSafetyHandlesBackslashes(t *testing.T) {
+	for _, tc := range []struct {
+		name, entry string
+		safe        bool
+	}{
+		{"normal", `SuperGit.app\Contents\Resources\note.txt`, true},
+		{"traversal", `SuperGit.app\..\SuperGit.app\note.txt`, false},
+		{"absolute", `\SuperGit.app\file`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			archive := filepath.Join(t.TempDir(), "fixture.zip")
+			f, err := os.Create(archive)
+			if err != nil {
+				t.Fatal(err)
+			}
+			zw := zip.NewWriter(f)
+			if _, err := zw.Create(tc.entry); err != nil {
+				t.Fatal(err)
+			}
+			if err := zw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatal(err)
+			}
+			root, err := InspectZipSafety(archive)
+			if tc.safe {
+				if err != nil || root != "SuperGit.app" {
+					t.Errorf("InspectZipSafety = %q, %v, want safe bundle", root, err)
+				}
+			} else if !errors.Is(err, ErrInvalidArchive) {
+				t.Errorf("InspectZipSafety = %q, %v, want unsafe archive", root, err)
+			}
+		})
+	}
+}
+
+func TestExtractAppNormalizesBackslashEntries(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "fixture.zip")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for name, data := range map[string]string{
+		`SuperGit.app\Contents\Info.plist`:     `<plist><dict><key>CFBundleIdentifier</key><string>` + ExpectedBundleID + `</string><key>CFBundleExecutable</key><string>supergit</string></dict></plist>`,
+		`SuperGit.app\Contents\MacOS\supergit`: "fixture executable",
+	} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(data)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ExtractAndVerifyApp(t.Context(), path, filepath.Join(dir, "extract"), ExpectedBundleID, func(context.Context, string) error { return nil }); err != nil {
+		t.Fatalf("extract safe backslash entries: %v", err)
 	}
 }
 

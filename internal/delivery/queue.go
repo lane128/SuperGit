@@ -6,13 +6,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 var (
-	ErrNoReleaseWindow       = errors.New("no release window is held")
-	ErrReleaseWindowRequired = errors.New("release window ownership is required")
+	ErrNoReleaseWindow         = errors.New("no release window is held")
+	ErrReleaseWindowRequired   = errors.New("release window ownership is required")
+	ErrReleaseWindowBlocked    = errors.New("blocked release window requires recovery")
+	ErrRecoveryDetailsRequired = errors.New("release window recovery requires -by and -reason")
 )
+
+const releaseWindowRecovered = "recover_release_window"
 
 type ReleaseWindow struct {
 	TaskID string
@@ -21,7 +26,7 @@ type ReleaseWindow struct {
 
 type releaseWindowRecord struct {
 	ReleaseWindow
-	AcquiredAfterCompletion bool `json:",omitempty"`
+	TaskHistoryLength int `json:",omitempty"`
 }
 
 func (s *Store) AcquireReleaseWindow(id string, now time.Time) error {
@@ -34,6 +39,13 @@ func (s *Store) AcquireReleaseWindow(id string, now time.Time) error {
 	}
 	defer lock.Close()
 
+	task, err := s.Load(id)
+	if err != nil {
+		return err
+	}
+	if task.Phase == PhaseComplete || task.Status == StatusCancelled {
+		return fmt.Errorf("task %q is complete or cancelled and cannot acquire the release window", id)
+	}
 	window, err := s.CurrentReleaseWindow()
 	if err == nil {
 		if window.TaskID == id {
@@ -44,13 +56,9 @@ func (s *Store) AcquireReleaseWindow(id string, now time.Time) error {
 	if !errors.Is(err, ErrNoReleaseWindow) {
 		return err
 	}
-	complete, err := s.releaseTaskComplete(id)
-	if err != nil {
-		return err
-	}
 	return s.writeReleaseWindow(releaseWindowRecord{
-		ReleaseWindow:           ReleaseWindow{TaskID: id, Since: now},
-		AcquiredAfterCompletion: complete,
+		ReleaseWindow:     ReleaseWindow{TaskID: id, Since: now},
+		TaskHistoryLength: len(task.History),
 	})
 }
 
@@ -75,10 +83,51 @@ func (s *Store) ReleaseReleaseWindow(id string) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	if task.Status == StatusBlocked {
+		return ErrReleaseWindowBlocked
+	}
 	if isReleasePhase(task.Phase) && task.Phase != PhaseComplete {
 		return fmt.Errorf("task %q cannot release its window during phase %q", id, task.Phase)
 	}
 	return os.Remove(s.releaseWindowPath())
+}
+
+// RecoverReleaseWindow records a maintainer's recovery after returning main to
+// its release baseline. The task stays blocked for further reconciliation.
+func (s *Store) RecoverReleaseWindow(id, by, reason string) error {
+	by, reason = strings.TrimSpace(by), strings.TrimSpace(reason)
+	if by == "" || reason == "" {
+		return ErrRecoveryDetailsRequired
+	}
+	path, err := s.taskPath(id)
+	if err != nil {
+		return err
+	}
+	lock, err := s.lockWrites()
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+
+	task, err := s.Load(id)
+	if err != nil {
+		return err
+	}
+	if task.Status != StatusBlocked || !isReleasePhase(task.Phase) {
+		return fmt.Errorf("task %q must be blocked in a release phase to recover its window", id)
+	}
+	if err := s.requireReleaseWindow(task); err != nil {
+		return err
+	}
+	task.recordEvent(releaseWindowRecovered, fmt.Sprintf("%s: %s", by, reason), time.Now().UTC())
+	if err := writeTask(path, task); err != nil {
+		return err
+	}
+
+	// The atomic task write already expires the hold. A leftover queue record
+	// is replaced at the next acquisition, just as when a task completes.
+	_ = os.Remove(s.releaseWindowPath())
+	return nil
 }
 
 func (s *Store) CurrentReleaseWindow() (ReleaseWindow, error) {
@@ -97,14 +146,20 @@ func (s *Store) CurrentReleaseWindow() (ReleaseWindow, error) {
 		return ReleaseWindow{}, fmt.Errorf("decode release window: %w", err)
 	}
 
-	// The atomic task write that records completion also expires the hold.
-	// Writers can replace the expired queue record on the next acquisition.
-	if !record.AcquiredAfterCompletion {
-		complete, err := s.releaseTaskComplete(record.TaskID)
-		if err != nil {
-			return ReleaseWindow{}, err
-		}
-		if complete {
+	// Publishing completion or a recovery event atomically expires this hold.
+	// The history offset distinguishes recovery of older windows from this one.
+	task, err := s.Load(record.TaskID)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return ReleaseWindow{}, err
+	}
+	if task.Phase == PhaseComplete {
+		return ReleaseWindow{}, ErrNoReleaseWindow
+	}
+	if record.TaskHistoryLength < 0 {
+		return ReleaseWindow{}, errors.New("invalid release window history offset")
+	}
+	for i := record.TaskHistoryLength; i < len(task.History); i++ {
+		if task.History[i].Action == releaseWindowRecovered {
 			return ReleaseWindow{}, ErrNoReleaseWindow
 		}
 	}
@@ -135,14 +190,6 @@ func (s *Store) requireReleaseWindow(task Task) error {
 		return fmt.Errorf("task %q at phase %q: %w: held by task %q", task.ID, task.Phase, ErrReleaseWindowRequired, window.TaskID)
 	}
 	return nil
-}
-
-func (s *Store) releaseTaskComplete(id string) (bool, error) {
-	task, err := s.Load(id)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	return task.Phase == PhaseComplete, err
 }
 
 func (s *Store) releaseWindowPath() string {

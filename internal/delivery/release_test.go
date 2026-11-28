@@ -40,6 +40,34 @@ func TestVerifyReleaseAcceptsMatchingSignedArchive(t *testing.T) {
 	}
 }
 
+func TestVerifyReleaseRejectsManifestBundleMetadataMismatch(t *testing.T) {
+	for _, tc := range []struct {
+		field, version string
+		build          int
+	}{
+		{"version", "1.2.4", 42}, {"build", "1.2.3", 43},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			opts, asset := releaseFixture(t, updater.ExpectedBundleID, false)
+			manifest, err := json.Marshal(updater.Manifest{Version: tc.version, Build: tc.build, Platforms: map[string]updater.PlatformAsset{"darwin-arm64": asset}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(opts.OutDir, "update.json"), manifest, 0600); err != nil {
+				t.Fatal(err)
+			}
+			report, err := VerifyRelease(t.Context(), opts)
+			if err == nil {
+				t.Fatalf("VerifyRelease accepted mismatched %s", tc.field)
+			}
+			assertReleaseChecks(t, report, 6, true)
+			if detail := report.Checks[5].Detail; !strings.Contains(detail, "bundle "+tc.field) || !strings.Contains(detail, "manifest") {
+				t.Errorf("extract detail = %q", detail)
+			}
+		})
+	}
+}
+
 func TestVerifyReleaseRejectsTamperedArchive(t *testing.T) {
 	opts, _ := releaseFixture(t, "cc.supermix.supergit", false)
 	archive := filepath.Join(opts.OutDir, fixtureArchiveName)
