@@ -88,7 +88,11 @@ func TestPackageReleaseRequiresMatchingEmbeddedPublicKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	matchingKeyEntry := "<key>SuperGitUpdatePublicKey</key><string> " + string(pubRaw) + "</string>"
+	const keyStringStart = "<key>SuperGitUpdatePublicKey</key><string>"
+	matchingKeyEntry := keyStringStart + " " + string(pubRaw) + "</string>"
+	pubBase64 := strings.TrimSpace(string(pubRaw))
+	mid := len(pubBase64) / 2
+	left, right := pubBase64[:mid], pubBase64[mid:]
 	for _, tc := range []struct {
 		name     string
 		keyEntry string
@@ -99,6 +103,8 @@ func TestPackageReleaseRequiresMatchingEmbeddedPublicKey(t *testing.T) {
 		{name: "whitespace_only", keyEntry: "<key>SuperGitUpdatePublicKey</key><string> </string>", wantErr: true},
 		{name: "commented_out", keyEntry: "<!-- " + matchingKeyEntry + " -->", wantErr: true},
 		{name: "nested", keyEntry: "<key>Other</key><dict>" + matchingKeyEntry + "</dict>", wantErr: true},
+		{name: "comment_in_string", keyEntry: keyStringStart + left + "<!-- split -->" + right + "</string>", wantErr: true},
+		{name: "cdata_in_string", keyEntry: keyStringStart + left + "<![CDATA[" + right + "]]></string>", wantErr: true},
 		{name: "wrong", keyEntry: "<key>SuperGitUpdatePublicKey</key><string>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</string>", wantErr: true},
 		{name: "correct", keyEntry: matchingKeyEntry},
 	} {

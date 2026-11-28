@@ -287,6 +287,7 @@ func extractEmbeddedUpdatePublicKey(data []byte) (string, error) {
 			Entries []struct {
 				XMLName  xml.Name
 				Text     string     `xml:",chardata"`
+				Raw      string     `xml:",innerxml"`
 				Children []struct{} `xml:",any"`
 			} `xml:",any"`
 		} `xml:",any"`
@@ -309,10 +310,14 @@ func extractEmbeddedUpdatePublicKey(data []byte) (string, error) {
 		if key.Text != "SuperGitUpdatePublicKey" {
 			continue
 		}
-		if found || value.XMLName != (xml.Name{Local: "string"}) || len(value.Children) != 0 {
+		if found || value.XMLName != (xml.Name{Local: "string"}) {
 			return "", errors.New("expected one string entry in Info.plist")
 		}
-		embedded = strings.TrimSpace(value.Text)
+		// Decoded character data can join fragments around comments or CDATA.
+		if strings.Contains(value.Raw, "<") {
+			return "", errors.New("expected contiguous string text in Info.plist")
+		}
+		embedded = strings.TrimSpace(value.Raw)
 		found = true
 	}
 	return embedded, nil
